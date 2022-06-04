@@ -131,6 +131,7 @@ int main(int argc, char **argv) {
 	int chunk_len = 0; // current chunk length
 	char* chunk_array[1024]; // total chunks
 	int chunk_idx = 0; // current chunk index
+	long unsigned chunk_len_sum = 0;
 
 	do {
 		DEBUG("STEP11 Wait for it to complete.");
@@ -145,9 +146,7 @@ int main(int argc, char **argv) {
 		}
 
 		DEBUG("STEP12 chunk mode parsing");
-		data_scan_offset = 0;
-		prev_c = 0;
-		for (;data_scan_offset < len; data_scan_offset++) {
+		for (data_scan_offset = 0;data_scan_offset < len; data_scan_offset++) {
 			prev_c = c;
 			c = *(char*)(data+data_scan_offset);
 			if (chunk_state == 0) { // chunk len scannig.
@@ -194,7 +193,8 @@ int main(int argc, char **argv) {
 					data_scan_offset += copy_ct;
 				} else {
 					*(cur_buffer+buf_w_offset) = 0; // add \0 to cur_buffer
-					printf(">>> copy buffer[%d] finished, idx %d\n", buf_w_offset, chunk_idx);
+					chunk_len_sum += buf_w_offset;
+					printf(">>> copy buffer[%d] finished, idx %d, total len: %lu\n", buf_w_offset, chunk_idx, chunk_len_sum);
 					if (buf_w_offset < 300)
 						printf("[%s]\n", cur_buffer);
 					else {
@@ -213,26 +213,31 @@ int main(int argc, char **argv) {
 			} else
 				return (0);
 		}
-		if (chunk_state == 1) {
-			free(data);
+
+		free(data);
+		if (chunk_state == 0) {
+			DEBUG("Missed char at parsing chunk len, receive 1 more byte");
+			len = 1;
+		} else if (chunk_state == 1) {
 			int missed_ct = chunk_len - buf_w_offset;
 			missed_ct += 2; // \r\n
-			missed_ct += 10; // 0\r\n\r\n 5 at least.
+			missed_ct += 5; // ABCE\r\n 6, 0\r\n\r\n 5
 			len = missed_ct;
-			printf("Missed chunk char ct %d, allocate %d buffer to receive the body data.\n", (chunk_len-buf_w_offset), len);
-			data = malloc(len);
-			// Set up a single iov to point to the buffer.
-			iov.iov_len = len;
-			iov.iov_buf = data;
+			printf("Missed chunk char ct %d, allocate %d buffer to receive remained data + next len.\n", (chunk_len-buf_w_offset), len);
+		} else {
+			return FATAL("????", 1);
+		}
+		data = malloc(len);
+		// Set up a single iov to point to the buffer.
+		iov.iov_len = len;
+		iov.iov_buf = data;
 
-			DEBUG("STEP9 nng_aio_set_iov(aio, 1, &iov)");
-			nng_aio_set_iov(aio, 1, &iov);
+		DEBUG("STEP9 nng_aio_set_iov(aio, 1, &iov)");
+		nng_aio_set_iov(aio, 1, &iov);
 
-			// Now attempt to receive the data.
-			DEBUG("STEP10 nng_http_conn_read_all(conn, aio);");
-			nng_http_conn_read_all(conn, aio);
-		} else
-			break;
+		// Now attempt to receive the data.
+		DEBUG("STEP10 nng_http_conn_read_all(conn, aio);");
+		nng_http_conn_read_all(conn, aio);
 	} while(1);
 	return (0);
 }
