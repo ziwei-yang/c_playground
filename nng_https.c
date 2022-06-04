@@ -128,6 +128,7 @@ int main(int argc, char **argv) {
 	char *cur_buffer; // init current chunk content, content copy to here.
 	int buf_w_offset = 0;
 
+	int chunk_parsing_char_ct = 0;
 	int chunk_len = 0; // current chunk length
 	char* chunk_array[1024]; // total chunks
 	int chunk_idx = 0; // current chunk index
@@ -150,6 +151,7 @@ int main(int argc, char **argv) {
 			prev_c = c;
 			c = *(char*)(data+data_scan_offset);
 			if (chunk_state == 0) { // chunk len scannig.
+				chunk_parsing_char_ct += 1;
 				if (c == 13) {
 					printf("!!! LEN %d << len %d %d got \\r\n", chunk_len, len, data_scan_offset);
 					continue; // got \r, next to scan \n
@@ -180,7 +182,7 @@ int main(int argc, char **argv) {
 					printf("??? LEN %d << len %d [%d %c %d]\n", chunk_len, len, data_scan_offset, c, hex_digit);
 				} else {
 					printf("XXX LEN %d << len %d [%d %c(%d)]\n", chunk_len, len, data_scan_offset, c, (int)c);
-					// return FATAL("Unexpected char", 1);
+					return FATAL("Unexpected char", 1);
 				}
 			} else if (chunk_state == 1) { // content scanning and copying.
 				if (buf_w_offset < chunk_len) {
@@ -209,6 +211,7 @@ int main(int argc, char **argv) {
 					prev_c = 0;
 					chunk_state = 0;
 					chunk_len = 0;
+					chunk_parsing_char_ct = 0;
 				}
 			} else
 				return (0);
@@ -216,12 +219,15 @@ int main(int argc, char **argv) {
 
 		free(data);
 		if (chunk_state == 0) {
-			DEBUG("Missed char at parsing chunk len, receive 1 more byte");
-			len = 1;
+			if (chunk_parsing_char_ct < 4)
+				len = 5-chunk_parsing_char_ct; // min 5: 0\r\n\r\n
+			else
+				len = 1;
+			printf("Missed char at parsing chunk len, receive %d more byte\n", len);
 		} else if (chunk_state == 1) {
 			int missed_ct = chunk_len - buf_w_offset;
 			missed_ct += 2; // \r\n
-			missed_ct += 5; // ABCE\r\n 6, 0\r\n\r\n 5
+			missed_ct += 5; // ABCD\r\n 6, 0\r\n\r\n 5
 			len = missed_ct;
 			printf("Missed chunk char ct %d, allocate %d buffer to receive remained data + next len.\n", (chunk_len-buf_w_offset), len);
 		} else {
