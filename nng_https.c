@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
 	int              len;
 	void *           data;
 	nng_iov          iov;
-	int 		 chunk_state = -1; // <0: not chunk mode; 0: len scannig; 1: content scanning; 2: end
+	int 		 chunk_state = -1; // <0: not chunk mode; 0: chunk len scanning; 1: chunk content scanning; 2: end
 
 	if (argc < 2) {
 		fprintf(stderr, "No URL supplied!\n");
@@ -182,9 +182,10 @@ int main(int argc, char **argv) {
 					int data_left = len - data_scan_offset;
 					int bufr_left = chunk_len - buf_w_offset;
 					int copy_ct = (data_left < bufr_left) ? data_left : bufr_left;
-					printf(">>> copy buffer[%d + %d] << data[%d] \n", buf_w_offset, copy_ct, data_scan_offset);
+					printf(">>> copy buffer[%d + %d] << data[%d + %d] \n", buf_w_offset, copy_ct, data_scan_offset, copy_ct);
 					// *(cur_buffer+buf_w_offset) = c; // TODO memcpy()
 					buf_w_offset += copy_ct;
+					data_scan_offset += copy_ct;
 				} else {
 					*(cur_buffer+buf_w_offset) = 0; // add \0 to cur_buffer
 					printf(">>> copy buffer[%d] finished \n", buf_w_offset);
@@ -194,6 +195,7 @@ int main(int argc, char **argv) {
 					data_scan_offset += 2; // skip next \r\n
 					prev_c = 0;
 					chunk_state = 0;
+					chunk_len = 0;
 				}
 			} else
 				return (0);
