@@ -146,19 +146,25 @@ int main(int argc, char **argv) {
 
 		DEBUG("STEP12 chunk mode parsing");
 		data_scan_offset = 0;
+		prev_c = 0;
 		for (;data_scan_offset < len; data_scan_offset++) {
 			prev_c = c;
 			c = *(char*)(data+data_scan_offset);
 			if (chunk_state == 0) { // chunk len scannig.
 				if (c == 13) {
-					printf("!!! LEN %d << %d got \\r\n", chunk_len, data_scan_offset);
+					printf("!!! LEN %d << len %d %d got \\r\n", chunk_len, len, data_scan_offset);
 					continue; // got \r, next to scan \n
 				} else if (prev_c == 13 && c == 10) {
 					// \r\n got, chunk_len calculated
-					printf("!!! LEN %d << %d got \\n\n", chunk_len, data_scan_offset);
+					printf("!!! LEN %d << len %d %d got \\n\n", chunk_len, len, data_scan_offset);
 					if (chunk_len == 0) {
 						chunk_state = 2; // -> end
-						DEBUG("ZERO length chunk found, finished"); // TODO
+						DEBUG("ZERO length chunk found, finished");
+						printf("chunk total %d\n", chunk_idx);
+						// print every chunk.
+						for (int idx = 0; idx < chunk_idx; idx++) {
+							printf("chunk %d/%d: len %lu\n%s\n", idx, chunk_idx-1, strlen(chunk_array[idx]), chunk_array[idx]);
+						}
 						return (0);
 					} else {
 						cur_buffer = malloc(chunk_len+1);
@@ -172,10 +178,10 @@ int main(int argc, char **argv) {
 					if (c <= 'F' && c >= 'A') hex_digit = (int)c - (int)('A') + 10;
 					if (c <= '9' && c >= '0') hex_digit = (int)c - (int)('0');
 					chunk_len = (chunk_len << 4) + hex_digit;
-					printf("??? LEN %d << [%d %c %d]\n", chunk_len, data_scan_offset, c, hex_digit);
+					printf("??? LEN %d << len %d [%d %c %d]\n", chunk_len, len, data_scan_offset, c, hex_digit);
 				} else {
-					printf("??? LEN %d << [%d %c]\n", chunk_len, data_scan_offset, c);
-					return FATAL("Unexpected char", 1);
+					printf("XXX LEN %d << len %d [%d %c(%d)]\n", chunk_len, len, data_scan_offset, c, (int)c);
+					// return FATAL("Unexpected char", 1);
 				}
 			} else if (chunk_state == 1) { // content scanning and copying.
 				if (buf_w_offset < chunk_len) {
@@ -183,16 +189,23 @@ int main(int argc, char **argv) {
 					int bufr_left = chunk_len - buf_w_offset;
 					int copy_ct = (data_left < bufr_left) ? data_left : bufr_left;
 					printf(">>> copy buffer[%d + %d] << data[%d + %d] \n", buf_w_offset, copy_ct, data_scan_offset, copy_ct);
-					// *(cur_buffer+buf_w_offset) = c; // TODO memcpy()
+					memcpy(cur_buffer+buf_w_offset, data+data_scan_offset, copy_ct);
 					buf_w_offset += copy_ct;
 					data_scan_offset += copy_ct;
 				} else {
 					*(cur_buffer+buf_w_offset) = 0; // add \0 to cur_buffer
-					printf(">>> copy buffer[%d] finished \n", buf_w_offset);
+					printf(">>> copy buffer[%d] finished, idx %d\n", buf_w_offset, chunk_idx);
+					if (buf_w_offset < 300)
+						printf("[%s]\n", cur_buffer);
+					else {
+						char head[100];
+						memcpy(head, cur_buffer, 99);
+						head[99] = EOF;
+						printf("[%s...\n%s]\n", head, cur_buffer+buf_w_offset-300);
+					}
 					chunk_array[chunk_idx++] = cur_buffer;
 					cur_buffer = 0;
 					// finish this chunk copying, ready to start next chunk parsing.
-					data_scan_offset += 2; // skip next \r\n
 					prev_c = 0;
 					chunk_state = 0;
 					chunk_len = 0;
@@ -204,9 +217,9 @@ int main(int argc, char **argv) {
 			free(data);
 			int missed_ct = chunk_len - buf_w_offset;
 			missed_ct += 2; // \r\n
-			missed_ct += 10; // 0\r\n\r\n
+			missed_ct += 10; // 0\r\n\r\n 5 at least.
 			len = missed_ct;
-			printf("Allocate %d buffer to receive the body data.\n", len);
+			printf("Missed chunk char ct %d, allocate %d buffer to receive the body data.\n", (chunk_len-buf_w_offset), len);
 			data = malloc(len);
 			// Set up a single iov to point to the buffer.
 			iov.iov_len = len;
