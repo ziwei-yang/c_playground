@@ -17,9 +17,17 @@ char *time_stamp(){
 	return timestamp;
 }
 
+struct timeval global_log_tv;
+#define DEBUG(msg) gettimeofday(&global_log_tv, NULL), \
+	fprintf (stdout, "DEBUG %5lu.%6u %s:%d %s(): %s\n", \
+			global_log_tv.tv_sec % 100000, \
+			global_log_tv.tv_usec, \
+			__FILE__, __LINE__, __FUNCTION__,  msg);
+
 int main(){
 	printf(" Timestamp:[%s]\n",time_stamp());
 
+	DEBUG("STEP0")
 	struct timeval *tp;
 	printf(" sizeof(sec)  : %lu\n", sizeof(tp->tv_sec));
 	printf(" sizeof(usec) : %ld\n", sizeof(tp->tv_usec));
