@@ -3,6 +3,13 @@
 
 #include "urn.c"
 
+#include <nng/nng.h>
+#include <nng/supplemental/http/http.h>
+#include <nng/supplemental/tls/tls.h>
+#include <nng/supplemental/tls/engine.h>
+#include <nng/transport/tls/tls.h>
+#include <nng/transport/ws/websocket.h>
+
 // low level aio operation: wait finished and check status.
 int nngaio_wait_res(nng_aio *aio, size_t *ct, char *start, char *done) {
 	if (start != NULL) URN_DEBUG(start);

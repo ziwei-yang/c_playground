@@ -1,6 +1,9 @@
 #ifndef URANUS_COMMON
 #define URANUS_COMMON
 
+#include <time.h>
+#include <sys/time.h>
+
 #define CLR_RST           "\033[0m"
 #define CLR_BOLD          "\033[01m"
 #define CLR_DISABLE       "\033[02m"
@@ -36,8 +39,16 @@
 #define CLR_BGCYAN    "\033[46m"
 #define CLR_BGWHITE   "\033[47m"
 
-#define URN_FATAL(msg, ret) fprintf (stderr, "%s:%d %s(): FATAL %s\n", __FILE__, __LINE__, __FUNCTION__,  msg), exit(ret), ret;
-#define URN_FATAL_NNG(ret)  fprintf (stderr, "%s:%d %s(): FATAL %s\n", __FILE__, __LINE__, __FUNCTION__,  nng_strerror(ret)), exit(ret), ret;
+#define URN_FATAL(msg, ret) fprintf (\
+		stderr, "%s:%d %s(): FATAL %s\nexit %d\n", \
+		__FILE__, __LINE__, __FUNCTION__, \
+		msg, ret), \
+		exit(ret), ret;
+#define URN_FATAL_NNG(ret)  fprintf (\
+		stderr, "%s:%d %s(): FATAL %s\nexit %d\n", \
+		__FILE__, __LINE__, __FUNCTION__, \
+		nng_strerror(ret), ret), \
+		exit(ret), ret;
 
 struct timeval urn_global_tv;
 char   urn_global_log_buf[65536];
@@ -70,5 +81,7 @@ char   urn_global_log_buf[65536];
 	URN_INFO(urn_global_log_buf);
 #define URN_WARNF(...) sprintf(urn_global_log_buf, __VA_ARGS__), \
 	URN_WARN(urn_global_log_buf);
+
+#define URN_MIN(a, b) (((a) < (b)) ? (a) : (b))
 
 #endif

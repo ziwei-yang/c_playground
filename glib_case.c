@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <glib.h>
 
 #define EPRINT(msg) fprintf (stderr, "%s:%d %s(): %s\n", __FILE__, __LINE__, __FUNCTION__,  msg);

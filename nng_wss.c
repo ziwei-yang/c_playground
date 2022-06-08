@@ -1,15 +1,7 @@
-#include <nng/nng.h>
-#include <nng/supplemental/http/http.h>
-#include <nng/supplemental/tls/tls.h>
-#include <nng/supplemental/tls/engine.h>
-#include <nng/transport/tls/tls.h>
-#include <nng/transport/ws/websocket.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <glib.h>
-#include <time.h>
-#include <sys/time.h>
 
 #include "urn.c"
 #include "wss.c"
