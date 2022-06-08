@@ -1,2 +1,4 @@
 jsmn.h
 .DS_Store
+yyjson.*
+*.json

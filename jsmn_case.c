@@ -11,26 +11,12 @@
 #include "jsmn.h"
 
 int main(int argc, char **argv) {
-	char fpath[] = "./example.json";
+//	char fpath[] = "./example.json";
+	char fpath[] = "./pos_trader_SLP.json";
 	char *contents;
 	gsize clen;
 	GError *error;
 
-	gboolean ret = g_file_get_contents(fpath, &contents, &clen, &error);
-	printf("ret  %d\n", ret);
-	printf("clen %lu\n", clen);
-//	URN_INFO(contents);
-
-	URN_LOGF("Parsing json, size %lu", clen);
-	int max_json_t = 65536;
-	jsmntok_t tokens[max_json_t];
-	jsmn_parser parser;
-	jsmn_init(&parser);
-	int rv = jsmn_parse(&parser, contents, clen, tokens, max_json_t);
-	if (rv < 0)
-		return URN_FATAL("Error in parsing json", rv);
-
-	URN_INFOF("%d tokens parsed from %s", rv, fpath);
 	char *type_desc[9] = {
 		"0",
 		"{}",
@@ -44,6 +30,34 @@ int main(int argc, char **argv) {
 	};
 	char preview[50];
 	preview[49] = '\0';
+
+	URN_LOG("Loading file");
+	gboolean ret = g_file_get_contents(fpath, &contents, &clen, &error);
+	URN_LOGF("ret  %d len %lu\n", ret, clen);
+//	URN_INFO(contents);
+
+	URN_LOGF("Testing json, size %lu", clen);
+	jsmn_parser parser;
+	jsmn_init(&parser);
+	int rv = 0;
+	rv = jsmn_parse(&parser, contents, clen, NULL, 0);
+	if (rv < 0)
+		return URN_FATAL("Error in parsing json", rv);
+
+
+	int max_json_t = rv; // rv is the number of tokens actually used by the parser.
+	jsmntok_t tokens[max_json_t];
+
+	URN_LOGF("Parsing json 100 times, need token array of size %d", rv);
+	for(int i=0; i<100; i++) {
+		jsmn_init(&parser);
+		rv = jsmn_parse(&parser, contents, clen, tokens, max_json_t);
+		if (rv < 0)
+			return URN_FATAL("Error in parsing json", rv);
+	}
+
+	URN_INFOF("%d tokens parsed from %s", rv, fpath);
+	exit(0);
 	for (int i=0; i< rv; i++) {
 		jsmntok_t token = tokens[i];
 		int cplen = URN_MIN(token.size, 49);

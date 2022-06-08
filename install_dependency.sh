@@ -2,6 +2,7 @@
 SOURCE="${BASH_SOURCE[0]}"
 DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
+# NNG 1.5.2
 if [ ! -f $HOME/install/include/nng/nng.h ]; then
 	cd $HOME/Proj/nng/
 	rm -rf build
@@ -37,4 +38,19 @@ if [ ! -f $DIR/jsmn.h ]; then
 	exit 1
 else
 	echo "jsmn.h checked"
+fi
+
+# YYJSON
+if [ ! -f $DIR/yyjson.h ]; then
+	cd $DIR
+	wget -O yyjson.tar.gz https://github.com/ibireme/yyjson/archive/refs/tags/0.5.0.tar.gz
+	tar xf yyjson.tar.gz
+	cp -rv yyjson-0.5.0/src/yyjson.* ./
+	rm -rf yyjson-0.5.0 yyjson.tar.gz
+fi
+if [ ! -f $DIR/yyjson.h ]; then
+	echo "yyjson extract failed"
+	exit 1
+else
+	echo "yyjson.h checked"
 fi
