@@ -11,6 +11,7 @@
 #include <time.h>
 #include <sys/time.h>
 
+#include "urn.c"
 #include "wss.c"
 
 int main(int argc, char **argv) {
@@ -22,7 +23,10 @@ int main(int argc, char **argv) {
 	nng_stream *stream = NULL;
 
 	int recv_buflen = 65536;
-	char recv_buf[recv_buflen];
+	char *recv_buf = malloc(recv_buflen);
+	if (recv_buf == NULL)
+		return URN_FATAL("Not enough memory for recv_buf", 1);
+
 	nng_aio *recv_aio = NULL;
 	nng_iov *recv_iov = NULL;
 	size_t recv_bytes = 0;
@@ -55,7 +59,7 @@ int main(int argc, char **argv) {
 		if ((rv = nngaio_recv_wait_res(stream, recv_aio, recv_iov, &recv_bytes, "<-- async recv wait", "<-- async recv wait done")) != 0)
 			return rv;
 		// only 0..recv_bytes is message received this time.
-		URN_LOGF("%zu %.*s", recv_bytes, (int)recv_bytes, recv_buf);
+		URN_INFOF("%zu %.*s", recv_bytes, (int)recv_bytes, recv_buf);
 	}
 
 	return 0;
