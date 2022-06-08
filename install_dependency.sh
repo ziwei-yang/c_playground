@@ -2,6 +2,8 @@
 SOURCE="${BASH_SOURCE[0]}"
 DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
+os=$( uname )
+
 # NNG 1.5.2
 if [ ! -f $HOME/install/include/nng/nng.h ]; then
 	if [ ! -d $HOME/Proj/nng ]; then
@@ -14,7 +16,6 @@ if [ ! -f $HOME/install/include/nng/nng.h ]; then
 	cd build
 
 	# For NNG v1.5.2.tar.gz on macos m1
-	os=$( uname )
 	[[ $os == Darwin ]] && brew install mbedTLS
 	[[ $os == Linux ]] && echo sudo apt install libmbedtls-dev && sudo apt install libmbedtls-dev
 
@@ -60,7 +61,10 @@ else
 fi
 
 # hiredis
-if [ ! -f $HOME/install/include/hiredis/hiredis.h ]; then
+[[ $os == Darwin ]] && \
+	[ ! -f /opt/homebrew/Cellar/hiredis/1.0.2/include/hiredis/hiredis.h ] && \
+	brew install hiredis
+[[ $os == Linux ]] && [ ! -f $HOME/install/include/hiredis/hiredis.h ] && (
 	if [ ! -d $HOME/Proj/hiredis-1.0.2 ]; then
 		echo "get hiredis-1.0.2 into $HOME/Proj/ first"
 		echo "remember to change Makefile: PREFIX?=$HOME/install"
@@ -69,9 +73,13 @@ if [ ! -f $HOME/install/include/hiredis/hiredis.h ]; then
 	cd $HOME/Proj/hiredis-1.0.2
 
 	make && make install
-fi
-if [ ! -f $HOME/install/include/hiredis/hiredis.h ]; then
+)
+
+if [[ $os == Linux ]] && [[ ! -f $HOME/install/include/hiredis/hiredis.h ]]; then
 	echo "hiredis build failed"
+	exit 1
+elif [[ $os == Darwin ]] && [[ ! -f /opt/homebrew/Cellar/hiredis/1.0.2/include/hiredis/hiredis.h ]]; then
+	echo "brew install hiredis failed"
 	exit 1
 else
 	echo "hiredis.h checked"
