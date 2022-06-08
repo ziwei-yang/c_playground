@@ -4,6 +4,10 @@ DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
 # NNG 1.5.2
 if [ ! -f $HOME/install/include/nng/nng.h ]; then
+	if [ ! -d $HOME/Proj/nng ]; then
+		echo "get nng 1.5.2 into $HOME/Proj/nng first"
+		exit 1
+	fi
 	cd $HOME/Proj/nng/
 	rm -rf build
 	mkdir build
@@ -53,4 +57,22 @@ if [ ! -f $DIR/yyjson.h ]; then
 	exit 1
 else
 	echo "yyjson.h checked"
+fi
+
+# hiredis
+if [ ! -f $HOME/install/include/hiredis/hiredis.h ]; then
+	if [ ! -d $HOME/Proj/hiredis-1.0.2 ]; then
+		echo "get hiredis-1.0.2 into $HOME/Proj/ first"
+		echo "remember to change Makefile: PREFIX?=$HOME/install"
+		exit 1
+	fi
+	cd $HOME/Proj/hiredis-1.0.2
+
+	make && make install
+fi
+if [ ! -f $HOME/install/include/hiredis/hiredis.h ]; then
+	echo "hiredis build failed"
+	exit 1
+else
+	echo "hiredis.h checked"
 fi
