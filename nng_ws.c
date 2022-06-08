@@ -23,13 +23,43 @@ struct timeval global_log_tv;
 			global_log_tv.tv_usec, \
 			__FILE__, __LINE__, msg);
 
-// low level aio operation, wait finished and check status.
-int ws_wait_aio(nng_aio *aio, char *start, char *done) {
+// low level aio operation: wait finished and check status.
+int nngaio_wait_res(nng_aio *aio, char *start, char *done) {
 	if (start != NULL) DEBUG(start);
 	nng_aio_wait(aio);
 	int rv = nng_aio_result(aio);
 	if (done != NULL) DEBUG(done);
 	return rv;
+}
+
+// low level aio operation: init nng_aio and nng_iov if is NULL, set s as iov_buf
+int nngaio_init(char *s, int slen, nng_aio **aiop, nng_iov **iovp) {
+	int rv = 0;
+	int need_free_aiop = (*aiop == NULL);
+	int need_free_iovp = (*iovp == NULL);
+
+	if (need_free_aiop && ((rv = nng_aio_alloc(aiop, NULL, NULL)) != 0))
+		return rv;
+	if (need_free_iovp) {
+		(*iovp) = malloc(sizeof(nng_iov));
+		if (*iovp == NULL) return NNG_ENOMEM;
+	}
+
+	(*iovp)->iov_buf = s;
+	(*iovp)->iov_len = slen;
+
+	if ((rv = nng_aio_set_iov(*aiop, 1, *iovp)) != 0) {
+		if (need_free_aiop) {
+			nng_aio_free(*aiop);
+			*aiop = NULL;
+		}
+		if (need_free_iovp) {
+			free(*iovp);
+			*iovp = NULL;
+		}
+		return rv;
+	}
+	return 0;
 }
 
 // Init dialer and its aio, open stream asynchronously
@@ -57,34 +87,11 @@ int ws_wait_stream(nng_aio *daio, nng_stream **stream) {
 	return 0;
 }
 
-int ws_send_async(nng_stream *strm, char *s, nng_aio **aiop, nng_iov **iovp) {
+int ws_send_async(nng_stream *strm, char *s, int slen, nng_aio **aiop, nng_iov **iovp) {
 	DEBUG("--> init req");
 	int rv = 0;
-	int need_free_aiop = (*aiop == NULL);
-	int need_free_iovp = (*iovp == NULL);
-
-	if (need_free_aiop && ((rv = nng_aio_alloc(aiop, NULL, NULL)) != 0))
+	if ((rv = nngaio_init(s, slen, aiop, iovp)) != 0)
 		return rv;
-	if (need_free_iovp) {
-		(*iovp) = malloc(sizeof(nng_iov));
-		if (*iovp == NULL)
-			return NNG_ENOMEM;
-	}
-
-	(*iovp)->iov_buf = s;
-	(*iovp)->iov_len = strlen(s);
-
-	if ((rv = nng_aio_set_iov(*aiop, 1, *iovp)) != 0) {
-		if (need_free_aiop) {
-			nng_aio_free(*aiop);
-			*aiop = NULL;
-		}
-		if (need_free_iovp) {
-			free(*iovp);
-			*iovp = NULL;
-		}
-		return rv;
-	}
 	// asynchronously send
 	DEBUG("--> async req");
 	DEBUG(s);
@@ -97,45 +104,23 @@ int ws_send_sync(nng_stream *strm, char *s) {
 	nng_iov *iov = NULL;
 
 	int rv = 0;
-	rv = ws_send_async(strm, s, &aio, &iov);
-	if (rv != 0)
+	if ((rv = ws_send_async(strm, s, strlen(s), &aio, &iov)) != 0)
 		return rv;
 
-	rv = ws_wait_aio(aio, NULL, "--> async req wait done");
+	if ((rv = nngaio_wait_res(aio, NULL, "--> async req wait done")) != 0)
+		return rv;
 
-	nng_aio_free(aio);
-	free(iov);
+	if (aio != NULL) nng_aio_free(aio);
+	if (iov != NULL) free(iov);
 	return rv;
 }
 
 int ws_recv_async(nng_stream *strm, char *buf, int maxlen, nng_aio **aiop, nng_iov **iovp) {
 	DEBUG("<-- init recv");
 	int rv = 0;
-	int need_free_aiop = (*aiop == NULL);
-	int need_free_iovp = (*iovp == NULL);
-
-	if (need_free_aiop && ((rv = nng_aio_alloc(aiop, NULL, NULL)) != 0))
+	if ((rv = nngaio_init(buf, maxlen, aiop, iovp)) != 0)
 		return rv;
-	if (need_free_iovp) {
-		(*iovp) = malloc(sizeof(nng_iov));
-		if (*iovp == NULL)
-			return NNG_ENOMEM;
-	}
 
-	(*iovp)->iov_buf = buf;
-	(*iovp)->iov_len = maxlen;
-
-	if ((rv = nng_aio_set_iov(*aiop, 1, *iovp)) != 0) {
-		if (need_free_aiop) {
-			nng_aio_free(*aiop);
-			*aiop = NULL;
-		}
-		if (need_free_iovp) {
-			free(*iovp);
-			*iovp = NULL;
-		}
-		return rv;
-	}
 	// asynchronously send
 	DEBUG("<-- async recv");
 	nng_stream_recv(strm, *aiop);
@@ -146,14 +131,14 @@ int ws_recv_sync(nng_stream *strm, char *buf, int buflen) {
 	nng_iov *iov = NULL;
 
 	int rv = 0;
-	rv = ws_recv_async(strm, buf, buflen, &aio, &iov);
-	if (rv != 0)
+	if ((rv = ws_recv_async(strm, buf, buflen, &aio, &iov)) != 0)
 		return rv;
 
-	rv = ws_wait_aio(aio, "<-- async recv", "<-- async recv wait done");
+	if ((rv = nngaio_wait_res(aio, "<-- async recv wait", "<-- async recv wait done")) != 0)
+		return rv;
 
-	nng_aio_free(aio);
-	free(iov);
+	if (aio != NULL) nng_aio_free(aio);
+	if (iov != NULL) free(iov);
 	return rv;
 }
 
@@ -175,15 +160,17 @@ int main() {
 	DEBUG("Conn stream is ready");
 
 	char *req_s = "hello this is a req";
-	DEBUG("Send req async");
 	if ((rv = ws_send_sync(stream, req_s)) != 0)
 		return FATAL_NNG(rv);
 
 	int buflen = 1024;
 	char buf[buflen];
-	if ((rv = ws_recv_sync(stream, buf, buflen)) != 0)
-		return FATAL_NNG(rv);
-	DEBUG(buf);
+
+	while(1) {
+		if ((rv = ws_recv_sync(stream, buf, buflen)) != 0)
+			return FATAL_NNG(rv);
+		DEBUG(buf);
+	}
 
 	return 0;
 }
