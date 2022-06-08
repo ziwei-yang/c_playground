@@ -4,21 +4,71 @@
 #define URN_FATAL(msg, ret) fprintf (stderr, "%s:%d %s(): FATAL %s\n", __FILE__, __LINE__, __FUNCTION__,  msg), exit(ret), ret;
 #define URN_FATAL_NNG(ret)  fprintf (stderr, "%s:%d %s(): FATAL %s\n", __FILE__, __LINE__, __FUNCTION__,  nng_strerror(ret)), exit(ret), ret;
 
-struct timeval global_log_tv;
-#define URN_DEBUG(msg) gettimeofday(&global_log_tv, NULL), \
+struct timeval urn_global_tv;
+char   urn_global_log_buf[65536];
+
+#define URN_DEBUG(msg) gettimeofday(&urn_global_tv, NULL), \
 	fprintf (stdout, "DBG %02lu:%02lu:%02lu.%06u %16s:%-4d: %s\n", \
-			(global_log_tv.tv_sec % 86400)/3600, \
-			(global_log_tv.tv_sec % 3600)/60, \
-			(global_log_tv.tv_sec % 60), \
-			global_log_tv.tv_usec, \
+			(urn_global_tv.tv_sec % 86400)/3600, \
+			(urn_global_tv.tv_sec % 3600)/60, \
+			(urn_global_tv.tv_sec % 60), \
+			urn_global_tv.tv_usec, \
 			__FILE__, __LINE__, msg);
+#define URN_LOG(msg) gettimeofday(&urn_global_tv, NULL), \
+	fprintf (stdout, "LOG %02lu:%02lu:%02lu.%06u %16s:%-4d: %s\n", \
+			(urn_global_tv.tv_sec % 86400)/3600, \
+			(urn_global_tv.tv_sec % 3600)/60, \
+			(urn_global_tv.tv_sec % 60), \
+			urn_global_tv.tv_usec, \
+			__FILE__, __LINE__, msg);
+#define URN_LOGF(...) sprintf(urn_global_log_buf, __VA_ARGS__), \
+	gettimeofday(&urn_global_tv, NULL), \
+	fprintf (stdout, "LOG %02lu:%02lu:%02lu.%06u %16s:%-4d: %s\n", \
+			(urn_global_tv.tv_sec % 86400)/3600, \
+			(urn_global_tv.tv_sec % 3600)/60, \
+			(urn_global_tv.tv_sec % 60), \
+			urn_global_tv.tv_usec, \
+			__FILE__, __LINE__, urn_global_log_buf);
 
 // low level aio operation: wait finished and check status.
-int nngaio_wait_res(nng_aio *aio, char *start, char *done) {
+int nngaio_wait_res(nng_aio *aio, size_t *ct, char *start, char *done) {
 	if (start != NULL) URN_DEBUG(start);
 	nng_aio_wait(aio);
 	int rv = nng_aio_result(aio);
 	if (done != NULL) URN_DEBUG(done);
+	*ct = nng_aio_count(aio);
+	return rv;
+}
+
+// low level aio operation: recv, wait finished and check status.
+// Use this to recv data if want to reuse aio
+int nngaio_recv_wait_res(nng_stream *stream, nng_aio *aio, nng_iov *iov, size_t *ct, char *start, char *done) {
+	if (start != NULL) URN_DEBUG(start);
+	int rv = 0;
+	// reset iov from start pos
+	if ((rv = nng_aio_set_iov(aio, 1, iov)) != 0)
+		return rv;
+	nng_stream_recv(stream, aio);
+	nng_aio_wait(aio);
+	rv = nng_aio_result(aio);
+	*ct = nng_aio_count(aio);
+	if (done != NULL) URN_LOGF("%s bytes %zu", done, *ct);
+	return rv;
+}
+
+// low level aio operation: recv, wait finished and check status.
+// Use this to send data if want to reuse aio
+int nngaio_send_wait_res(nng_stream *stream, nng_aio *aio, nng_iov *iov, size_t *ct, char *start, char *done) {
+	if (start != NULL) URN_DEBUG(start);
+	int rv = 0;
+	// reset iov from start pos
+	if ((rv = nng_aio_set_iov(aio, 1, iov)) != 0)
+		return rv;
+	nng_stream_send(stream, aio);
+	nng_aio_wait(aio);
+	rv = nng_aio_result(aio);
+	if (done != NULL) URN_DEBUG(done);
+	*ct = nng_aio_count(aio);
 	return rv;
 }
 
@@ -103,10 +153,11 @@ int urn_ws_send_sync(nng_stream *strm, char *s) {
 	nng_iov *iov = NULL;
 
 	int rv = 0;
+	size_t ct = 0; // useless
 	if ((rv = urn_ws_send_async(strm, s, strlen(s), &aio, &iov)) != 0)
 		return rv;
 
-	if ((rv = nngaio_wait_res(aio, NULL, "--> async req wait done")) != 0)
+	if ((rv = nngaio_wait_res(aio, &ct, NULL, "--> async req wait done")) != 0)
 		return rv;
 
 	if (aio != NULL) nng_aio_free(aio);
@@ -126,7 +177,7 @@ int urn_ws_recv_async(nng_stream *strm, char *buf, int maxlen, nng_aio **aiop, n
 	return 0;
 }
 
-int urn_ws_recv_sync(nng_stream *strm, char *buf, int buflen) {
+int urn_ws_recv_sync(nng_stream *strm, char *buf, int buflen, size_t *ct) {
 	nng_aio *aio = NULL;
 	nng_iov *iov = NULL;
 
@@ -134,7 +185,7 @@ int urn_ws_recv_sync(nng_stream *strm, char *buf, int buflen) {
 	if ((rv = urn_ws_recv_async(strm, buf, buflen, &aio, &iov)) != 0)
 		return rv;
 
-	if ((rv = nngaio_wait_res(aio, "<-- async recv wait", "<-- async recv wait done")) != 0)
+	if ((rv = nngaio_wait_res(aio, ct, "<-- async recv wait", "<-- async recv wait done")) != 0)
 		return rv;
 
 	if (aio != NULL) nng_aio_free(aio);

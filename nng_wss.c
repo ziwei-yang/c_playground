@@ -21,8 +21,11 @@ int main(int argc, char **argv) {
 	nng_stream_dialer *dialer = NULL;
 	nng_stream *stream = NULL;
 
-	int recv_buflen = 1024;
+	int recv_buflen = 65536;
 	char recv_buf[recv_buflen];
+	nng_aio *recv_aio = NULL;
+	nng_iov *recv_iov = NULL;
+	size_t recv_bytes = 0;
 
 	if (argc < 2)
 		return URN_FATAL("No URL supplied!", 1);
@@ -43,10 +46,16 @@ int main(int argc, char **argv) {
 //	if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
 //		return URN_FATAL_NNG(rv);
 
+	// Reuse iov buffer and aio to receive data.
+	if ((rv = nngaio_init(recv_buf, recv_buflen, &recv_aio, &recv_iov)) != 0)
+		return URN_FATAL_NNG(rv);
+	URN_DEBUG("Recv aio and iov ready");
+
 	while(1) {
-		if ((rv = urn_ws_recv_sync(stream, recv_buf, recv_buflen)) != 0)
-			return URN_FATAL_NNG(rv);
-		URN_DEBUG(recv_buf);
+		if ((rv = nngaio_recv_wait_res(stream, recv_aio, recv_iov, &recv_bytes, "<-- async recv wait", "<-- async recv wait done")) != 0)
+			return rv;
+		// only 0..recv_bytes is message received this time.
+		URN_LOGF("%zu %.*s", recv_bytes, (int)recv_bytes, recv_buf);
 	}
 
 	return 0;
