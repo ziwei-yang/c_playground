@@ -1,34 +1,7 @@
 #ifndef URANUS_WSS
 #define URANUS_WSS
 
-#define URN_FATAL(msg, ret) fprintf (stderr, "%s:%d %s(): FATAL %s\n", __FILE__, __LINE__, __FUNCTION__,  msg), exit(ret), ret;
-#define URN_FATAL_NNG(ret)  fprintf (stderr, "%s:%d %s(): FATAL %s\n", __FILE__, __LINE__, __FUNCTION__,  nng_strerror(ret)), exit(ret), ret;
-
-struct timeval urn_global_tv;
-char   urn_global_log_buf[65536];
-
-#define URN_DEBUG(msg) gettimeofday(&urn_global_tv, NULL), \
-	fprintf (stdout, "DBG %02lu:%02lu:%02lu.%06u %16s:%-4d: %s\n", \
-			(urn_global_tv.tv_sec % 86400)/3600, \
-			(urn_global_tv.tv_sec % 3600)/60, \
-			(urn_global_tv.tv_sec % 60), \
-			urn_global_tv.tv_usec, \
-			__FILE__, __LINE__, msg);
-#define URN_LOG(msg) gettimeofday(&urn_global_tv, NULL), \
-	fprintf (stdout, "LOG %02lu:%02lu:%02lu.%06u %16s:%-4d: %s\n", \
-			(urn_global_tv.tv_sec % 86400)/3600, \
-			(urn_global_tv.tv_sec % 3600)/60, \
-			(urn_global_tv.tv_sec % 60), \
-			urn_global_tv.tv_usec, \
-			__FILE__, __LINE__, msg);
-#define URN_LOGF(...) sprintf(urn_global_log_buf, __VA_ARGS__), \
-	gettimeofday(&urn_global_tv, NULL), \
-	fprintf (stdout, "LOG %02lu:%02lu:%02lu.%06u %16s:%-4d: %s\n", \
-			(urn_global_tv.tv_sec % 86400)/3600, \
-			(urn_global_tv.tv_sec % 3600)/60, \
-			(urn_global_tv.tv_sec % 60), \
-			urn_global_tv.tv_usec, \
-			__FILE__, __LINE__, urn_global_log_buf);
+#include "urn.c"
 
 // low level aio operation: wait finished and check status.
 int nngaio_wait_res(nng_aio *aio, size_t *ct, char *start, char *done) {
