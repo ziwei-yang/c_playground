@@ -1,7 +1,7 @@
 #ifndef URANUS_WSS
 #define URANUS_WSS
 
-#include "urn.c"
+#include "urn.h"
 
 #include <nng/nng.h>
 #include <nng/supplemental/http/http.h>

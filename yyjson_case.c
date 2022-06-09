@@ -2,8 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <glib.h>
-#include <time.h>
-#include <sys/time.h>
 
 #include "urn.c"
 #include "wss.c"

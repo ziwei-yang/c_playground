@@ -4,6 +4,10 @@
 #include <time.h>
 #include <sys/time.h>
 
+//////////////////////////////////////////
+// Terminal color control. ///////////////
+//////////////////////////////////////////
+
 #define CLR_RST           "\033[0m"
 #define CLR_BOLD          "\033[01m"
 #define CLR_DISABLE       "\033[02m"
@@ -39,6 +43,14 @@
 #define CLR_BGCYAN    "\033[46m"
 #define CLR_BGWHITE   "\033[47m"
 
+//////////////////////////////////////////
+// Fatal printing and exit.
+//////////////////////////////////////////
+
+#define URN_ERRRET(msg, ret) fprintf (\
+		stderr, "%s:%d %s(): ERROR %s code %d\n", \
+		__FILE__, __LINE__, __FUNCTION__, \
+		msg, ret), ret;
 #define URN_FATAL(msg, ret) fprintf (\
 		stderr, "%s:%d %s(): FATAL %s\nexit %d\n", \
 		__FILE__, __LINE__, __FUNCTION__, \
@@ -49,6 +61,10 @@
 		__FILE__, __LINE__, __FUNCTION__, \
 		nng_strerror(ret), ret), \
 		exit(ret), ret;
+
+//////////////////////////////////////////
+// Log, debug and colored printing.
+//////////////////////////////////////////
 
 struct timeval urn_global_tv;
 char   urn_global_log_buf[65536];
@@ -65,13 +81,15 @@ char   urn_global_log_buf[65536];
 #define URN_DEBUG(msg) URN_PRINT_WRAP(stdout, "", msg, "")
 #define URN_LOG(msg) URN_PRINT_WRAP(stdout, "", msg, "")
 #define URN_INFO(msg) URN_PRINT_WRAP(stdout, CLR_BLUE, msg, CLR_RST)
-#define URN_WARN(msg) URN_PRINT_WRAP(stdout, CLR_WARN, msg, CLR_RST)
+#define URN_WARN(msg) URN_PRINT_WRAP(stdout, CLR_RED, msg, CLR_RST)
 #define URN_ERR(msg) URN_PRINT_WRAP(stderr, "", msg, "")
 
 #define URN_LOG_UNDERLINE(msg)      URN_PRINT_WRAP(stdout, "\033[04m", msg, "\033[0m")
 #define URN_LOG_REVERSECOLOR(msg)   URN_PRINT_WRAP(stdout, "\033[07m", msg, "\033[0m")
 
-#define URN_LOG_C(color, msg)   URN_PRINT_WRAP(stdout, CLR_##color, msg, CLR_RST)
+#define URN_LOG_C(color, msg)    URN_PRINT_WRAP(stdout, CLR_##color, msg, CLR_RST)
+#define URN_LOGF_C(color, ...)   sprintf(urn_global_log_buf, __VA_ARGS__), \
+	URN_PRINT_WRAP(stdout, CLR_##color, urn_global_log_buf, CLR_RST)
 
 #define URN_DEBUGF(...) sprintf(urn_global_log_buf, __VA_ARGS__), \
 	URN_DEBUG(urn_global_log_buf);
@@ -81,7 +99,22 @@ char   urn_global_log_buf[65536];
 	URN_INFO(urn_global_log_buf);
 #define URN_WARNF(...) sprintf(urn_global_log_buf, __VA_ARGS__), \
 	URN_WARN(urn_global_log_buf);
+#define URN_ERRF(...) sprintf(urn_global_log_buf, __VA_ARGS__), \
+	URN_ERR(urn_global_log_buf);
+
+//////////////////////////////////////////
+// MIN, MAX and others.
+//////////////////////////////////////////
 
 #define URN_MIN(a, b) (((a) < (b)) ? (a) : (b))
+
+//////////////////////////////////////////
+// Common function option
+//////////////////////////////////////////
+typedef struct urn_func_opt {
+	_Bool allow_fail; /* okay to fail */
+	_Bool verbose; /* more verbosed output */
+	_Bool silent; /* keep no output */
+} urn_func_opt;
 
 #endif
