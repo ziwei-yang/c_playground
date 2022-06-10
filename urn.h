@@ -117,4 +117,29 @@ typedef struct urn_func_opt {
 	_Bool silent; /* keep no output */
 } urn_func_opt;
 
+//////////////////////////////////////////
+// Enhanced String struct
+//////////////////////////////////////////
+
+//// substring of origin
+//typedef struct urn_s {
+//	// char   *origin; /* known of original string address, could be same as s */
+//	char   *s; /* string start address */
+//	size_t l;  /* length without \0 */
+//} urn_s;
+//
+//void urn_s_cp(char *dest, urn_s s) {
+//	memcpy(dest, s.s, s.l);
+//	*(dest+s.l) = '\0';
+//}
+//
+//#define urn_substr(orig, from, to) {.s=(orig+from), .l=(to-from)}
+//int urn_substr_alloc(urn_s **sp, char *orig, size_t from, size_t to) {
+//	*sp = malloc(sizeof(urn_s));
+//	if ((*sp) == NULL) return ENOMEM;
+//	(*sp)->s = orig+from;
+//	(*sp)->l = to-from;
+//	return 0;
+//}
+
 #endif

@@ -1,3 +1,7 @@
+#!/bin/bash --login
+SOURCE="${BASH_SOURCE[0]}"
+DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+
 os=$( uname )
 [[ $os != 'Darwin' ]] && echo "build.sh for macos only"
 

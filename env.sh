@@ -1,0 +1,1 @@
+export REDIS_PSWD='PtgpJDKr7HeuzKuSDsmmHSPVJue8wWaLPA'

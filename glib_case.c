@@ -16,5 +16,19 @@ int main() {
 	printf("ret  %d\n", ret);
 	printf("clen %lu\n", clen);
 	DEBUG(*content_addr);
+
+	char *s = "AB-CD@EF";
+	GString *gs = g_string_new_len(s, strlen(s));
+	printf("GString s %s\n", gs->str);
+	char **segs = g_strsplit(gs->str, "-", 3);
+	printf("split seg[0] %s\n", segs[0]);
+	printf("split seg[1] %s\n", segs[1]);
+	printf("split seg[2] %s\n", segs[2]);
+
+	GArray *garray = g_array_sized_new(1, 1, 10, 5);
+	g_array_append_val(garray, "X");
+	g_array_append_val(garray, "B");
+	g_array_append_val(garray, "D");
+	g_array_append_val(garray, "A");
 	return 0;
 }

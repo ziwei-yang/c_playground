@@ -4,7 +4,7 @@ DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
 os=$( uname )
 HOMEBREW=
-[ -d /usr/local/Cellar ] && HOMEBREW=/usr/local/Cellar # macos 11.6+
+[ -d /usr/local/Cellar ] && HOMEBREW=/usr/local/Cellar # macos 11
 [ -d /opt/homebrew/Cellar ] && HOMEBREW=/opt/homebrew/Cellar # macos 12+
 
 # compile NNG 1.5.2 at $HOME/Proj/nng/
