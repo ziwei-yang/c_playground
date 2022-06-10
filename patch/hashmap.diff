@@ -1,0 +1,143 @@
+diff --git a/map.c b/map.c
+index 744af9c..ad6a2ee 100644
+--- a/map.c
++++ b/map.c
+@@ -4,12 +4,12 @@
+ //  Created by Mashpoe on 1/15/21.
+ //
+ 
+-#include "map.h"
++//#include "map.h"
+ #include <stdlib.h>
+ #include <string.h>
+ //#include <stdio.h>
+ 
+-#define HASHMAP_DEFAULT_CAPACITY 20
++//#define HASHMAP_DEFAULT_CAPACITY 20
+ #define HASHMAP_MAX_LOAD 0.75f
+ #define HASHMAP_RESIZE_FACTOR 2
+ 
+@@ -43,17 +43,17 @@ struct hashmap
+ 	struct bucket* last;
+ };
+ 
+-hashmap* hashmap_create(void)
++hashmap* hashmap_create(int size)
+ {
+ 	hashmap* m = malloc(sizeof(hashmap));
+-	m->capacity = HASHMAP_DEFAULT_CAPACITY;
++	m->capacity = size;
+ 	m->count = 0;
+ 	
+ 	#ifdef __HASHMAP_REMOVABLE
+ 	m->tombstone_count = 0;
+ 	#endif
+ 
+-	m->buckets = calloc(HASHMAP_DEFAULT_CAPACITY, sizeof(struct bucket));
++	m->buckets = calloc(size, sizeof(struct bucket));
+ 	m->first = NULL;
+ 
+ 	// this prevents branching in hashmap_set.
+@@ -352,13 +352,36 @@ int hashmap_size(hashmap* m)
+ 	#endif
+ }
+ 
++/**
++ Macro for iterating over an hashmap.
++ It works like iterator, but with a more intuitive API.
++ 
++ @par Example
++ @code
++    size_t idx, klen;
++    char *key;
++    void *val;
++    urn_hmap_foreach(hmap, idx, key, klen, val) {
++        your_func(key, klen, val);
++    }
++ @endcode
++ */
++#define hashmap_foreach(hmap, idx, key, klen, val) \
++	struct bucket *__hmap_bkt = hmap->first; \
++	if (__hmap_bkt != NULL) \
++	for (idx=0, key=__hmap_bkt->key, klen=__hmap_bkt->ksize, val=(void *)(__hmap_bkt->value); \
++			__hmap_bkt != NULL; \
++			idx+=(__hmap_bkt==NULL?0:1),__hmap_bkt=__hmap_bkt->next, key=__hmap_bkt==NULL?NULL:__hmap_bkt->key, klen=__hmap_bkt==NULL?-1:__hmap_bkt->ksize, val=__hmap_bkt==NULL?NULL:(void *)(__hmap_bkt->value)) \
++			if (key != NULL) 
++
++/**
+ void hashmap_iterate(hashmap* m, hashmap_callback c, void* user_ptr)
+ {
+ 	// loop through the linked list of valid entries
+ 	// this way we can skip over empty buckets
+ 	struct bucket* current = m->first;
+ 	
+-	int co = 0;
++//	int co = 0;
+ 
+ 	while (current != NULL)
+ 	{
+@@ -370,14 +393,15 @@ void hashmap_iterate(hashmap* m, hashmap_callback c, void* user_ptr)
+ 		
+ 		current = current->next;
+ 
+-		if (co > 1000)
+-		{
+-			break;
+-		}
+-		co++;
++//		if (co > 1000)
++//		{
++//			break; // why do this?
++//		}
++//		co++;
+ 
+ 	}
+ }
++**/
+ 
+ /*void bucket_dump(hashmap* m)
+ {
+@@ -401,4 +425,4 @@ void hashmap_iterate(hashmap* m, hashmap_callback c, void* user_ptr)
+ 	}
+ 	printf("\n");
+ 	fflush(stdout);
+-}*/
+\ No newline at end of file
++}*/
+diff --git a/map.h b/map.h
+index ac52377..bc0164b 100644
+--- a/map.h
++++ b/map.h
+@@ -12,7 +12,7 @@
+ 
+ // removal of map elements is disabled by default because of its slight overhead.
+ // if you want to enable this feature, uncomment the line below:
+-//#define __HASHMAP_REMOVABLE
++#define __HASHMAP_REMOVABLE
+ 
+ #include <stdint.h>
+ #include <stdbool.h>
+@@ -26,7 +26,7 @@ typedef struct hashmap hashmap;
+ // `usr` is a user pointer which can be passed through `hashmap_iterate`.
+ typedef void (*hashmap_callback)(void *key, size_t ksize, uintptr_t value, void *usr);
+ 
+-hashmap* hashmap_create(void);
++hashmap* hashmap_create(int size);
+ 
+ // only frees the hashmap object and buckets.
+ // does not call free on each element's `key` or `value`.
+@@ -65,11 +65,11 @@ int hashmap_size(hashmap* map);
+ // iterate over the map, calling `c` on every element.
+ // goes through elements in the order they were added.
+ // the element's key, key size, value, and `usr` will be passed to `c`.
+-void hashmap_iterate(hashmap* map, hashmap_callback c, void* usr);
++//void hashmap_iterate(hashmap* map, hashmap_callback c, void* usr);
+ 
+ // dumps bucket info for debugging.
+ // allows you to see how many collisions you are getting.
+ // `0` is an empty bucket, `1` is occupied, and `x` is removed.
+ //void bucket_dump(hashmap *m);
+ 
+-#endif // map_h
+\ No newline at end of file
++#endif // map_h

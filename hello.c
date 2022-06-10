@@ -60,8 +60,24 @@ int array_test() {
 	return 0;
 }
 
+int str_test() {
+	char *s = "abcde";
+	printf("s    : %s\n", s);
+	printf("len  : %lu\n", strlen(s));
+	return 0;
+}
+
+int for_test() {
+	printf("forloop test\n");
+	for (int i=0; i<-1; i++)
+		printf("for i %d\n", i);
+	return 0;
+}
+
 int main() {
 	f_test();
+	str_test();
+	for_test();
 	// EPRINT("something wrong");
 	// array_test();
 }

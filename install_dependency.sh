@@ -84,3 +84,23 @@ elif [[ $os == Darwin ]] && [[ ! -f /opt/homebrew/Cellar/hiredis/1.0.2/include/h
 else
 	echo "hiredis.h checked"
 fi
+
+# c-hashmap -> 3rd/map
+if [ ! -f $DIR/3rd/map.h ]; then
+	wget -O $DIR/3rd/map.h 'https://github.com/Mashpoe/c-hashmap/raw/main/map.h'
+fi
+if [ ! -f $DIR/3rd/map.h ]; then
+	echo "Downloading 3rd/map.h failed"
+	exit 1
+else
+	echo "3rd/map.h checked"
+fi
+if [ ! -f $DIR/3rd/map.c ]; then
+	wget -O $DIR/3rd/map.c 'https://github.com/Mashpoe/c-hashmap/raw/main/map.c'
+fi
+if [ ! -f $DIR/3rd/map.c ]; then
+	echo "Downloading 3rd/map.c failed"
+	exit 1
+else
+	echo "3rd/map.c checked"
+fi
