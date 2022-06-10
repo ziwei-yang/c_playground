@@ -3,8 +3,8 @@
 #include <string.h>
 #include <glib.h>
 
-#include "urn.c"
-#include "wss.c"
+#include "urn.h"
+#include "wss.h"
 
 int main(int argc, char **argv) {
 	int rv = 0;

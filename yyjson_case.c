@@ -3,8 +3,8 @@
 #include <string.h>
 #include <glib.h>
 
-#include "urn.c"
-#include "wss.c"
+#include "urn.h"
+#include "wss.h"
 
 #include "yyjson.h"
 #include "yyjson.c"
