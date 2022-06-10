@@ -3,23 +3,32 @@ SOURCE="${BASH_SOURCE[0]}"
 DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
 os=$( uname )
+HOMEBREW=
+[ -d /usr/local/Cellar ] && HOMEBREW=/usr/local/Cellar # macos 11.6+
+[ -d /opt/homebrew/Cellar ] && HOMEBREW=/opt/homebrew/Cellar # macos 12+
 
-# NNG 1.5.2
+# compile NNG 1.5.2 at $HOME/Proj/nng/
+cd $DIR
 if [ ! -f $HOME/install/include/nng/nng.h ]; then
-	if [ ! -d $HOME/Proj/nng ]; then
-		echo "get nng 1.5.2 into $HOME/Proj/nng first"
-		exit 1
-	fi
+	cd $HOME/Proj/
+	rm -rf $HOME/Proj/nng
+	wget -O nng1.5.2.tar.gz 'https://github.com/nanomsg/nng/archive/refs/tags/v1.5.2.tar.gz' && \
+		tar xf nng1.5.2.tar.gz && \
+		mv nng-1.5.2 $HOME/Proj/nng && \
+		rm nng1.5.2.tar.gz
+
+	echo "Building nng1.5.2"
 	cd $HOME/Proj/nng/
 	rm -rf build
 	mkdir build
 	cd build
 
 	# For NNG v1.5.2.tar.gz on macos m1
-	[[ $os == Darwin ]] && brew install mbedTLS
+	[[ $os == Darwin ]] && brew install cmake mbedTLS
 	[[ $os == Linux ]] && echo sudo apt install libmbedtls-dev && sudo apt install libmbedtls-dev
 
-	cmake -DNNG_ENABLE_TLS=ON --install-prefix=$HOME/install  .. && \
+	echo cmake -DNNG_ENABLE_TLS=ON --install-prefix=$HOME/install .. 
+	cmake -DNNG_ENABLE_TLS=ON --install-prefix=$HOME/install .. && \
 		make && \
 		make install
 fi
@@ -30,9 +39,9 @@ else
 	echo "nng.h checked"
 fi
 
-# JSMN
+# JSMN: get jsmn.h
+cd $DIR
 if [ ! -f $DIR/jsmn.h ]; then
-	cd $DIR
 	rm -rf $DIR/jsmn
 	git clone https://github.com/zserge/jsmn.git
 	cp -v $DIR/jsmn/jsmn.h $DIR/
@@ -45,9 +54,9 @@ else
 	echo "jsmn.h checked"
 fi
 
-# YYJSON
+# YYJSON: get yyjson.h yyjson.c
+cd $DIR
 if [ ! -f $DIR/yyjson.h ]; then
-	cd $DIR
 	wget -O yyjson.tar.gz https://github.com/ibireme/yyjson/archive/refs/tags/0.5.0.tar.gz
 	tar xf yyjson.tar.gz
 	cp -rv yyjson-0.5.0/src/yyjson.* ./
@@ -60,9 +69,10 @@ else
 	echo "yyjson.h checked"
 fi
 
-# hiredis
+# hiredis: brew install hiredis 1.0.2+
+cd $DIR
 [[ $os == Darwin ]] && \
-	[ ! -f /opt/homebrew/Cellar/hiredis/1.0.2/include/hiredis/hiredis.h ] && \
+	[ ! -f $HOMEBREW/hiredis/1.0.2/include/hiredis/hiredis.h ] && \
 	brew install hiredis
 [[ $os == Linux ]] && [ ! -f $HOME/install/include/hiredis/hiredis.h ] && (
 	if [ ! -d $HOME/Proj/hiredis-1.0.2 ]; then
@@ -74,33 +84,42 @@ fi
 
 	make && make install
 )
-
 if [[ $os == Linux ]] && [[ ! -f $HOME/install/include/hiredis/hiredis.h ]]; then
 	echo "hiredis build failed"
 	exit 1
-elif [[ $os == Darwin ]] && [[ ! -f /opt/homebrew/Cellar/hiredis/1.0.2/include/hiredis/hiredis.h ]]; then
+elif [[ $os == Darwin ]] && [[ ! -f $HOMEBREW/hiredis/1.0.2/include/hiredis/hiredis.h ]]; then
 	echo "brew install hiredis failed"
 	exit 1
 else
 	echo "hiredis.h checked"
 fi
 
-# c-hashmap -> 3rd/map
-if [ ! -f $DIR/3rd/map.h ]; then
-	wget -O $DIR/3rd/map.h 'https://github.com/Mashpoe/c-hashmap/raw/main/map.h'
+# clone c-hashmap -> git patch -> 3rd/map
+cd $DIR
+if [[ ! -f $DIR/3rd/map.h || ! -f $DIR/3rd/map.c ]]; then
+	cd $HOME/Proj
+	rmdir c-hashmap && mkdir c-hashmap
+	cd c-hashmap
+	wget -O map.h 'https://github.com/Mashpoe/c-hashmap/raw/main/map.h'
+	wget -O map.c 'https://github.com/Mashpoe/c-hashmap/raw/main/map.c'
+	if [[ ! -f ./map.c || ! -f ./map.h ]]; then
+		echo "Downloading map.c map.h failed"
+		exit 1
+	fi
+	git init
+	git add map.*
+	git commit -m 'first commit'
+	git apply $DIR/patch/hashmap.diff
+	if [[ $? != 0 ]]; then
+		echo "Apply patch/hashmap.diff to Proj/c-hashmap failed"
+		exit 1
+	fi
+	mkdir -p $DIR/3rd
+	cp -v ./map.* $DIR/3rd
 fi
-if [ ! -f $DIR/3rd/map.h ]; then
-	echo "Downloading 3rd/map.h failed"
+if [[ ! -f $DIR/3rd/map.h || ! -f $DIR/3rd/map.c ]]; then
+	echo "3rd/map.c 3rd/map.h not found"
 	exit 1
 else
-	echo "3rd/map.h checked"
-fi
-if [ ! -f $DIR/3rd/map.c ]; then
-	wget -O $DIR/3rd/map.c 'https://github.com/Mashpoe/c-hashmap/raw/main/map.c'
-fi
-if [ ! -f $DIR/3rd/map.c ]; then
-	echo "Downloading 3rd/map.c failed"
-	exit 1
-else
-	echo "3rd/map.c checked"
+	echo "3rd/map.c 3rd/map.h checked"
 fi
