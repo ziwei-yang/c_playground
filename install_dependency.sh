@@ -30,7 +30,7 @@ if [ ! -f $HOME/install/include/nng/nng.h ]; then
 	echo cmake -DNNG_ENABLE_TLS=ON --install-prefix=$HOME/install .. 
 	cmake -DNNG_ENABLE_TLS=ON --install-prefix=$HOME/install .. && \
 		make && \
-		make install
+		cmake --install . --prefix $HOME/install # make install does not work with prefix on ubuntu
 fi
 if [ ! -f $HOME/install/include/nng/nng.h ]; then
 	echo "nng build failed"
@@ -77,6 +77,9 @@ cd $DIR
 [[ $os == Linux ]] && [ ! -f $HOME/install/include/hiredis/hiredis.h ] && (
 	if [ ! -d $HOME/Proj/hiredis-1.0.2 ]; then
 		echo "get hiredis-1.0.2 into $HOME/Proj/ first"
+		cd $HOME/Proj
+		wget -O hiredis-1.0.2.tar.gz https://github.com/redis/hiredis/archive/refs/tags/v1.0.2.tar.gz
+		tar xf hiredis-1.0.2.tar.gz && rm hiredis-1.0.2.tar.gz
 		echo "remember to change Makefile: PREFIX?=$HOME/install"
 		exit 1
 	fi
