@@ -16,10 +16,16 @@ for path in $HOMEBREW/mbedtls/* ; do
 done
 
 glib_home=
+glib_lib_home=
 for path in $HOMEBREW/glib/* ; do
 	glib_home=$path
+	glib_lib_home=$path/lib
 	break
 done
+if [[ $os == 'Linux' ]]; then
+	glib_home=/usr
+	glib_lib_home=/usr/lib/x86_64-linux-gnu
+fi
 
 hiredis_home=
 for path in $HOMEBREW/hiredis/* ; do
@@ -28,11 +34,12 @@ for path in $HOMEBREW/hiredis/* ; do
 done
 
 gcc \
+	-I /usr/include \
 	-I /usr/local/include \
 	-I $HOME/install/include \
 	-I $mbedtls_home/include \
 	-I $glib_home/include/glib-2.0 \
-	-I $glib_home/lib/glib-2.0/include/\
+	-I $glib_lib_home/glib-2.0/include/\
 	-I $hiredis_home/include/hiredis \
 	-L /usr/local/lib \
 	-L $HOME/install/lib \
