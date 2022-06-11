@@ -30,4 +30,50 @@
 #define urn_hmap_foreach(hmap, idx, key, klen, val) \
 	hashmap_foreach(hmap, idx, key, klen, val)
 
+void urn_hmap_print(hashmap *hmap, char *title) {
+	size_t idx, klen;
+	char *key;
+	void *val;
+	URN_LOGF("hmap foreach " URN_BLUE("%s"), title);
+	urn_hmap_foreach(hmap, idx, key, klen, val) {
+		URN_LOGF("\t%4zu " URN_BLUE("%s") " len(%zu)-> %lu -> " URN_BLUE("%s"),
+				idx, key, klen, 
+				(unsigned long)val, (char*)val);
+	}
+	URN_LOGF("         end %s", title);
+}
+
+#define urn_hmap_free(hmap) hashmap_free(hmap);
+
+void urn_hmap_free_with_keys(hashmap *hmap) {
+	size_t idx, klen;
+	char *key;
+	void *val;
+	urn_hmap_foreach(hmap, idx, key, klen, val) {
+		free(key);
+	}
+	hashmap_free(hmap);
+}
+
+void urn_hmap_free_with_vals(hashmap *hmap, urn_ptr_cb free_cb) {
+	size_t idx, klen;
+	char *key;
+	void *val;
+	urn_hmap_foreach(hmap, idx, key, klen, val) {
+		free_cb(val);
+	}
+	hashmap_free(hmap);
+}
+
+void urn_hmap_free_with_keyvals(hashmap *hmap, urn_ptr_cb free_cb) {
+	size_t idx, klen;
+	char *key;
+	void *val;
+	urn_hmap_foreach(hmap, idx, key, klen, val) {
+		free(key);
+		free_cb(val);
+	}
+	hashmap_free(hmap);
+}
+
 #endif

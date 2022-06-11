@@ -41,5 +41,25 @@ int main(int argc, char **argv) {
 		yyjson_val *sub_val2 = unsafe_yyjson_get_next(sub_val1);
 		printf("buy %d/%d: %s %s\n", (int)b_idx, (int)b_max, sub_val1->uni.str, sub_val2->uni.str);
 	}
+
+	const char *byb_chns[20]; // both depth and trade
+	byb_chns[0] = "chn0";
+	byb_chns[1] = "chn1";
+	size_t chn_ct = 2;
+
+	yyjson_mut_doc *wss_req_j;
+	wss_req_j = yyjson_mut_doc_new(NULL);
+	yyjson_mut_val *jroot = yyjson_mut_obj(wss_req_j);
+	yyjson_mut_doc_set_root(wss_req_j, jroot);
+	yyjson_mut_obj_add_str(wss_req_j, jroot, "op", "subscribe");
+
+	yyjson_mut_val *target_chns = yyjson_mut_arr_with_strcpy(wss_req_j, byb_chns, chn_ct);
+	yyjson_mut_obj_add_val(wss_req_j, jroot, "target", target_chns);
+
+	char *json = yyjson_mut_write(wss_req_j, YYJSON_WRITE_PRETTY, NULL);
+	printf("JSON:%s\n", json);
+	free(json);
+
+	URN_INFO("END");
 }
 

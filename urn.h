@@ -43,6 +43,12 @@
 #define CLR_BGCYAN    "\033[46m"
 #define CLR_BGWHITE   "\033[47m"
 
+// s must be literal string
+#define URN_CLR(color,s) CLR_##color s CLR_RST
+#define URN_BLUE(s)   CLR_BLUE  s CLR_RST
+#define URN_RED(s)    CLR_RED   s CLR_RST
+#define URN_GREEN(s)  CLR_GREEN s CLR_RST
+
 //////////////////////////////////////////
 // Fatal printing and exit.
 //////////////////////////////////////////
@@ -116,6 +122,8 @@ typedef struct urn_func_opt {
 	_Bool verbose; /* more verbosed output */
 	_Bool silent; /* keep no output */
 } urn_func_opt;
+
+typedef void (*urn_ptr_cb)(void *p);
 
 //////////////////////////////////////////
 // Enhanced String struct

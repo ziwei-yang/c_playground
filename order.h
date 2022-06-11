@@ -5,10 +5,10 @@
 #include <glib.h>
 
 typedef struct urn_pair {
+	gchar *name; // name str at first for printf directly.
 	gchar *currency;
 	gchar *asset;
 	gchar *expiry;
-	gchar *name;
 } urn_pair;
 
 void urn_pair_print(urn_pair pair) {
