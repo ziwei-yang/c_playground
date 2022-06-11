@@ -32,6 +32,9 @@ for path in $HOMEBREW/hiredis/* ; do
 	hiredis_home=$path
 	break
 done
+if [[ $os == 'Linux' ]]; then
+	hiredis_home=$HOME/install
+fi
 
 gcc \
 	-I /usr/include \
@@ -39,7 +42,7 @@ gcc \
 	-I $HOME/install/include \
 	-I $mbedtls_home/include \
 	-I $glib_home/include/glib-2.0 \
-	-I $glib_lib_home/glib-2.0/include/\
+	-I $glib_lib_home/glib-2.0/include \
 	-I $hiredis_home/include/hiredis \
 	-L /usr/local/lib \
 	-L $HOME/install/lib \

@@ -3,6 +3,7 @@
 
 #include <time.h>
 #include <sys/time.h>
+#include <errno.h>
 
 //////////////////////////////////////////
 // Terminal color control. ///////////////
@@ -74,7 +75,7 @@
 
 struct timeval urn_global_tv;
 char   urn_global_log_buf[65536];
-
+#if __APPLE__
 #define URN_PRINT_WRAP(pipe, pre, msg, tail) gettimeofday(&urn_global_tv, NULL), \
 	fprintf (pipe, "%s%02lu:%02lu:%02lu.%06u %12.12s:%-4d: %s%s\n", \
 			pre, \
@@ -83,6 +84,25 @@ char   urn_global_log_buf[65536];
 			(urn_global_tv.tv_sec % 60), \
 			urn_global_tv.tv_usec, \
 			__FILE__, __LINE__, msg, tail);
+#elif __linux__
+#define URN_PRINT_WRAP(pipe, pre, msg, tail) gettimeofday(&urn_global_tv, NULL), \
+	fprintf (pipe, "%s%02lu:%02lu:%02lu.%06ld %12.12s:%-4d: %s%s\n", \
+			pre, \
+			(urn_global_tv.tv_sec % 86400)/3600, \
+			(urn_global_tv.tv_sec % 3600)/60, \
+			(urn_global_tv.tv_sec % 60), \
+			urn_global_tv.tv_usec, \
+			__FILE__, __LINE__, msg, tail);
+#else
+#define URN_PRINT_WRAP(pipe, pre, msg, tail) gettimeofday(&urn_global_tv, NULL), \
+	fprintf (pipe, "%s%02lu:%02lu:%02lu.%06u %12.12s:%-4d: %s%s\n", \
+			pre, \
+			(urn_global_tv.tv_sec % 86400)/3600, \
+			(urn_global_tv.tv_sec % 3600)/60, \
+			(urn_global_tv.tv_sec % 60), \
+			urn_global_tv.tv_usec, \
+			__FILE__, __LINE__, msg, tail);
+#endif
 
 #define URN_DEBUG(msg) URN_PRINT_WRAP(stdout, "", msg, "")
 #define URN_LOG(msg) URN_PRINT_WRAP(stdout, "", msg, "")

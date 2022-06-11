@@ -74,7 +74,7 @@ cd $DIR
 [[ $os == Darwin ]] && \
 	[ ! -f $HOMEBREW/hiredis/1.0.2/include/hiredis/hiredis.h ] && \
 	brew install hiredis
-[[ $os == Linux ]] && [ ! -f $HOME/install/include/hiredis/hiredis.h ] && (
+[[ $os == Linux ]] && [ ! -f $HOME/install/lib/libhiredis.so ] && (
 	if [ ! -d $HOME/Proj/hiredis-1.0.2 ]; then
 		echo "get hiredis-1.0.2 into $HOME/Proj/ first"
 		cd $HOME/Proj
@@ -85,9 +85,16 @@ cd $DIR
 	fi
 	cd $HOME/Proj/hiredis-1.0.2
 
+	# make install failed in copying files on ubuntu2004
 	make && make install
+	[ ! -f $HOME/install/lib/libhiredis.so ] && cp -v libhiredis.so $HOME/install/lib/
+	[ ! -f $HOME/install/lib/libhiredis.a ] && cp -v libhiredis.a $HOME/install/lib/
+	[ ! -f $HOME/install/lib/pkgconfig/hiredis.pc ] && cp -v hiredis.pc $HOME/install/lib/pkgconfig/
+	# cd $HOME/install/lib
+	# ln -sf libhiredis.so.1.0.0 libhiredis.so
+	cd $DIR
 )
-if [[ $os == Linux ]] && [[ ! -f $HOME/install/include/hiredis/hiredis.h ]]; then
+if [[ $os == Linux ]] && [[ ! -f $HOME/install/lib/libhiredis.so ]]; then
 	echo "hiredis build failed"
 	exit 1
 elif [[ $os == Darwin ]] && [[ ! -f $HOMEBREW/hiredis/1.0.2/include/hiredis/hiredis.h ]]; then
