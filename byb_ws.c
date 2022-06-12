@@ -3,6 +3,10 @@
 #include <string.h>
 #include <glib.h>
 
+#include <mbedtls/mbedtls_config.h>
+#include <nng/nng.h>
+#include <nng/supplemental/tls/tls.h>
+
 #include "yyjson.c"
 
 #include "urn.h"
@@ -25,17 +29,29 @@ int main(int argc, char **argv) {
 	int rv = 0;
 	if ((rv = parse_args_build_idx(argc, argv)) != 0)
 		return URN_FATAL("Error in parse_args_build_idx()", rv);
+
+	URN_INFOF("nng_tls_engine_name %s", nng_tls_engine_name());
+	URN_INFOF("nng_tls_engine_description %s", nng_tls_engine_description());
 	if ((rv = wss_connect()) != 0)
 		return URN_FATAL("Error in wss_connect()", rv);
+
+	// values are upcase_s
+	urn_hmap_free_with_keys(depth_chn_to_pair);
+	urn_hmap_free_with_keys(trade_chn_to_pair);
+	// same key/val in sym_to_pair and pair_to_sym
+	urn_hmap_free_with_keyvals(sym_to_pair, free);
+	urn_hmap_free(pair_to_sym);
+	free(wss_req_s);
+	return 0;
 }
 
 int wss_connect() {
 	int rv = 0;
 //	char *uri = "wss://stream.bybit.com/realtime"; // Bybit Coin M
-	char *uri = "ws://stream.bybit.com/realtime_public"; // Bybit USDT M
+	char *uri = "wss://stream.bybit.com/realtime_public"; // Bybit USDT M
 //	char *uri = "wss://stream.binance.com:9443/ws/btcusdt@depth";
+//	char *uri = "wss://ftx.com/ws/";
 //	char *uri = "ws://localhost:8080/ws";
-	nng_url *url;
 	nng_aio *dialer_aio = NULL;
 	nng_stream_dialer *dialer = NULL;
 	nng_stream *stream = NULL;
@@ -49,9 +65,6 @@ int wss_connect() {
 	nng_iov *recv_iov = NULL;
 	size_t recv_bytes = 0;
 
-	if (((rv = nng_url_parse(&url, uri)) != 0))
-		return URN_FATAL_NNG(rv);
-
 	URN_DEBUG("Init wss conn");
 	if ((rv = urn_ws_init(uri, &dialer, &dialer_aio)) != 0)
 		return URN_FATAL_NNG(rv);
@@ -62,9 +75,9 @@ int wss_connect() {
 	URN_DEBUG("Wss conn stream is ready");
 
 	char *req_s = wss_req_s;
-//	URN_DEBUGF("Sending wss_req_s %lu bytes", strlen(req_s));
-//	if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
-//		return URN_FATAL_NNG(rv);
+	URN_DEBUGF("Sending wss_req_s %lu bytes", strlen(req_s));
+	if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
+		return URN_FATAL_NNG(rv);
 
 	// Reuse iov buffer and aio to receive data.
 	if ((rv = nngaio_init(recv_buf, recv_buflen, &recv_aio, &recv_iov)) != 0)
@@ -151,7 +164,7 @@ int parse_args_build_idx(int argc, char **argv) {
 	urn_hmap_print(pair_to_sym, "pair_to_sym");
 	urn_hmap_print(sym_to_pair, "sym_to_pair");
 	urn_hmap_print(depth_chn_to_pair, "depth_to_pair");
-	urn_hmap_print(trade_chn_to_pair, "depth_to_pair");
+	urn_hmap_print(trade_chn_to_pair, "trade_to_pair");
 
 	URN_LOGF("Generate req json with %d channels", chn_ct);
 	yyjson_mut_doc *wss_req_j = yyjson_mut_doc_new(NULL);
@@ -168,21 +181,13 @@ int parse_args_build_idx(int argc, char **argv) {
 	yyjson_mut_obj_add_val(wss_req_j, jroot, "args", target_chns);
 
 	wss_req_s = yyjson_mut_write(wss_req_j, YYJSON_WRITE_PRETTY, NULL);
-	printf("req str: %s\n", wss_req_s);
+	URN_LOGF("req str: %s", wss_req_s);
 	free(wss_req_s);
 	wss_req_s = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
-	printf("req str: %s\n", wss_req_s);
+	URN_INFOF("req str: %s", wss_req_s);
 	yyjson_mut_doc_free(wss_req_j);
 
 	URN_INFO("Parsing ARGV end");
-
-	// values are upcase_s
-	urn_hmap_free_with_keys(depth_chn_to_pair);
-	urn_hmap_free_with_keys(trade_chn_to_pair);
-	// same key/val in sym_to_pair and pair_to_sym
-	urn_hmap_free_with_keyvals(sym_to_pair, free);
-	urn_hmap_free(pair_to_sym);
-	free(wss_req_s);
 	return 0;
 }
 

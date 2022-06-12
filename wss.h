@@ -87,6 +87,10 @@ int nngaio_init(char *s, int slen, nng_aio **aiop, nng_iov **iovp) {
 int urn_ws_init(char *uri, nng_stream_dialer **d, nng_aio **daio) {
 	int rv = 0;
 
+	nng_url *url;
+	if (((rv = nng_url_parse(&url, uri)) != 0))
+		return URN_FATAL_NNG(rv);
+
 	if ((rv = nng_stream_dialer_alloc(d, uri)) != 0 ||
 			(rv = nng_stream_dialer_set_bool(*d, NNG_OPT_WS_SEND_TEXT, true)) != 0 ||
 			(rv = nng_stream_dialer_set_bool(*d, NNG_OPT_WS_RECV_TEXT, true)) != 0 ||
@@ -99,6 +103,9 @@ int urn_ws_init(char *uri, nng_stream_dialer **d, nng_aio **daio) {
 				((rv = nng_tls_config_auth_mode(tls_cfg, NNG_TLS_AUTH_MODE_NONE)) != 0) ||
 				((rv = nng_stream_dialer_set_ptr(*d, NNG_OPT_TLS_CONFIG, tls_cfg)) != 0))
 			return rv;
+		// set server name for wolfssl add SNI extension in TLS handshake
+		// Need for Bybit and FTX
+		nng_tls_config_server_name(tls_cfg, url->u_hostname);
 	}
 	// asynchronously establish conn
 	nng_stream_dialer_dial(*d, *daio);
