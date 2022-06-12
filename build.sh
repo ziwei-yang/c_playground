@@ -9,7 +9,7 @@ HOMEBREW=
 [ -d /usr/local/Cellar ] && HOMEBREW=/usr/local/Cellar # macos 11.6+
 [ -d /opt/homebrew/Cellar ] && HOMEBREW=/opt/homebrew/Cellar # macos 12+
 
-mbedtls_home=
+mbedtls_home=$HOME/install # Use ~/install if no brew installation
 for path in $HOMEBREW/mbedtls/* ; do
 	mbedtls_home=$path
 	break
@@ -40,14 +40,12 @@ gcc \
 	-I /usr/include \
 	-I /usr/local/include \
 	-I $HOME/install/include \
-	-I $mbedtls_home/include \
 	-I $glib_home/include/glib-2.0 \
 	-I $glib_lib_home/glib-2.0/include \
 	-I $hiredis_home/include/hiredis \
 	-L /usr/local/lib \
 	-L $HOME/install/lib \
-	-L $mbedtls_home/lib \
 	-L $glib_home/lib \
 	-L $hiredis_home/lib \
-	-lnng -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lglib-2.0 -lhiredis \
+	-lnng -lpthread -lwolfssl -lmbedx509 -lmbedcrypto -lglib-2.0 -lhiredis -lwolfssl.o \
 	$@

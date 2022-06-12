@@ -1,0 +1,16 @@
+diff --git a/examples/client/client.c b/examples/client/client.c
+index 3fc2b71..8a42818 100644
+--- a/examples/client/client.c
++++ b/examples/client/client.c
+@@ -3580,6 +3580,11 @@ THREAD_RETURN WOLFSSL_THREAD client_test(void* args)
+ 
+ 
+     tcp_connect(&sockfd, host, port, dtlsUDP, dtlsSCTP, ssl);
++		printf("\t ------------------- enter  here\n");
++		wolfSSL_CTX_UseSNI(ctx, 0, host, strlen(host));
++		printf("\t ------------------- wolfSSL_CTX_UseSNI() with %s\n", host);
++		wolfSSL_UseSNI(ssl, 0, host, strlen(host));
++		printf("\t ------------------- wolfSSL_UseSNI() with %s\n", host);
+     if (wolfSSL_set_fd(ssl, sockfd) != WOLFSSL_SUCCESS) {
+         wolfSSL_free(ssl); ssl = NULL;
+         wolfSSL_CTX_free(ctx); ctx = NULL;

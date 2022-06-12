@@ -1,0 +1,41 @@
+diff --git a/wolfssl.c b/wolfssl.c
+index ab108ce..abea87a 100644
+--- a/wolfssl.c
++++ b/wolfssl.c
+@@ -33,6 +33,9 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
++#ifndef HAVE_SNI
++#define HAVE_SNI
++#endif
+ #include <wolfssl/ssl.h>
+ 
+ #include <nng/nng.h>
+@@ -119,6 +122,11 @@ wolf_conn_init(nng_tls_engine_conn *ec, void *tls, nng_tls_engine_config *cfg)
+ 			return (NNG_ENOMEM);
+ 		}
+ 	}
++	printf("\t patch ------------------- enter wolf_conn_init() with %s\n", cfg->server_name);
++	wolfSSL_CTX_UseSNI(cfg->ctx, 0, cfg->server_name, strlen(cfg->server_name));
++	printf("\t patch ------------------- wolfSSL_CTX_UseSNI() with %s\n", cfg->server_name);
++	wolfSSL_UseSNI(ec->ssl, 0, cfg->server_name, strlen(cfg->server_name));
++	printf("\t patch ------------------- wolfSSL_UseSNI() with %s\n", cfg->server_name);
+ 	wolfSSL_SetIOReadCtx(ec->ssl, ec->tls);
+ 	wolfSSL_SetIOWriteCtx(ec->ssl, ec->tls);
+ 	return (0);
+@@ -281,6 +289,7 @@ wolf_config_server(nng_tls_engine_config *cfg, const char *name)
+ 		nng_strfree(cfg->server_name);
+ 	}
+ 	cfg->server_name = dup;
++
+ 	return (0);
+ }
+ 
+@@ -478,4 +487,4 @@ void
+ nng_tls_engine_fini_wolf(void)
+ {
+ 	(void) wolfSSL_Cleanup();
+-}
+\ No newline at end of file
++}

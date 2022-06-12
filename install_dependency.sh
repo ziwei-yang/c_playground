@@ -7,37 +7,11 @@ HOMEBREW=
 [ -d /usr/local/Cellar ] && HOMEBREW=/usr/local/Cellar # macos 11
 [ -d /opt/homebrew/Cellar ] && HOMEBREW=/opt/homebrew/Cellar # macos 12+
 
-# compile NNG 1.5.2 at $HOME/Proj/nng/
+[[ $os == Darwin ]] && brew install cmake
+[[ $os == Linux ]] && echo sudo apt install cmake && sudo apt install cmake
+
 cd $DIR
-if [ ! -f $HOME/install/include/nng/nng.h ]; then
-	cd $HOME/Proj/
-	rm -rf $HOME/Proj/nng
-	wget -O nng1.5.2.tar.gz 'https://github.com/nanomsg/nng/archive/refs/tags/v1.5.2.tar.gz' && \
-		tar xf nng1.5.2.tar.gz && \
-		mv nng-1.5.2 $HOME/Proj/nng && \
-		rm nng1.5.2.tar.gz
-
-	echo "Building nng1.5.2"
-	cd $HOME/Proj/nng/
-	rm -rf build
-	mkdir build
-	cd build
-
-	# For NNG v1.5.2.tar.gz on macos m1
-	[[ $os == Darwin ]] && brew install cmake mbedTLS
-	[[ $os == Linux ]] && echo sudo apt install libmbedtls-dev && sudo apt install libmbedtls-dev
-
-	echo cmake -DNNG_ENABLE_TLS=ON --install-prefix=$HOME/install .. 
-	cmake -DNNG_ENABLE_TLS=ON --install-prefix=$HOME/install .. && \
-		make && \
-		cmake --install . --prefix $HOME/install # make install does not work with prefix on ubuntu
-fi
-if [ ! -f $HOME/install/include/nng/nng.h ]; then
-	echo "nng build failed"
-	exit 1
-else
-	echo "nng.h checked"
-fi
+source $DIR/install_nng_wolftls.sh
 
 # JSMN: get jsmn.h
 cd $DIR
@@ -116,10 +90,8 @@ if [[ ! -f $DIR/3rd/map.h || ! -f $DIR/3rd/map.c ]]; then
 		echo "Downloading map.c map.h failed"
 		exit 1
 	fi
-	git init
-	git add map.*
-	git commit -m 'first commit'
-	git apply $DIR/patch/hashmap.diff
+	git init && git add map.* && \
+		git apply $DIR/patch/hashmap.diff
 	if [[ $? != 0 ]]; then
 		echo "Apply patch/hashmap.diff to Proj/c-hashmap failed"
 		exit 1
