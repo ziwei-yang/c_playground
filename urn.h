@@ -71,7 +71,12 @@
 
 #define URN_RET_ON_NULL(stmt, emsg, ret) if ((stmt) == NULL) return URN_ERRRET(emsg, ret);
 #define URN_RET_ON_RV(stmt, emsg) if ((rv = (stmt)) != 0) return URN_ERRRET(emsg, rv);
-#define URN_GT_FINAL_ON_RV(stmt, emsg) if ((rv = (stmt)) != 0) { URN_LOG(emsg); goto final; }
+#define URN_RET_IF(stmt, emsg, ret) if (stmt) return URN_ERRRET(emsg, ret);
+#define URN_RET_UNLESS(stmt, emsg, ret) if (!(stmt)) return URN_ERRRET(emsg, ret);
+
+#define URN_GO_FINAL_ON_NULL(stmt, emsg) if ((stmt) == NULL) { URN_LOG(emsg); goto final; }
+#define URN_GO_FINAL_ON_RV(stmt, emsg) if ((rv = (stmt)) != 0) { URN_LOG(emsg); goto final; }
+#define URN_GO_FINAL_IF(stmt, emsg) if (stmt) { URN_LOG(emsg); goto final; }
 
 //////////////////////////////////////////
 // Log, debug and colored printing.
@@ -137,8 +142,8 @@ char   urn_global_log_buf[65536];
 //////////////////////////////////////////
 
 #define URN_MIN(a, b) (((a) < (b)) ? (a) : (b))
-#define URN_RGCAP(a, min, max) ((a<min) ? min : ((a>max) ? max : a))
-#define URN_INTCAP(a) URN_RGCAP(a, INT_MIN, INT_MAX)
+#define _URN_RGCAP(a, min, max) ((a<min) ? min : ((a>max) ? max : a)) // internal use
+#define URN_INTCAP(a) (int)(_URN_RGCAP((long long)(a), (long long)INT_MIN, (long long)INT_MAX))
 
 //////////////////////////////////////////
 // Common function option

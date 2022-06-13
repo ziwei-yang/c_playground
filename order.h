@@ -13,21 +13,49 @@ typedef struct urn_inum urn_inum;
 typedef struct urn_inum {
 	long   intg;
 	size_t frac_ext; // frac_ext = frac * 1e-URN_INUM_PRECISE
+	_Bool  pstv; // when intg is zero, use this for sign.
+	char   s[56]; // description padding 56 + 8 = 64
 } urn_inum;
 #define URN_INUM_PRECISE 14;
-#define URN_INUM_FORMATS "%ld.%014zu"
 
-// return the number of characters printed
-int urn_inum_sprintf(urn_inum *i, char *s) {
-	if (i->frac_ext == 0)
-		return sprintf(s, "%ld", i->intg);
-	return sprintf(s, URN_INUM_FORMATS, i->intg, i->frac_ext);
+// print inum into s (or internal description pointer)
+char *urn_inum_str(urn_inum *i) {
+	char *s = i->s;
+	if (s[0] != '\0') // cached already.
+		return s;
+
+	if (i->frac_ext == 0) {
+		sprintf(s, "%ld", i->intg);
+		return s;
+	}
+
+	int chars = 0;
+	if (i->pstv)
+		chars = sprintf(s, "%ld.%014zu", i->intg, i->frac_ext);
+	else
+		chars = sprintf(s, "-%ld.%014zu", i->intg, i->frac_ext);
+	// Remove 0s in fraction at end
+	while (chars > 0) {
+		if (s[chars-1] == '0') {
+			s[chars-1] = '\0';
+			chars--;
+		} else
+			break;
+	}
+	return s;
 }
 
+// Every inum should be initialized here.
 int urn_inum_parse(urn_inum *i, char *s) {
-	// 123.00456 -> intg=123  frac_s='00456'
+	(i->s)[0] = '\0'; // clear desc
+	int rv = 0;
+	// -0.00456 -> intg=0 intg_s='-0'  frac_s='00456'
+	char intg_s[99];
+	sscanf(s, "%s.", intg_s);
+	i->pstv = (intg_s[0] == '-') ? 0 : 1;
+
 	char frac_s[99];
-	int rv = sscanf(s, "%ld.%s", &(i->intg), frac_s);
+	rv = sscanf(s, "%ld.%s", &(i->intg), frac_s);
 	if (rv == 1) {
 		i->frac_ext = 0;
 		return 0;
@@ -45,25 +73,25 @@ int urn_inum_parse(urn_inum *i, char *s) {
 	frac_padded[padto] = '\0';
 	i->frac_ext = (size_t)(atol(frac_padded));
 
-	// printf("%s = %ld.[%s] = " URN_INUM_FORMATS " ?\n", s, i->intg, frac_padded, i->intg, i->frac_ext);
-	// printf("%s = " URN_INUM_FORMATS " ?\n", s, i->intg, i->frac_ext);
 	return 0;
 }
+
 int urn_inum_cmp(urn_inum *i1, urn_inum *i2) {
 	if (i1 == NULL && i2 == NULL) return 0;
 	if (i1 != NULL && i2 == NULL) return INT_MAX;
 	if (i1 == NULL && i2 != NULL) return INT_MIN;
-	if (i1->intg > 0 && i2->intg > 0) {
+	// URN_LOGF("Compare %s and %s", urn_inum_str(i1), urn_inum_str(i2));
+	if (i1->pstv && i2->pstv) {
 		if (i1->intg != i2->intg)
 			return URN_INTCAP(i1->intg - i2->intg);
 		if (i1->frac_ext != i2->frac_ext)
 			return URN_INTCAP(i1->frac_ext - i2->frac_ext);
 		return 0;
-	} else if (i1->intg > 0 && i2->intg < 0) {
+	} else if (i1->pstv && !(i2->pstv)) {
 		return URN_INTCAP(i1->intg); // divid by 2 incase of overflow.
-	} else if (i1->intg < 0 && i2->intg > 0) {
+	} else if (!(i1->pstv) && i2->pstv) {
 		return URN_INTCAP(0-(i2->intg)); // divid by 2 incase of overflow.
-	} else if ((i1->intg < 0) && (i2->intg < 0)) {
+	} else if (!(i1->pstv) && !(i2->pstv)) {
 		if (i1->intg != i2->intg)
 			return URN_INTCAP(i2->intg - i1->intg);
 		if (i1->frac_ext != i2->frac_ext)
