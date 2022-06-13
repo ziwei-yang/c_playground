@@ -55,19 +55,23 @@
 //////////////////////////////////////////
 
 #define URN_ERRRET(msg, ret) fprintf (\
-		stderr, "%s:%d %s(): ERROR %s code %d\n", \
+		stderr, "%s:%d %s(): ERROR %s return with %d\n", \
 		__FILE__, __LINE__, __FUNCTION__, \
 		msg, ret), ret;
 #define URN_FATAL(msg, ret) fprintf (\
-		stderr, "%s:%d %s(): FATAL %s\nexit %d\n", \
+		stderr, "%s:%d %s(): FATAL %s\nexit with %d\n", \
 		__FILE__, __LINE__, __FUNCTION__, \
 		msg, ret), \
 		exit(ret), ret;
 #define URN_FATAL_NNG(ret)  fprintf (\
-		stderr, "%s:%d %s(): FATAL %s\nexit %d\n", \
+		stderr, "%s:%d %s(): FATAL %s\nexit with %d\n", \
 		__FILE__, __LINE__, __FUNCTION__, \
 		nng_strerror(ret), ret), \
 		exit(ret), ret;
+
+#define URN_RET_ON_NULL(stmt, emsg, ret) if ((stmt) == NULL) return URN_ERRRET(emsg, ret);
+#define URN_RET_ON_RV(stmt, emsg) if ((rv = (stmt)) != 0) return URN_ERRRET(emsg, rv);
+#define URN_GT_FINAL_ON_RV(stmt, emsg) if ((rv = (stmt)) != 0) { URN_LOG(emsg); goto final; }
 
 //////////////////////////////////////////
 // Log, debug and colored printing.
@@ -133,6 +137,8 @@ char   urn_global_log_buf[65536];
 //////////////////////////////////////////
 
 #define URN_MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define URN_RGCAP(a, min, max) ((a<min) ? min : ((a>max) ? max : a))
+#define URN_INTCAP(a) URN_RGCAP(a, INT_MIN, INT_MAX)
 
 //////////////////////////////////////////
 // Common function option

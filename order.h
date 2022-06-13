@@ -4,6 +4,97 @@
 #include <string.h>
 #include <glib.h>
 
+typedef struct urn_pair urn_pair;
+typedef struct urn_inum urn_inum;
+
+//////////////////////////////////////////
+// Market number represent in integer.
+//////////////////////////////////////////
+typedef struct urn_inum {
+	long   intg;
+	size_t frac_ext; // frac_ext = frac * 1e-URN_INUM_PRECISE
+} urn_inum;
+#define URN_INUM_PRECISE 14;
+#define URN_INUM_FORMATS "%ld.%014zu"
+
+// return the number of characters printed
+int urn_inum_sprintf(urn_inum *i, char *s) {
+	if (i->frac_ext == 0)
+		return sprintf(s, "%ld", i->intg);
+	return sprintf(s, URN_INUM_FORMATS, i->intg, i->frac_ext);
+}
+
+int urn_inum_parse(urn_inum *i, char *s) {
+	// 123.00456 -> intg=123  frac_s='00456'
+	char frac_s[99];
+	int rv = sscanf(s, "%ld.%s", &(i->intg), frac_s);
+	if (rv == 1) {
+		i->frac_ext = 0;
+		return 0;
+	} else if (rv != 2)
+		return EINVAL;
+
+	// right pading '00456' 
+	// -> rpad(URN_INUM_PRECISE) '00456000000000'
+	// -> to unsigned long
+	int padto = URN_INUM_PRECISE;
+	char frac_padded[padto+1];
+	int cp_ct = URN_MIN(padto, strlen(frac_s));
+	for (int p = 0; p < padto; p++)
+		frac_padded[p] = (p<cp_ct) ? frac_s[p] : '0';
+	frac_padded[padto] = '\0';
+	i->frac_ext = (size_t)(atol(frac_padded));
+
+	// printf("%s = %ld.[%s] = " URN_INUM_FORMATS " ?\n", s, i->intg, frac_padded, i->intg, i->frac_ext);
+	// printf("%s = " URN_INUM_FORMATS " ?\n", s, i->intg, i->frac_ext);
+	return 0;
+}
+int urn_inum_cmp(urn_inum *i1, urn_inum *i2) {
+	if (i1 == NULL && i2 == NULL) return 0;
+	if (i1 != NULL && i2 == NULL) return INT_MAX;
+	if (i1 == NULL && i2 != NULL) return INT_MIN;
+	if (i1->intg > 0 && i2->intg > 0) {
+		if (i1->intg != i2->intg)
+			return URN_INTCAP(i1->intg - i2->intg);
+		if (i1->frac_ext != i2->frac_ext)
+			return URN_INTCAP(i1->frac_ext - i2->frac_ext);
+		return 0;
+	} else if (i1->intg > 0 && i2->intg < 0) {
+		return URN_INTCAP(i1->intg); // divid by 2 incase of overflow.
+	} else if (i1->intg < 0 && i2->intg > 0) {
+		return URN_INTCAP(0-(i2->intg)); // divid by 2 incase of overflow.
+	} else if ((i1->intg < 0) && (i2->intg < 0)) {
+		if (i1->intg != i2->intg)
+			return URN_INTCAP(i2->intg - i1->intg);
+		if (i1->frac_ext != i2->frac_ext)
+			return URN_INTCAP(i2->frac_ext - i1->frac_ext);
+		return 0;
+	}
+	return 0;
+}
+
+//////////////////////////////////////////
+// Public order from market data
+//////////////////////////////////////////
+typedef struct urn_porder {
+	urn_pair *pair;
+	urn_inum *p;
+	urn_inum *s;
+	struct timeval  *t;
+	_Bool    *T; // 1: buy, 0: sell
+} urn_porder;
+int urn_order_cmp(urn_porder *o1, urn_porder *o2) {
+	if (o1 == NULL && o2 == NULL) return 0;
+	if (o1 != NULL && o2 == NULL) return INT_MAX;
+	if (o1 == NULL && o2 != NULL) return INT_MIN;
+	// TODO
+	return 0;
+}
+
+//////////////////////////////////////////
+// Pair
+//////////////////////////////////////////
+
 typedef struct urn_pair {
 	gchar *name; // name str at first for printf directly.
 	gchar *currency;
@@ -50,72 +141,5 @@ error:
 		URN_LOGF_C(RED, "failed to parse pair from %s", s);
 	return EINVAL;
 }
-
-/**
-int urn_pair_str(char **sp, urn_pair *pair) {
-	int l = pair->currency.l + 1 + pair->asset.l;
-	if (pair->has_expiry)
-		l = l + 1 + pair->expiry.l;
-	*sp = malloc(l+1);
-	if ((*sp) == NULL) return ENOMEM;
-	
-	int offset = 0;
-	memcpy(*sp, pair->currency.s, pair->currency.l);
-	offset += (pair->currency.l);
-	*((*sp) + offset) = '-';
-	offset += 1;
-	memcpy((*sp)+offset, pair->asset.s, pair->asset.l);
-	offset += (pair->asset.l);
-	if (pair->has_expiry) {
-		*((*sp) + offset) = '@';
-		offset += 1;
-		memcpy((*sp)+offset, pair->expiry.s, pair->expiry.l);
-		offset += (pair->expiry.l);
-	}
-	*((*sp) + offset) = '\0';
-	return 0;
-}
-
-// parse currency-asset@expiry, or currency-asset
-int urn_pair_parse(urn_pair *pair, char *s, int slen, urn_func_opt *opt) {
-	size_t currency_from=0, currency_to=0;
-	size_t asset_from=0, asset_to=0;
-	size_t expiry_from=0;
-	char c;
-	int rv = 0;
-	for (size_t i=0; i<slen; i++) {
-		c = *(s+i);
-		if (currency_to == 0) { // scanning currency
-			if (c != '-') continue;
-			currency_to = i;
-			asset_from = i+1;
-		} else if (asset_to == 0) { // scanning asset
-			if (c != '@') continue;
-			asset_to = i;
-			expiry_from = i+1;
-		}
-	}
-	if (asset_from == 0) { // no '-' found
-		if (opt == NULL || !(opt->silent))
-			URN_LOGF_C(RED, "failed to parse pair from %s", s);
-		return 1;
-	}
-
-	pair->currency.s = s+currency_from;
-	pair->currency.l = currency_to-currency_from;
-
-	pair->has_expiry = 0;
-	if (expiry_from != 0) { // has '@' found.
-		pair->has_expiry = 1;
-		pair->expiry.s = s+expiry_from;
-		pair->expiry.l = slen-expiry_from;
-	} else
-		asset_to = slen;
-
-	pair->asset.s = s+asset_from;
-	pair->asset.l = asset_to-asset_from;
-	return 0;
-}
-**/
 
 #endif

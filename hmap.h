@@ -10,8 +10,8 @@
 #define urn_hmap_setstr(hmap, str, ptr)    hashmap_set(hmap, str, strlen(str), (uintptr_t)(ptr));
 #define urn_hmap_del(hmap, str, slen)      hashmap_remove(hmap, str, slen);
 #define urn_hmap_delstr(hmap, str)         hashmap_remove(hmap, str, strlen(str));
-#define urn_hmap_get(hmap, str, slen, ptr) hashmap_get(hmap, str, slen, (uintptr_t *)(ptr));
-#define urn_hmap_getstr(hmap, str, ptr)    hashmap_get(hmap, str, strlen(str), (uintptr_t *)(ptr));
+#define urn_hmap_get(hmap, str, slen, ptr) hashmap_get(hmap, (void *)str, slen, (uintptr_t *)(ptr));
+#define urn_hmap_getstr(hmap, str, ptr)    hashmap_get(hmap, (void *)str, strlen(str), (uintptr_t *)(ptr));
 
 /**
  Macro for iterating over an hashmap.
