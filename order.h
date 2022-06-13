@@ -14,9 +14,11 @@ typedef struct urn_inum {
 	long   intg;
 	size_t frac_ext; // frac_ext = frac * 1e-URN_INUM_PRECISE
 	_Bool  pstv; // when intg is zero, use this for sign.
-	char   s[56]; // description padding 56 + 8 = 64
+	// description size padding to 64
+	char   s[64-sizeof(long)-sizeof(size_t)-sizeof(_Bool)];
 } urn_inum;
-#define URN_INUM_PRECISE 14;
+#define URN_INUM_PRECISE 14
+#define URN_INUM_FRACEXP 100000000000000ul
 
 // print inum into s (or internal description pointer)
 char *urn_inum_str(urn_inum *i) {
@@ -46,7 +48,7 @@ char *urn_inum_str(urn_inum *i) {
 }
 
 // Every inum should be initialized here.
-int urn_inum_parse(urn_inum *i, char *s) {
+int urn_inum_parse(urn_inum *i, const char *s) {
 	(i->s)[0] = '\0'; // clear desc
 	int rv = 0;
 	// -0.00456 -> intg=0 intg_s='-0'  frac_s='00456'
@@ -74,6 +76,10 @@ int urn_inum_parse(urn_inum *i, char *s) {
 	i->frac_ext = (size_t)(atol(frac_padded));
 
 	return 0;
+}
+int urn_inum_alloc(urn_inum **i, const char *s) {
+	URN_RET_ON_NULL(*i = malloc(sizeof(urn_inum)), "Not enough memory", ENOMEM);
+	return urn_inum_parse(*i, s);
 }
 
 int urn_inum_cmp(urn_inum *i1, urn_inum *i2) {
@@ -109,15 +115,28 @@ typedef struct urn_porder {
 	urn_inum *p;
 	urn_inum *s;
 	struct timeval  *t;
-	_Bool    *T; // 1: buy, 0: sell
+	_Bool    T; // 1: buy, 0: sell
+	char    *desc; // self managed description cache.
 } urn_porder;
-int urn_order_cmp(urn_porder *o1, urn_porder *o2) {
+urn_porder *urn_porder_alloc(urn_pair *pair, urn_inum *p, urn_inum *s, _Bool buy, struct timeval *t) {
+	urn_porder *o = malloc(sizeof(urn_porder));
+	if (o == NULL) return o;
+	o->pair = pair;
+	o->p = p;
+	o->s = s;
+	o->t = t;
+	o->T = buy;
+	o->desc = NULL;
+	return o;
+}
+// Comparator for price only.
+int urn_porder_px_cmp(urn_porder *o1, urn_porder *o2) {
 	if (o1 == NULL && o2 == NULL) return 0;
 	if (o1 != NULL && o2 == NULL) return INT_MAX;
 	if (o1 == NULL && o2 != NULL) return INT_MIN;
-	// TODO
-	return 0;
+	return urn_inum_cmp(o1->p, o2->p);
 }
+
 
 //////////////////////////////////////////
 // Pair

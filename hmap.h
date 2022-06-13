@@ -6,11 +6,11 @@
 
 #define urn_hmap_init(size)                hashmap_create(size);
 #define urn_hmap_free(hmap)                hashmap_free(hmap);
-#define urn_hmap_set(hmap, str, slen, ptr) hashmap_set(hmap, str, slen, (uintptr_t)(ptr));
+#define urn_hmap_set(hmap, str, ptr) hashmap_set(hmap, str, strlen(str), (uintptr_t)(ptr));
 #define urn_hmap_setstr(hmap, str, ptr)    hashmap_set(hmap, str, strlen(str), (uintptr_t)(ptr));
 #define urn_hmap_del(hmap, str, slen)      hashmap_remove(hmap, str, slen);
 #define urn_hmap_delstr(hmap, str)         hashmap_remove(hmap, str, strlen(str));
-#define urn_hmap_get(hmap, str, slen, ptr) hashmap_get(hmap, (void *)str, slen, (uintptr_t *)(ptr));
+#define urn_hmap_get(hmap, str, ptr) hashmap_get(hmap, (void *)str, strlen(str), (uintptr_t *)(ptr));
 #define urn_hmap_getstr(hmap, str, ptr)    hashmap_get(hmap, (void *)str, strlen(str), (uintptr_t *)(ptr));
 
 /**
@@ -39,6 +39,19 @@ void urn_hmap_print(hashmap *hmap, char *title) {
 		URN_LOGF("\t%4zu " URN_BLUE("%s") " len(%zu)-> %lu -> " URN_BLUE("%s"),
 				idx, key, klen, 
 				(unsigned long)val, (char*)val);
+	}
+	URN_LOGF("         end %s", title);
+}
+// same as urn_hmap_print() but print val as number
+void urn_hmap_printi(hashmap *hmap, char *title) {
+	size_t idx, klen;
+	char *key;
+	void *val;
+	URN_LOGF("hmap foreach " URN_BLUE("%s"), title);
+	urn_hmap_foreach(hmap, idx, key, klen, val) {
+		URN_LOGF("\t%4zu " URN_BLUE("%s") " len(%zu)-> " URN_BLUE("%lu"),
+				idx, key, klen, 
+				(unsigned long)val);
 	}
 	URN_LOGF("         end %s", title);
 }

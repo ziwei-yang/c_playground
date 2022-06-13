@@ -56,6 +56,14 @@ int test_inum () {
 	URN_RET_UNLESS(urn_inum_cmp(&i1, &i2) > 0, "i1 should > i2", EINVAL);
 	URN_RET_UNLESS(urn_inum_cmp(&i2, &i1) < 0, "i2 should < i1", EINVAL);
 
+	URN_LOGF("sizeof long   %zu", sizeof(long));
+	URN_LOGF("sizeof size_t %zu", sizeof(size_t));
+	URN_LOGF("sizeof _Bool  %zu", sizeof(_Bool));
+	size_t sizeof_desc = sizeof(i1)-sizeof(i1.intg)-sizeof(i1.frac_ext)-sizeof(i1.pstv);
+	URN_LOGF("sizeof urn_inum.s %zu", sizeof_desc);
+	URN_LOGF("sizeof urn_inum   %zu", sizeof(i1));
+	URN_RET_UNLESS(sizeof_desc >= 32, "sizeof(inum.s) should >= 32", EINVAL);
+	URN_RET_UNLESS(sizeof(i1)==64, "sizeof(inum) should == 64", EINVAL);
 	URN_LOG_C(GREEN, "urn_inum test passed");
 	return rv;
 }
