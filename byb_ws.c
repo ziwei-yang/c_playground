@@ -27,6 +27,7 @@ static int parse_args_build_idx(int argc, char **argv);
 static int to_bybit_sym(urn_pair *pair, char **str);
 static int wss_connect();
 static int on_wss_msg(char *msg, size_t len);
+static void wss_stat();
 static int on_odbk(int pairid, const char *type, yyjson_val *jdata);
 static int on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 static GList *remove_top_porder(GList *asks);
@@ -54,7 +55,14 @@ int    askct_arr[MAX_PAIRS];
 int    bidct_arr[MAX_PAIRS];
 unsigned long odbk_t_arr[MAX_PAIRS];
 
-char*    wss_req_s;
+char*    wss_req_s[99];
+int      wss_req_i;
+
+unsigned int wss_stat_sz;
+unsigned int wss_stat_ct;
+struct timeval wss_stat_t;
+struct timeval wss_stat_te;
+int wss_stat_per_e = 8;
 
 int main(int argc, char **argv) {
 	if (argc > MAX_PAIRS)
@@ -85,7 +93,6 @@ int main(int argc, char **argv) {
 	urn_hmap_free(pair_to_sym);
 	urn_hmap_free(depth_chn_to_pairid);
 	urn_hmap_free(trade_chn_to_pairid);
-	free(wss_req_s);
 	return 0;
 }
 
@@ -93,9 +100,6 @@ static int wss_connect(urn_func_opt opt) {
 	int rv = 0;
 //	char *uri = "wss://stream.bybit.com/realtime"; // Bybit Coin M
 	char *uri = "wss://stream.bybit.com/realtime_public"; // Bybit USDT M
-//	char *uri = "wss://stream.binance.com:9443/ws/btcusdt@depth";
-//	char *uri = "wss://ftx.com/ws/";
-//	char *uri = "ws://localhost:8080/ws";
 	nng_aio *dialer_aio = NULL;
 	nng_stream_dialer *dialer = NULL;
 	nng_stream *stream = NULL;
@@ -118,34 +122,70 @@ static int wss_connect(urn_func_opt opt) {
 		return URN_FATAL_NNG(rv);
 	URN_INFO("Wss conn stream is ready");
 
-	char *req_s = wss_req_s;
-	URN_INFOF("Sending wss_req_s %lu bytes", strlen(req_s));
+	char *req_s = wss_req_s[0];
+	URN_INFOF("Sending wss_req_s[0] %lu bytes: %s", strlen(req_s), req_s);
 	if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
 		return URN_FATAL_NNG(rv);
+	wss_req_i = 0; // 0 has been sent
 
 	// Reuse iov buffer and aio to receive data.
 	if ((rv = nngaio_init(recv_buf, recv_buflen, &recv_aio, &recv_iov)) != 0)
 		return URN_FATAL_NNG(rv);
 	URN_INFO("Recv aio and iov ready");
 
-	int msg_ct = 0;
+	wss_stat_sz = 0;
+	wss_stat_ct = 0;
+	gettimeofday(&wss_stat_t, NULL);
+
 	while(true) {
 #ifdef URN_WSS_DEBUG
 		if ((rv = nngaio_recv_wait_res(stream, recv_aio, recv_iov, &recv_bytes, "<-- recv wait", "<-- recv poll")) != 0)
 #else
 		if ((rv = nngaio_recv_wait_res(stream, recv_aio, recv_iov, &recv_bytes, NULL, NULL)) != 0)
 #endif
-			return rv;
-		msg_ct ++;
+		{
+			URN_WARN("Error in nngaio_recv_wait_res()");
+			return URN_FATAL_NNG(rv);
+		}
+		wss_stat_ct++;
+		wss_stat_sz += recv_bytes;
 		// only 0..recv_bytes is message received this time.
 		rv = on_wss_msg(recv_buf, recv_bytes);
 		if (rv != 0) {
 			URN_WARNF("Error in processing wss msg %.*s", (int)recv_bytes, recv_buf);
 			return rv;
 		}
+
+		// stat every few seconds, send unfinished requests after.
+		// Too many subscribes may cause bybit server drops conn.
+		if ((wss_stat_ct >> wss_stat_per_e) > 0) {
+			wss_stat();
+
+			req_s = wss_req_s[wss_req_i+1];
+			if (req_s != NULL) {
+				wss_req_i++;
+				URN_INFOF("Sending wss_req_s[%d] %lu bytes: %s", wss_req_i, strlen(req_s), req_s);
+				if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
+					return URN_FATAL_NNG(rv);
+			}
+		}
 	}
-	URN_INFOF("wss_connect finished at msg_ct %d", msg_ct);
+	URN_INFOF("wss_connect finished at wss_stat_ct %u", wss_stat_ct);
 	return 0;
+}
+
+static void wss_stat() {
+	gettimeofday(&wss_stat_te, NULL);
+	time_t passed_s = wss_stat_te.tv_sec - wss_stat_t.tv_sec;
+	float ct_per_s = (float)(wss_stat_ct) / (float)passed_s;
+	float kb_per_s = (float)(wss_stat_sz) / (float)passed_s / 1000.f;
+	URN_INFOF("wss_stat in passed %6lu sec %8.f msg/s %8.f KB/s", passed_s, ct_per_s, kb_per_s);
+	if (passed_s < 5)
+		wss_stat_per_e ++; // double stat interval
+	// Reset stat
+	wss_stat_ct = 0;
+	wss_stat_sz = 0;
+	wss_stat_t = wss_stat_te;
 }
 
 static int on_wss_msg(char *msg, size_t len) {
@@ -170,7 +210,7 @@ static int on_wss_msg(char *msg, size_t len) {
 	URN_RET_ON_NULL(jcore_data = yyjson_obj_get(jroot, "data"), "No data", EINVAL);
 
 
-	// Send to sub-func
+	// Most cases: depth channel
 	uintptr_t pairid = 0;
 	urn_hmap_get(depth_chn_to_pairid, topic, &pairid);
 	if (pairid != 0) {
@@ -194,13 +234,20 @@ static int on_wss_msg(char *msg, size_t len) {
 			URN_GO_FINAL_ON_RV(on_odbk_update(pairid, type, jcore_data), "Err in odbk handling")
 		} else
 			URN_GO_FINAL_ON_RV(EINVAL, type);
+		goto final;
 	}
+
+	// If not depth chn, might be trade chn.
 	urn_hmap_get(trade_chn_to_pairid, topic, &pairid);
 	if (pairid != 0) {
 		char *trade_pair = pair_arr[pairid];
 		URN_DEBUGF("trade_pair id %lu %s for topic %s", pairid, trade_pair, topic);
 		URN_DEBUGF("\t trade data %s", trade_pair);
+		goto final;
 	}
+
+	// Unknown topic
+	URN_GO_FINAL_ON_RV(EINVAL, topic);
 
 final:
 	if (jdoc != NULL) yyjson_doc_free(jdoc);
@@ -598,31 +645,49 @@ static int parse_args_build_idx(int argc, char **argv) {
 	urn_hmap_printi(trade_chn_to_pairid, "trade_to_pairid");
 
 	URN_LOGF("Generate req json with %d channels", chn_ct);
-	yyjson_mut_doc *wss_req_j = yyjson_mut_doc_new(NULL);
-	yyjson_mut_val *jroot = yyjson_mut_obj(wss_req_j);
-	if (jroot == NULL)
-		return URN_FATAL("Error in creating json root", EINVAL);
-	yyjson_mut_doc_set_root(wss_req_j, jroot);
-	yyjson_mut_obj_add_str(wss_req_j, jroot, "op", "subscribe");
-	URN_LOG("channels:");
-	for (int i=0; i<chn_ct; i++)
-		URN_LOGF("\tchn %d %s", i, byb_chns[i]);
+
 	URN_LOG("pair by pairid:");
 	for (int i=0; i<=argc; i++)
 		URN_LOGF("\tpair_arr %d %s", i, pair_arr[i]);
-	yyjson_mut_val *target_chns = yyjson_mut_arr_with_strcpy(wss_req_j, byb_chns, chn_ct);
-	if (target_chns == NULL)
-		return URN_FATAL("Error in creating channel json array", EINVAL);
-	yyjson_mut_obj_add_val(wss_req_j, jroot, "args", target_chns);
 
-	wss_req_s = yyjson_mut_write(wss_req_j, YYJSON_WRITE_PRETTY, NULL);
-	URN_LOGF("req str: %s", wss_req_s);
-	free(wss_req_s);
-	wss_req_s = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
-	URN_INFOF("req str: %s", wss_req_s);
-	yyjson_mut_doc_free(wss_req_j);
+	// Send no more than 40 channels per request.
+	int batch_sz = 40;
+	int batch = 0;
+	for (; batch <= (chn_ct/batch_sz+1); batch++) {
+		yyjson_mut_doc *wss_req_j = yyjson_mut_doc_new(NULL);
+		yyjson_mut_val *jroot = yyjson_mut_obj(wss_req_j);
+		if (jroot == NULL)
+			return URN_FATAL("Error in creating json root", EINVAL);
+		yyjson_mut_doc_set_root(wss_req_j, jroot);
+		yyjson_mut_obj_add_str(wss_req_j, jroot, "op", "subscribe");
+		URN_LOGF("channels for batch %d:", batch);
 
-	URN_INFO("Parsing ARGV end");
+		int i_s = batch*batch_sz;
+		int i_e = MIN((batch+1)*batch_sz, chn_ct);
+		if (i_s >= i_e) {
+			yyjson_mut_doc_free(wss_req_j);
+			batch--;
+			break;
+		}
+		const char *batch_chn[i_e-i_s];
+		for (int i=i_s; i<i_e; i++) {
+			URN_LOGF("\tchn %d %s", i, byb_chns[i]);
+			batch_chn[i-i_s] = byb_chns[i];
+		}
+		yyjson_mut_val *target_chns = yyjson_mut_arr_with_strcpy(wss_req_j, batch_chn, i_e-i_s);
+		if (target_chns == NULL)
+			return URN_FATAL("Error in creating channel json array", EINVAL);
+		yyjson_mut_obj_add_val(wss_req_j, jroot, "args", target_chns);
+		wss_req_s[batch] = yyjson_mut_write(wss_req_j, YYJSON_WRITE_PRETTY, NULL);
+		URN_LOGF("req %d : %s", batch, wss_req_s[batch]);
+		free(wss_req_s[batch]);
+		wss_req_s[batch] = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
+		URN_INFOF("req %d : %s", batch, wss_req_s[batch]);
+		yyjson_mut_doc_free(wss_req_j);
+	}
+
+	URN_INFOF("Parsing ARGV end, %d req str prepared.", batch+1);
+	wss_req_s[batch+1] = NULL;
 	return 0;
 }
 
