@@ -128,6 +128,8 @@ char   urn_global_log_buf[65536];
 
 #define URN_DEBUGF(...) sprintf(urn_global_log_buf, __VA_ARGS__), \
 	URN_DEBUG(urn_global_log_buf);
+#define URN_DEBUGF_C(color, ...)   sprintf(urn_global_log_buf, __VA_ARGS__), \
+	URN_PRINT_WRAP(stdout, CLR_##color, urn_global_log_buf, CLR_RST)
 #define URN_LOGF(...) sprintf(urn_global_log_buf, __VA_ARGS__), \
 	URN_LOG(urn_global_log_buf);
 #define URN_INFOF(...) sprintf(urn_global_log_buf, __VA_ARGS__), \
@@ -136,6 +138,16 @@ char   urn_global_log_buf[65536];
 	URN_WARN(urn_global_log_buf);
 #define URN_ERRF(...) sprintf(urn_global_log_buf, __VA_ARGS__), \
 	URN_ERR(urn_global_log_buf);
+
+// Turn off all URN_DEBUG macros, unless URN_MAIN_DEBUG is ON
+#ifndef URN_MAIN_DEBUG
+#undef URN_DEBUG
+#define URN_DEBUG(...) ;
+#undef URN_DEBUGF
+#define URN_DEBUGF(...) ;
+#undef URN_DEBUGF_C
+#define URN_DEBUGF_C(...) ;
+#endif
 
 //////////////////////////////////////////
 // MIN, MAX and others.
@@ -159,6 +171,13 @@ typedef void (*urn_ptr_cb)(void *p);
 //////////////////////////////////////////
 // Enhanced String struct
 //////////////////////////////////////////
+
+void urn_s_upcase(char *s, int slen) {
+	for (int i = 0; s[i]!='\0' && i<slen; i++) {
+		if(s[i] >= 'a' && s[i] <= 'z')
+			s[i] = s[i] -32;
+	}
+}
 
 //// substring of origin
 //typedef struct urn_s {

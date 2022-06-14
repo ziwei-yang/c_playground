@@ -4,12 +4,6 @@
 #include <string.h>
 #include <glib.h>
 
-typedef struct urn_pair urn_pair;
-typedef struct urn_inum urn_inum;
-
-//////////////////////////////////////////
-// Market number represent in integer.
-//////////////////////////////////////////
 typedef struct urn_inum {
 	long   intg;
 	size_t frac_ext; // frac_ext = frac * 1e-URN_INUM_PRECISE
@@ -17,29 +11,50 @@ typedef struct urn_inum {
 	// description size padding to 64
 	char   s[64-sizeof(long)-sizeof(size_t)-sizeof(_Bool)];
 } urn_inum;
-#define URN_INUM_PRECISE 14
+
+typedef struct urn_pair {
+	gchar *name; // name str at first for printf directly.
+	gchar *currency;
+	gchar *asset;
+	gchar *expiry;
+} urn_pair;
+
+typedef struct urn_porder {
+	urn_pair *pair;
+	urn_inum *p;
+	urn_inum *s;
+	struct timeval  *t;
+	_Bool    T; // 1: buy, 0: sell
+	char    *desc; // self managed description cache.
+} urn_porder;
+
+//////////////////////////////////////////
+// Market number represent in integer.
+//////////////////////////////////////////
+#define URN_INUM_PRECISE 12
 #define URN_INUM_FRACEXP 100000000000000ul
 
 // print inum into s (or internal description pointer)
 char *urn_inum_str(urn_inum *i) {
+	if (i == NULL) return NULL;
 	char *s = i->s;
 	if (s[0] != '\0') // cached already.
 		return s;
 
 	if (i->frac_ext == 0) {
-		sprintf(s, "%ld", i->intg);
+		sprintf(s, "%11ld%*s", i->intg, URN_INUM_PRECISE+1, "");
 		return s;
 	}
 
 	int chars = 0;
 	if (i->pstv)
-		chars = sprintf(s, "%ld.%014zu", i->intg, i->frac_ext);
+		chars = sprintf(s, "%11ld.%012zu", i->intg, i->frac_ext);
 	else
-		chars = sprintf(s, "-%ld.%014zu", i->intg, i->frac_ext);
-	// Remove 0s in fraction at end
+		chars = sprintf(s, "-%10ld.%012zu", i->intg, i->frac_ext);
+	// Replace 0s in fraction at end with space.
 	while (chars > 0) {
 		if (s[chars-1] == '0') {
-			s[chars-1] = '\0';
+			s[chars-1] = ' ';
 			chars--;
 		} else
 			break;
@@ -86,22 +101,23 @@ int urn_inum_cmp(urn_inum *i1, urn_inum *i2) {
 	if (i1 == NULL && i2 == NULL) return 0;
 	if (i1 != NULL && i2 == NULL) return INT_MAX;
 	if (i1 == NULL && i2 != NULL) return INT_MIN;
-	// URN_LOGF("Compare %s and %s", urn_inum_str(i1), urn_inum_str(i2));
+//	URN_DEBUGF("Sorting inum %s and %s", urn_inum_str(i1), urn_inum_str(i2));
 	if (i1->pstv && i2->pstv) {
 		if (i1->intg != i2->intg)
-			return URN_INTCAP(i1->intg - i2->intg);
+			return (i1->intg > i2->intg) ? 1 : -1;
 		if (i1->frac_ext != i2->frac_ext)
-			return URN_INTCAP(i1->frac_ext - i2->frac_ext);
+			return (i1->frac_ext > i2->frac_ext) ? 1 : -1;
 		return 0;
 	} else if (i1->pstv && !(i2->pstv)) {
-		return URN_INTCAP(i1->intg); // divid by 2 incase of overflow.
+		return 1;
 	} else if (!(i1->pstv) && i2->pstv) {
-		return URN_INTCAP(0-(i2->intg)); // divid by 2 incase of overflow.
+		return -1;
 	} else if (!(i1->pstv) && !(i2->pstv)) {
 		if (i1->intg != i2->intg)
-			return URN_INTCAP(i2->intg - i1->intg);
+			return (i1->intg > i2->intg) ? 1 : -1;
+		// when intg is same, fraction bigger means number smaller.
 		if (i1->frac_ext != i2->frac_ext)
-			return URN_INTCAP(i2->frac_ext - i1->frac_ext);
+			return (i1->frac_ext < i2->frac_ext) ? 1 : -1;
 		return 0;
 	}
 	return 0;
@@ -110,14 +126,6 @@ int urn_inum_cmp(urn_inum *i1, urn_inum *i2) {
 //////////////////////////////////////////
 // Public order from market data
 //////////////////////////////////////////
-typedef struct urn_porder {
-	urn_pair *pair;
-	urn_inum *p;
-	urn_inum *s;
-	struct timeval  *t;
-	_Bool    T; // 1: buy, 0: sell
-	char    *desc; // self managed description cache.
-} urn_porder;
 urn_porder *urn_porder_alloc(urn_pair *pair, urn_inum *p, urn_inum *s, _Bool buy, struct timeval *t) {
 	urn_porder *o = malloc(sizeof(urn_porder));
 	if (o == NULL) return o;
@@ -129,31 +137,67 @@ urn_porder *urn_porder_alloc(urn_pair *pair, urn_inum *p, urn_inum *s, _Bool buy
 	o->desc = NULL;
 	return o;
 }
+urn_porder *urn_porder_reuse(urn_porder *o, urn_pair *pair, urn_inum *p, urn_inum *s, _Bool buy, struct timeval *t) {
+	o->pair = pair;
+	o->p = p;
+	o->s = s;
+	o->t = t;
+	o->T = buy;
+	if (o->desc != NULL) free(o->desc);
+	o->desc = NULL;
+	return o;
+}
+void urn_porder_free(void *ptr) {
+//	URN_DEBUGF("urn_pair_free %p", ptr);
+	urn_porder *o = (urn_porder *)ptr;
+	if (o == NULL) return;
+	if (o->pair != NULL) free(o->pair);
+	if (o->p != NULL) free(o->p);
+	if (o->s != NULL) free(o->s);
+	if (o->t != NULL) free(o->t);
+	if (o->desc != NULL) free(o->desc);
+	free(o);
+}
+char *urn_porder_str(urn_porder *o) {
+	if (o->desc != NULL) return o->desc;
+	o->desc = malloc(128);
+	sprintf(o->desc, "%s %s %s",
+			o->pair == NULL ? NULL : o->pair->name,
+			urn_inum_str(o->p),
+			urn_inum_str(o->s));
+	return o->desc;
+}
 // Comparator for price only.
-int urn_porder_px_cmp(urn_porder *o1, urn_porder *o2) {
+int urn_porder_px_cmp(const void *o1, const void *o2) {
+//	URN_DEBUGF("Sorting %p and %p", o1, o2);
 	if (o1 == NULL && o2 == NULL) return 0;
 	if (o1 != NULL && o2 == NULL) return INT_MAX;
 	if (o1 == NULL && o2 != NULL) return INT_MIN;
-	return urn_inum_cmp(o1->p, o2->p);
+	return urn_inum_cmp(((urn_porder *)o1)->p, ((urn_porder *)o2)->p);
 }
-
+int urn_porder_px_cmprv(const void *o1, const void *o2) {
+	if (o1 == NULL && o2 == NULL) return 0;
+	if (o1 != NULL && o2 == NULL) return INT_MAX;
+	if (o1 == NULL && o2 != NULL) return INT_MIN;
+	return 0-urn_porder_px_cmp(o1, o2);
+}
 
 //////////////////////////////////////////
 // Pair
 //////////////////////////////////////////
-
-typedef struct urn_pair {
-	gchar *name; // name str at first for printf directly.
-	gchar *currency;
-	gchar *asset;
-	gchar *expiry;
-} urn_pair;
-
 void urn_pair_print(urn_pair pair) {
 	URN_LOGF("currency %s", pair.currency);
 	URN_LOGF("asset    %s", pair.asset);
 	URN_LOGF("expiry   %s", pair.expiry);
 	URN_LOGF("name     %s", pair.name);
+}
+
+void urn_pair_free(urn_pair *p) {
+	if (p->name != NULL) g_free(p->name);
+	if (p->currency != NULL) g_free(p->currency);
+	if (p->asset != NULL) g_free(p->asset);
+	if (p->expiry != NULL) g_free(p->expiry);
+	free(p);
 }
 
 // parse currency-asset@expiry, or currency-asset
