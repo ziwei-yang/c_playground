@@ -169,6 +169,16 @@ typedef struct urn_func_opt {
 typedef void (*urn_ptr_cb)(void *p);
 
 //////////////////////////////////////////
+// Diff of timeval
+//////////////////////////////////////////
+long urn_usdiff(struct timeval t1, struct timeval t2) {
+	return (long)(t2.tv_sec - t1.tv_sec) * 1000000 + (long) (t2.tv_usec - t1.tv_usec);
+}
+long urn_msdiff(struct timeval t1, struct timeval t2) {
+	return (long)(t2.tv_sec - t1.tv_sec) * 1000 + (long) (t2.tv_usec - t1.tv_usec)/1000;
+}
+
+//////////////////////////////////////////
 // Enhanced String struct
 //////////////////////////////////////////
 

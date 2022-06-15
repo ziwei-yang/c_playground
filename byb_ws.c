@@ -74,16 +74,21 @@ int wss_stat_per_e = 8;
 struct timespec _tmp_clock;
 
 ///////////// broadcast ctrl //////////////
-struct timespec brdcst_t;
+struct timespec brdcst_t; // last time to call broadcast()
+struct timespec brdcst_t_arr[MAX_PAIRS]; // last time to publish data
 unsigned int  newodbk_arr[MAX_PAIRS];
 char         *pub_odbk_chn_arr[MAX_PAIRS];
 char         *pub_tick_chn_arr[MAX_PAIRS];
 redisContext *redis;
 
+unsigned int  brdcst_stat_ct;
+unsigned int  brdcst_stat_t;
+
+// BybitU or Bybit
 char         exchange[32];
 
 int main(int argc, char **argv) {
-	sprintf(exchange, "BybitU");
+	sprintf(exchange, "BybitU"); // TODO get and shift first arg
 
 	if (argc > MAX_PAIRS)
 		return URN_FATAL("Raise MAX_PAIRS please", ENOMEM);
@@ -98,6 +103,8 @@ int main(int argc, char **argv) {
 		pub_odbk_chn_arr[i] = NULL;
 		pub_tick_chn_arr[i] = NULL;
 	}
+	brdcst_stat_ct = 0;
+	brdcst_stat_t = 0;
 
 	int rv = 0;
 	if ((rv = parse_args_build_idx(argc, argv)) != 0)
@@ -211,7 +218,8 @@ static int wss_connect(urn_func_opt opt) {
 }
 
 // broadcast every few milliseconds.
-struct timeval brdcst_json_time;
+struct timeval brdcst_json_t;
+struct timeval brdcst_json_end_t;
 static int broadcast() {
 	// less than 1_000_000 ns, return
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
@@ -220,7 +228,7 @@ static int broadcast() {
 	brdcst_t.tv_sec = _tmp_clock.tv_sec;
 	brdcst_t.tv_nsec = brdcst_t.tv_nsec;
 
-	gettimeofday(&brdcst_json_time, NULL);
+	gettimeofday(&brdcst_json_t, NULL);
 
 	int data_ct = 0;
 	char *msg[max_pair_id]; // msg to broadcast
@@ -228,6 +236,9 @@ static int broadcast() {
 	int maxslen = (2 * MAX_DEPTH * (13 + 4*URN_INUM_PRECISE) + 26);
 	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
 		if (newodbk_arr[pairid] <= 0) continue;
+		brdcst_stat_ct ++;
+
+#ifdef PUB_REDIS
 		URN_DEBUGF("to broadcast %s %d/%d, updates %d", pair_arr[pairid], pairid, max_pair_id, newodbk_arr[pairid]);
 
 		// build broadcast json
@@ -246,14 +257,13 @@ static int broadcast() {
 		*(s+ct) = ','; ct++;
 		ct += sprintf_odbk_json(s+ct, asks_arr[pairid]);
 		ct += sprintf(s+ct, ",%ld%03d,%ld]",
-				brdcst_json_time.tv_sec,
-				brdcst_json_time.tv_usec/1000,
+				brdcst_json_t.tv_sec,
+				brdcst_json_t.tv_usec/1000,
 				odbk_t_arr[pairid]/1000);
 		URN_DEBUGF("broadcast %s, updates %d, json len %d/%d -> %s\n%s",
 				pair_arr[pairid], newodbk_arr[pairid],
 				ct, maxslen, pub_odbk_chn_arr[pairid], s);
 
-#ifdef PUB_REDIS
 		redisAppendCommand(redis, "PUBLISH %s %s", pub_odbk_chn_arr[pairid], s);
 #endif
 		free(s);
@@ -278,6 +288,17 @@ static int broadcast() {
 			URN_FATAL("error in checking listeners", rv);
 	}
 #endif
+	if (brdcst_t.tv_sec - brdcst_stat_t > 10) {
+		// stat in 10s, also print cost time this round.
+		gettimeofday(&brdcst_json_end_t, NULL);
+		long cost_us = urn_usdiff(brdcst_json_t, brdcst_json_end_t);
+
+		int diff = brdcst_t.tv_sec - brdcst_stat_t;
+		URN_INFOF("brdcst_stat in %d sec, %8.2f/s cost %4.2f ms", diff, (float)brdcst_stat_ct/(float)diff, (float)cost_us/1000.f);
+		brdcst_stat_ct = 0;
+		brdcst_stat_t = brdcst_t.tv_sec;
+	}
+
 
 	return 0;
 }
@@ -287,7 +308,7 @@ static void wss_stat() {
 	time_t passed_s = _tmp_clock.tv_sec - wss_stat_t.tv_sec;
 	float ct_per_s = (float)(wss_stat_ct) / (float)passed_s;
 	float kb_per_s = (float)(wss_stat_sz) / (float)passed_s / 1000.f;
-	URN_INFOF("wss_stat in passed %6lu sec %8.f msg/s %8.f KB/s", passed_s, ct_per_s, kb_per_s);
+	URN_INFOF("wss_stat in %6lu sec %8.f msg/s %8.f KB/s", passed_s, ct_per_s, kb_per_s);
 	if (passed_s < 5)
 		wss_stat_per_e ++; // double stat interval
 	// Reset stat
