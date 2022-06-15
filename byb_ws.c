@@ -101,7 +101,9 @@ final:
 // op_type: 2 update     - delta
 // op_type: 3 delete     - delta
 int parse_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_type) {
-	urn_inum *p, *s=NULL; // must free by hand if insertion failed.
+	urn_inum *p=NULL, *s=NULL; // must free by hand if insertion failed.
+	bool need_free_ps = false;
+
 	yyjson_val *pricev, *symbolv, *sidev, *sizev;
 	const char *price, *symbol, *side, *sizestr;
 	char sizestr2[32];
@@ -184,8 +186,7 @@ int parse_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_type) 
 			URN_DEBUGF("node not found at check_idx %d", check_idx);
 			if (check_idx == 0) {
 				URN_DEBUG("price checked but out of valid range, goto final");
-				if (p != NULL) free(p);
-				if (s != NULL) free(s);
+				need_free_ps = true;
 				goto final;
 			}
 			if (op_type == 2) op_type = 1; // update -> insert
@@ -194,11 +195,13 @@ int parse_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_type) 
 		// found node with same price.
 		if (op_type == 2) { // update p and s only
 			urn_porder *o = (urn_porder *)(node->data);
+			if (s == NULL) s = o->s; // reuse order size
 			urn_porder_free(o);
 			o = urn_porder_alloc(NULL, p, s, buy, NULL);
 			node->data = o;
 			URN_DEBUGF_C(BLUE, "update the node %p s %s p %s", node, urn_inum_str(o->s), urn_inum_str(o->p));
 		} else if (op_type == 3) { // delete this node.
+			need_free_ps = true;
 			urn_porder *o = (urn_porder *)(node->data);
 			// free node->data first.
 			if (node->data != NULL) {
@@ -267,6 +270,10 @@ final:
 	asks_arr[pairid] = asks;
 	asks->prev = NULL;
 	print_odbk(pairid);
+	if (need_free_ps) {
+		if (p != NULL) free(p);
+		if (s != NULL) free(s);
+	}
 	return 0;
 }
 
