@@ -16,6 +16,9 @@
 
 #include "mkt_wss.h"
 
+int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
+int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
+
 void mkt_data_set_exchange(char *s) {
 	sprintf(s, "BybitU"); // TODO getenv
 }
@@ -46,7 +49,6 @@ int on_wss_msg(char *msg, size_t len) {
 
 	URN_RET_ON_NULL(jcore_data = yyjson_obj_get(jroot, "data"), "No data", EINVAL);
 
-
 	// Most cases: depth channel
 	uintptr_t pairid = 0;
 	urn_hmap_get(depth_chn_to_pairid, topic, &pairid);
@@ -61,6 +63,7 @@ int on_wss_msg(char *msg, size_t len) {
 		const char *ts_e6 = yyjson_get_str(jval);
 		newodbk_arr[pairid] ++;
 		odbk_t_arr[pairid] = strtol(ts_e6, NULL, 10);
+		wss_stat_mkt_ts = odbk_t_arr[pairid];
 
 		if (depth_pair == NULL) {
 			URN_WARNF("NO depth_pair id %lu for topic %s", pairid, topic);
@@ -98,12 +101,12 @@ final:
 // op_type: 2 update     - delta
 // op_type: 3 delete     - delta
 int parse_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_type) {
+	urn_inum *p, *s=NULL; // must free by hand if insertion failed.
 	yyjson_val *pricev, *symbolv, *sidev, *sizev;
 	const char *price, *symbol, *side, *sizestr;
 	char sizestr2[32];
 	double sizef=0;
 	int sizei = 0;
-	urn_inum *p, *s=NULL;
 	bool buy;
 	int rv = 0;
 
@@ -181,6 +184,8 @@ int parse_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_type) 
 			URN_DEBUGF("node not found at check_idx %d", check_idx);
 			if (check_idx == 0) {
 				URN_DEBUG("price checked but out of valid range, goto final");
+				if (p != NULL) free(p);
+				if (s != NULL) free(s);
 				goto final;
 			}
 			if (op_type == 2) op_type = 1; // update -> insert
@@ -189,7 +194,9 @@ int parse_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_type) 
 		// found node with same price.
 		if (op_type == 2) { // update p and s only
 			urn_porder *o = (urn_porder *)(node->data);
-			urn_porder_reuse(o, NULL, p, s, buy, NULL);
+			urn_porder_free(o);
+			o = urn_porder_alloc(NULL, p, s, buy, NULL);
+			node->data = o;
 			URN_DEBUGF_C(BLUE, "update the node %p s %s p %s", node, urn_inum_str(o->s), urn_inum_str(o->p));
 		} else if (op_type == 3) { // delete this node.
 			urn_porder *o = (urn_porder *)(node->data);

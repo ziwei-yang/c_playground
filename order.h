@@ -151,16 +151,6 @@ urn_porder *urn_porder_alloc(urn_pair *pair, urn_inum *p, urn_inum *s, _Bool buy
 	o->desc = NULL;
 	return o;
 }
-urn_porder *urn_porder_reuse(urn_porder *o, urn_pair *pair, urn_inum *p, urn_inum *s, _Bool buy, struct timeval *t) {
-	o->pair = pair;
-	o->p = p;
-	o->s = s;
-	o->t = t;
-	o->T = buy;
-	if (o->desc != NULL) free(o->desc);
-	o->desc = NULL;
-	return o;
-}
 void urn_porder_free(void *ptr) {
 //	URN_DEBUGF("urn_pair_free %p", ptr);
 	urn_porder *o = (urn_porder *)ptr;

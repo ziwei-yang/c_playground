@@ -21,8 +21,6 @@
 void  mkt_data_set_exchange(char *s); // set global exchange 
 void  mkt_data_set_wss_url(char *s);
 int   on_wss_msg(char *msg, size_t len);
-int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
-int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
 ///////////// Interface //////////////
 
@@ -67,6 +65,8 @@ unsigned int wss_stat_sz;
 unsigned int wss_stat_ct;
 struct timespec wss_stat_t;
 int wss_stat_per_e = 8;
+long wss_stat_mkt_ts = 0;
+long mkt_latency_ms = 0;
 
 struct timespec _tmp_clock;
 
@@ -320,11 +320,17 @@ static int broadcast() {
 }
 
 static void wss_stat() {
+	if (wss_stat_mkt_ts != 0) {
+		clock_gettime(CLOCK_REALTIME, &_tmp_clock);
+		mkt_latency_ms = _tmp_clock.tv_sec * 1000l + 
+			_tmp_clock.tv_nsec/1000000l - wss_stat_mkt_ts/1000l;
+	}
+
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
 	time_t passed_s = _tmp_clock.tv_sec - wss_stat_t.tv_sec;
 	float ct_per_s = (float)(wss_stat_ct) / (float)passed_s;
 	float kb_per_s = (float)(wss_stat_sz) / (float)passed_s / 1000.f;
-	URN_INFOF("<-- wss in %6lu s %8.f msg/s %8.f KB/s", passed_s, ct_per_s, kb_per_s);
+	URN_INFOF("<-- wss in %6lu s %8.f msg/s %8.f KB/s + %ld ms", passed_s, ct_per_s, kb_per_s, mkt_latency_ms);
 	if (passed_s < 5)
 		wss_stat_per_e ++; // double stat interval
 	// Reset stat
