@@ -16,7 +16,7 @@ int redis_sync_example() {
 	redisReply *reply;
 	urn_func_opt opt = {.verbose=1,.silent=0};
 
-	rv = urn_redis(&c, "127.0.0.1", 6379, getenv("REDIS_PSWD"), &opt);
+	rv = urn_redis(&c, "127.0.0.1", NULL, getenv("REDIS_PSWD"), &opt);
 	if (rv != 0)
 		return URN_FATAL("Error in init redis", rv);
 	URN_LOG("redis context initialized");
@@ -67,7 +67,7 @@ int redis_pipeline_example() {
 	redisReply *reply;
 	urn_func_opt opt = {.verbose=1,.silent=0};
 
-	rv = urn_redis(&c, "127.0.0.1", 6379, getenv("REDIS_PSWD"), &opt);
+	rv = urn_redis(&c, "127.0.0.1", NULL, getenv("REDIS_PSWD"), &opt);
 	if (rv != 0)
 		return URN_FATAL("Error in init redis", rv);
 	URN_LOG("redis context initialized");
@@ -79,19 +79,27 @@ int redis_pipeline_example() {
 
 	URN_INFO("PIPELINE PUBLISH chn value");
 	redisAppendCommand(c, "PUBLISH chn value");
+	redisAppendCommand(c, "PUBLISH chn value");
+	redisAppendCommand(c, "PUBLISH chn value");
 
 	URN_INFO("PIPELINE get reply: 3 for SET");
 	redisGetReply(c, (void**)&reply);
-	URN_RET_ON_RV(urn_redis_chkfree_reply_OK(reply, &opt), "error in checking OK");
+	URN_RET_ON_RV(urn_redis_chkfree_reply_str(reply, "OK", &opt), "error in checking OK");
 	redisGetReply(c, (void**)&reply);
-	URN_RET_ON_RV(urn_redis_chkfree_reply_OK(reply, &opt), "error in checking OK");
+	URN_RET_ON_RV(urn_redis_chkfree_reply_str(reply, "OK", &opt), "error in checking OK");
 	redisGetReply(c, (void**)&reply);
-	URN_RET_ON_RV(urn_redis_chkfree_reply_OK(reply, &opt), "error in checking OK");
+	URN_RET_ON_RV(urn_redis_chkfree_reply_str(reply, "OK", &opt), "error in checking OK");
 
 	URN_INFO("PIPELINE get reply: PUBLISH");
 	long long listener_ct = 0;
 	redisGetReply(c, (void**)&reply);
-	URN_RET_ON_RV(urn_redis_chkfree_reply_INT(reply, &listener_ct, &opt), "error in checking listeners");
+	URN_RET_ON_RV(urn_redis_chkfree_reply_long(reply, &listener_ct, &opt), "error in checking listeners");
+	URN_INFOF("PUBLISH is heard by %lld listeners", listener_ct);
+	redisGetReply(c, (void**)&reply);
+	URN_RET_ON_RV(urn_redis_chkfree_reply_long(reply, &listener_ct, &opt), "error in checking listeners");
+	URN_INFOF("PUBLISH is heard by %lld listeners", listener_ct);
+	redisGetReply(c, (void**)&reply);
+	URN_RET_ON_RV(urn_redis_chkfree_reply_long(reply, &listener_ct, &opt), "error in checking listeners");
 	URN_INFOF("PUBLISH is heard by %lld listeners", listener_ct);
 	return rv;
 }

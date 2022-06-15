@@ -6,10 +6,18 @@
 
 #include "urn.h"
 
-int urn_redis(redisContext **ctx, char *host, int port, char *pswd, urn_func_opt *opt) {
+int urn_redis_chkfree_reply_str(redisReply *reply, char *expect_ans, urn_func_opt *opt);
+int urn_redis_chkfree_reply_long(redisReply *reply, long long *lldp, urn_func_opt *opt);
+
+int urn_redis(redisContext **ctx, char *host, char *portc, char *pswd, urn_func_opt *opt) {
 	int rv = 0;
+	int port = 6379;
 	char *err_str = NULL;
 
+	if (host == NULL) host = "127.0.0.1";
+	if (portc != NULL) port = atoi(portc);
+
+	URN_INFOF("connecting redis %s %d pswd %s", host, port, pswd==NULL ? "NO":"YES");
 	*ctx = redisConnect(host, port);
 	if (*ctx == NULL)
 		return URN_ERRRET("Could not allocate redis context", 1);
@@ -21,33 +29,29 @@ int urn_redis(redisContext **ctx, char *host, int port, char *pswd, urn_func_opt
 	if (opt == NULL || (opt && !(opt->silent)))
 		URN_LOGF("connected %s %d", host, port);
 
-	if (pswd == NULL)
-		return 0;
-
-	if (opt && opt->verbose)
-		URN_LOG("AUTH with password");
-	redisReply *reply = redisCommand(*ctx, "AUTH %s", pswd);
-	if ((*ctx)->err) {
-		rv = ((*ctx)->err);
-		err_str = "Error in Redis AUTH reply";
-	}
-	// str len 2: OK
-	if (reply->type != REDIS_REPLY_STATUS) {
-		rv = 1;
-		err_str = "Unexpected Redis AUTH reply type";
-		if (opt == NULL || (opt && !(opt->silent)))
-			URN_LOGF_C(RED, "%s: %d", err_str, reply->type);
-	} else if (reply->len != 2 || reply->str[0] != 'O' || reply->str[1] != 'K') {
-		rv = 1;
-		err_str = "Unexpected Redis AUTH reply str";
-		if (opt == NULL || (opt && !(opt->silent)))
-			URN_LOGF_C(RED, "%s: %s", err_str, reply->str);
+	if (pswd == NULL) {
+		if (opt && opt->verbose)
+			URN_LOG("PING PONG test");
+		redisReply *reply = redisCommand(*ctx, "PING");
+		if ((*ctx)->err) {
+			rv = ((*ctx)->err);
+			err_str = "Error in Redis AUTH reply";
+		}
+		rv = urn_redis_chkfree_reply_str(reply, "PONG", opt);
+	} else {
+		if (opt && opt->verbose)
+			URN_INFO("AUTH with password");
+		redisReply *reply = redisCommand(*ctx, "AUTH %s", pswd);
+		if ((*ctx)->err) {
+			rv = ((*ctx)->err);
+			err_str = "Error in Redis AUTH reply";
+		}
+		rv = urn_redis_chkfree_reply_str(reply, "OK", opt);
 	}
 
-	freeReplyObject(reply);
 	if (rv != 0) {
 		if (opt == NULL || (opt && !(opt->silent)))
-			URN_LOG_C(RED, err_str);
+			URN_WARN(err_str);
 		redisFree(*ctx);
 		return URN_ERRRET(err_str, rv);
 	}
@@ -55,28 +59,25 @@ int urn_redis(redisContext **ctx, char *host, int port, char *pswd, urn_func_opt
 }
 
 // Could be used for pipelined reply, it must be 'OK'.
-int urn_redis_chkfree_reply_OK(redisReply *reply, urn_func_opt *opt) {
+int urn_redis_chkfree_reply_str(redisReply *reply, char *expect_ans, urn_func_opt *opt) {
 	// str len 2: OK
-	if (reply->type != REDIS_REPLY_STATUS) {
+	// if (reply->len != 2 || reply->str[0] != 'O' || reply->str[1] != 'K') {
+	if (strcmp(reply->str, expect_ans) != 0) {
 		if (opt == NULL || (opt && !(opt->silent)))
-			URN_LOGF_C(RED, "Unexpected Redis OK reply type %d", reply->type);
-		return EINVAL;
-	} else if (reply->len != 2 || reply->str[0] != 'O' || reply->str[1] != 'K') {
-		if (opt == NULL || (opt && !(opt->silent)))
-			URN_LOGF_C(RED, "Unexpected Redis OK reply content: %s", reply->str);
+			URN_LOGF_C(RED, "Unexpected Redis reply, expected %s got:%s", expect_ans, reply->str);
 		return EINVAL;
 	} else if (opt && opt->verbose)
-		URN_LOGF("<-- OK");
+		URN_LOGF("<-- %s", reply->str);
 	freeReplyObject(reply);
 	return 0;
 }
 
 // Could be used for pipelined reply, it must be 'OK'.
-int urn_redis_chkfree_reply_INT(redisReply *reply, long long *lldp, urn_func_opt *opt) {
+int urn_redis_chkfree_reply_long(redisReply *reply, long long *lldp, urn_func_opt *opt) {
 	// str len 2: OK
 	if (reply->type != REDIS_REPLY_INTEGER) {
 		if (opt == NULL || (opt && !(opt->silent)))
-			URN_LOGF_C(RED, "Unexpected Redis INT reply type %d", reply->type);
+			URN_LOGF_C(RED, "Unexpected Redis long long reply type expect %d got %d", REDIS_REPLY_INTEGER, reply->type);
 		return EINVAL;
 	} else if (opt && opt->verbose)
 		URN_LOGF("<-- %lld", reply->integer);
@@ -91,8 +92,8 @@ int urn_redis_set(redisContext *ctx, char *key, char*value, urn_func_opt *opt) {
 
 	if (opt && opt->verbose)
 		URN_LOGF("--> SET %s %s", key, value);
-	rv = urn_redis_chkfree_reply_OK(
-			redisCommand(ctx, "SET %s %s", key, value), opt);
+	rv = urn_redis_chkfree_reply_str(
+			redisCommand(ctx, "SET %s %s", key, value), "OK", opt);
 
 	if (rv != 0) {
 		if (opt == NULL || (opt && !(opt->silent)))
@@ -108,8 +109,8 @@ int urn_redis_broadcast(redisContext *ctx, char *key, char*value, urn_func_opt *
 
 	if (opt && opt->verbose)
 		URN_LOGF("--> PUBLISH %s %s", key, value);
-	rv = urn_redis_chkfree_reply_OK(
-			redisCommand(ctx, "SET %s %s", key, value), opt);
+	rv = urn_redis_chkfree_reply_str(
+			redisCommand(ctx, "SET %s %s", key, value), "OK", opt);
 
 	if (rv != 0) {
 		if (opt == NULL || (opt && !(opt->silent)))
@@ -200,7 +201,7 @@ int urn_redis_pub(redisContext *ctx, char *key, char*value, long long *listener_
 
 	if (opt && opt->verbose)
 		URN_LOGF("--> PUBLISH %s %s", key, value);
-	rv = urn_redis_chkfree_reply_INT(
+	rv = urn_redis_chkfree_reply_long(
 			redisCommand(ctx, "PUBLISH %s %s", key, value), listener_ct, opt);
 
 	if (rv != 0) {
