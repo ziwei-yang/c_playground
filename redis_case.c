@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <glib.h>
+#include <unistd.h> // sleep
 
 #include "urn.h"
 #include "redis.h"
@@ -50,7 +51,49 @@ int redis_sync_example() {
 	rv = urn_redis_del(c, "foo", &opt);
 	if (rv != 0) return URN_FATAL("Error in del foo", rv);
 	URN_INFOF("<-- %d %s", value_len, value);
-	return 0;
+
+	URN_INFO("PUBLISH chn value");
+	long long listener_ct = 0;
+	rv = urn_redis_pub(c, "chn", "value", &listener_ct, &opt);
+	if (rv != 0)
+		return URN_FATAL("Error in pub chn value", rv);
+	URN_INFOF("PUBLISH is heard by %lld listeners", listener_ct);
+	return rv;
+}
+
+int redis_pipeline_example() {
+	int rv = 0;
+	redisContext *c = NULL;
+	redisReply *reply;
+	urn_func_opt opt = {.verbose=1,.silent=0};
+
+	rv = urn_redis(&c, "127.0.0.1", 6379, getenv("REDIS_PSWD"), &opt);
+	if (rv != 0)
+		return URN_FATAL("Error in init redis", rv);
+	URN_LOG("redis context initialized");
+
+	URN_INFO("PIPELINE SET foo bar 1/2/3");
+	redisAppendCommand(c, "SET foo bar");
+	redisAppendCommand(c, "SET foo1 bar1");
+	redisAppendCommand(c, "SET foo2 bar2");
+
+	URN_INFO("PIPELINE PUBLISH chn value");
+	redisAppendCommand(c, "PUBLISH chn value");
+
+	URN_INFO("PIPELINE get reply: 3 for SET");
+	redisGetReply(c, (void**)&reply);
+	URN_RET_ON_RV(urn_redis_chkfree_reply_OK(reply, &opt), "error in checking OK");
+	redisGetReply(c, (void**)&reply);
+	URN_RET_ON_RV(urn_redis_chkfree_reply_OK(reply, &opt), "error in checking OK");
+	redisGetReply(c, (void**)&reply);
+	URN_RET_ON_RV(urn_redis_chkfree_reply_OK(reply, &opt), "error in checking OK");
+
+	URN_INFO("PIPELINE get reply: PUBLISH");
+	long long listener_ct = 0;
+	redisGetReply(c, (void**)&reply);
+	URN_RET_ON_RV(urn_redis_chkfree_reply_INT(reply, &listener_ct, &opt), "error in checking listeners");
+	URN_INFOF("PUBLISH is heard by %lld listeners", listener_ct);
+	return rv;
 }
 
 void connect_cb (const redisAsyncContext *ac G_GNUC_UNUSED, int status)
@@ -105,12 +148,16 @@ int redis_async_example() {
 	redisAsyncCommand(ac, command_cb, "B", "SET key 1234");
 	redisAsyncCommand(ac, command_cb, "C", "GET key");
 
-	URN_INFO("Start GLib mainloop");
+	URN_INFO("Start GLib mainloop after 5s");
+	sleep(5);
 	g_main_loop_run(g_main_loop_new(NULL, FALSE));
+	URN_INFO("return after 5s");
+	sleep(5);
 	return 0;
 }
 
 int main(int argc, char **argv) {
 	redis_sync_example();
+	redis_pipeline_example();
 	redis_async_example();
 }

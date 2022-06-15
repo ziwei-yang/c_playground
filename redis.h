@@ -54,32 +54,66 @@ int urn_redis(redisContext **ctx, char *host, int port, char *pswd, urn_func_opt
 	return 0;
 }
 
+// Could be used for pipelined reply, it must be 'OK'.
+int urn_redis_chkfree_reply_OK(redisReply *reply, urn_func_opt *opt) {
+	// str len 2: OK
+	if (reply->type != REDIS_REPLY_STATUS) {
+		if (opt == NULL || (opt && !(opt->silent)))
+			URN_LOGF_C(RED, "Unexpected Redis OK reply type %d", reply->type);
+		return EINVAL;
+	} else if (reply->len != 2 || reply->str[0] != 'O' || reply->str[1] != 'K') {
+		if (opt == NULL || (opt && !(opt->silent)))
+			URN_LOGF_C(RED, "Unexpected Redis OK reply content: %s", reply->str);
+		return EINVAL;
+	} else if (opt && opt->verbose)
+		URN_LOGF("<-- OK");
+	freeReplyObject(reply);
+	return 0;
+}
+
+// Could be used for pipelined reply, it must be 'OK'.
+int urn_redis_chkfree_reply_INT(redisReply *reply, long long *lldp, urn_func_opt *opt) {
+	// str len 2: OK
+	if (reply->type != REDIS_REPLY_INTEGER) {
+		if (opt == NULL || (opt && !(opt->silent)))
+			URN_LOGF_C(RED, "Unexpected Redis INT reply type %d", reply->type);
+		return EINVAL;
+	} else if (opt && opt->verbose)
+		URN_LOGF("<-- %lld", reply->integer);
+	if (lldp != NULL) *lldp = reply->integer;
+	freeReplyObject(reply);
+	return 0;
+}
+
 int urn_redis_set(redisContext *ctx, char *key, char*value, urn_func_opt *opt) {
 	int rv = 0;
 	char *err_str = NULL;
 
 	if (opt && opt->verbose)
 		URN_LOGF("--> SET %s %s", key, value);
-	redisReply *reply = redisCommand(ctx, "SET %s %s", key, value);
+	rv = urn_redis_chkfree_reply_OK(
+			redisCommand(ctx, "SET %s %s", key, value), opt);
 
-	// str len 2: OK
-	if (reply->type != REDIS_REPLY_STATUS) {
-		rv = 1;
-		err_str = "Unexpected Redis SET reply type";
-		if (opt == NULL || (opt && !(opt->silent)))
-			URN_LOGF_C(RED, "SET %s %s: err:%s reply.type:%d", key, value, err_str, reply->type);
-	} else if (reply->len != 2 || reply->str[0] != 'O' || reply->str[1] != 'K') {
-		rv = 1;
-		err_str = "Unexpected Redis SET reply str";
-		if (opt == NULL || (opt && !(opt->silent)))
-			URN_LOGF_C(RED, "SET %s %s: err:%s", key, value, err_str);
-	} else if (opt && opt->verbose)
-		URN_LOGF("<-- SET %s", key);
-
-	freeReplyObject(reply);
 	if (rv != 0) {
 		if (opt == NULL || (opt && !(opt->silent)))
-			URN_LOGF_C(RED, "Redis SET failed: %s", err_str);
+			URN_LOGF_C(RED, "Redis SET %s %s failed: %s", key, value, err_str);
+		return URN_ERRRET(err_str, rv);
+	}
+	return rv;
+}
+
+int urn_redis_broadcast(redisContext *ctx, char *key, char*value, urn_func_opt *opt) {
+	int rv = 0;
+	char *err_str = NULL;
+
+	if (opt && opt->verbose)
+		URN_LOGF("--> PUBLISH %s %s", key, value);
+	rv = urn_redis_chkfree_reply_OK(
+			redisCommand(ctx, "SET %s %s", key, value), opt);
+
+	if (rv != 0) {
+		if (opt == NULL || (opt && !(opt->silent)))
+			URN_LOGF_C(RED, "Redis SET %s %s failed: %s", key, value, err_str);
 		return URN_ERRRET(err_str, rv);
 	}
 	return rv;
@@ -155,6 +189,23 @@ int urn_redis_del(redisContext *ctx, char *key, urn_func_opt *opt) {
 	if (rv != 0) {
 		if (opt == NULL || (opt && !(opt->silent)))
 			URN_LOGF_C(RED, "DEL failed: %s", err_str);
+		return URN_ERRRET(err_str, rv);
+	}
+	return rv;
+}
+
+int urn_redis_pub(redisContext *ctx, char *key, char*value, long long *listener_ct, urn_func_opt *opt) {
+	int rv = 0;
+	char *err_str = NULL;
+
+	if (opt && opt->verbose)
+		URN_LOGF("--> PUBLISH %s %s", key, value);
+	rv = urn_redis_chkfree_reply_INT(
+			redisCommand(ctx, "PUBLISH %s %s", key, value), listener_ct, opt);
+
+	if (rv != 0) {
+		if (opt == NULL || (opt && !(opt->silent)))
+			URN_LOGF_C(RED, "Redis PUBLISH %s %s failed: %s", key, value, err_str);
 		return URN_ERRRET(err_str, rv);
 	}
 	return rv;
