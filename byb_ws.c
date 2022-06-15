@@ -12,7 +12,7 @@
 // uranus options
 #undef URN_WSS_DEBUG // wss I/O log
 #define URN_MAIN_DEBUG // debug log
-#undef URN_MAIN_DEBUG // debug log
+//#undef URN_MAIN_DEBUG // off debug log
 
 #include "urn.h"
 #include "order.h"
@@ -21,16 +21,18 @@
 
 // local options
 #define MAX_DEPTH 5 // max depth in each side.
-#define MAX_PAIRS 1000
+#define MAX_PAIRS 300
+#define TSMS_LEN 13 // ms timestamp str len
 
 static int parse_args_build_idx(int argc, char **argv);
 static int to_bybit_sym(urn_pair *pair, char **str);
 static int wss_connect();
 static int on_wss_msg(char *msg, size_t len);
-static void wss_stat();
 static int on_odbk(int pairid, const char *type, yyjson_val *jdata);
 static int on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 static GList *remove_top_porder(GList *asks);
+static void wss_stat();
+static int broadcast();
 
 #ifdef URN_MAIN_DEBUG
 static void print_odbk(int pairid);
@@ -45,6 +47,7 @@ hashmap* trade_chn_to_pair;
 hashmap* depth_chn_to_pair;
 
 ///////////// data organized by pairid //////////////
+int max_pair_id = -1;
 hashmap* trade_chn_to_pairid;
 hashmap* depth_chn_to_pairid;
 
@@ -53,16 +56,23 @@ GList *bids_arr[MAX_PAIRS]; // bids = bids_arr[pairid]
 GList *asks_arr[MAX_PAIRS]; // asks = asks_arr[pairid]
 int    askct_arr[MAX_PAIRS];
 int    bidct_arr[MAX_PAIRS];
-unsigned long odbk_t_arr[MAX_PAIRS];
+long   odbk_t_arr[MAX_PAIRS];
 
+///////////// wss_req //////////////
 char*    wss_req_s[99];
-int      wss_req_i;
+int      wss_req_i; // idx of last sent wss_req_s
 
+///////////// stat //////////////
 unsigned int wss_stat_sz;
 unsigned int wss_stat_ct;
-struct timeval wss_stat_t;
-struct timeval wss_stat_te;
+struct timespec wss_stat_t;
 int wss_stat_per_e = 8;
+
+struct timespec _tmp_clock;
+
+///////////// broadcast ctrl //////////////
+struct timespec brdcst_t;
+unsigned int newodbk_arr[MAX_PAIRS];
 
 int main(int argc, char **argv) {
 	if (argc > MAX_PAIRS)
@@ -74,6 +84,7 @@ int main(int argc, char **argv) {
 		odbk_t_arr[i] = 0;
 		askct_arr[i] = 0;
 		bidct_arr[i] = 0;
+		newodbk_arr[i] = 0;
 	}
 
 	int rv = 0;
@@ -135,7 +146,8 @@ static int wss_connect(urn_func_opt opt) {
 
 	wss_stat_sz = 0;
 	wss_stat_ct = 0;
-	gettimeofday(&wss_stat_t, NULL);
+	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &wss_stat_t);
+	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &brdcst_t);
 
 	while(true) {
 #ifdef URN_WSS_DEBUG
@@ -155,9 +167,11 @@ static int wss_connect(urn_func_opt opt) {
 			URN_WARNF("Error in processing wss msg %.*s", (int)recv_bytes, recv_buf);
 			return rv;
 		}
+		
+		broadcast();
 
-		// stat every few seconds, send unfinished requests after.
-		// Too many subscribes may cause bybit server drops conn.
+		// stat every few seconds, also send unfinished requests after.
+		// Too many subscribes at once may cause bybit server drops conn.
 		if ((wss_stat_ct >> wss_stat_per_e) > 0) {
 			wss_stat();
 
@@ -174,9 +188,59 @@ static int wss_connect(urn_func_opt opt) {
 	return 0;
 }
 
+// broadcast every few milliseconds.
+struct timeval brdcst_json_time;
+static int broadcast() {
+	// less than 1_000_000 ns, return
+	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
+	if (_tmp_clock.tv_sec == brdcst_t.tv_sec && _tmp_clock.tv_nsec - brdcst_t.tv_nsec < 1000000)
+		return 0;
+
+	gettimeofday(&brdcst_json_time, NULL);
+
+	int data_ct = 0;
+	char *msg[max_pair_id]; // msg to broadcast
+	char *chn[max_pair_id]; // chn to broadcast
+	int maxslen = (2 * MAX_DEPTH * (13 + 4*URN_INUM_PRECISE) + 26);
+	for (int pairid = 0; pairid < max_pair_id; pairid ++) {
+		if (newodbk_arr[pairid] <= 0) continue;
+		URN_DEBUGF("%s, updates %d", pair_arr[pairid], newodbk_arr[pairid]);
+
+		// build broadcast json
+		// [bids, asks, t, mkt_t]
+		// for each order:
+		// 	strlen({"p":X.X,"s":X.X}) = 13+4X
+		// total orderbook len:
+		// 	2 * DEPTH * (13 + 4X)
+		// timestamp len = 1655250053846 = 13
+		// [bids, asks, ts, ts] len:
+		// 	2 * DEPTH * (13 + 4X) + 26
+		char *s = malloc(maxslen);
+		int ct = 0;
+		*(s+ct) = '['; ct++;
+		ct += sprintf_odbk_json(s+ct, bids_arr[pairid]);
+		*(s+ct) = ','; ct++;
+		ct += sprintf_odbk_json(s+ct, asks_arr[pairid]);
+		ct += sprintf(s+ct, ",%ld%03d,%ld]",
+				brdcst_json_time.tv_sec,
+				brdcst_json_time.tv_usec/1000,
+				odbk_t_arr[pairid]/1000);
+		URN_DEBUGF("%s, updates %d, json len %d/%d\n%s",
+				pair_arr[pairid], newodbk_arr[pairid],
+				ct, maxslen, s);
+
+		free(s);
+		newodbk_arr[pairid] = 0; // reset new odbk ct;
+		data_ct ++;
+	}
+	if (data_ct == 0) return 0;
+
+	return 0;
+}
+
 static void wss_stat() {
-	gettimeofday(&wss_stat_te, NULL);
-	time_t passed_s = wss_stat_te.tv_sec - wss_stat_t.tv_sec;
+	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
+	time_t passed_s = _tmp_clock.tv_sec - wss_stat_t.tv_sec;
 	float ct_per_s = (float)(wss_stat_ct) / (float)passed_s;
 	float kb_per_s = (float)(wss_stat_sz) / (float)passed_s / 1000.f;
 	URN_INFOF("wss_stat in passed %6lu sec %8.f msg/s %8.f KB/s", passed_s, ct_per_s, kb_per_s);
@@ -185,7 +249,7 @@ static void wss_stat() {
 	// Reset stat
 	wss_stat_ct = 0;
 	wss_stat_sz = 0;
-	wss_stat_t = wss_stat_te;
+	wss_stat_t = _tmp_clock;
 }
 
 static int on_wss_msg(char *msg, size_t len) {
@@ -222,6 +286,8 @@ static int on_wss_msg(char *msg, size_t len) {
 		const char *type = yyjson_get_str(jval);
 		URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "timestamp_e6"), "No timestamp_e6", EINVAL);
 		const char *ts_e6 = yyjson_get_str(jval);
+		newodbk_arr[pairid] ++;
+		odbk_t_arr[pairid] = strtol(ts_e6, NULL, 10);
 
 		if (depth_pair == NULL) {
 			URN_WARNF("NO depth_pair id %lu for topic %s", pairid, topic);
@@ -519,21 +585,21 @@ static void print_odbk(int pairid) {
 			b = NULL;
 
 		if (b != NULL && a != NULL) {
-			printf("%2d %s %s  -  %s %s\n",
+			printf("%2d %20s %20s  -  %20s %20s\n",
 				idx,
 				urn_inum_str(b->p), urn_inum_str(b->s),
 				urn_inum_str(a->p), urn_inum_str(a->s)
 			);
 		} else if (b != NULL) {
 			URN_DEBUGF("orderbook[%3d] %20s %3d bid %p ask %p", pairid, pair, idx, b, a);
-			printf("%2d %s %s  -  %s %s\n",
+			printf("%2d %20s %20s  -  %20s %20s\n",
 				idx,
 				urn_inum_str(b->p), urn_inum_str(b->s),
 				"", ""
 			);
 		} else if (a != NULL) {
 			URN_DEBUGF("orderbook[%3d] %20s %3d bid %p ask %p", pairid, pair, idx, b, a);
-			printf("%2d %s %s  -  %s %s\n",
+			printf("%2d %20s %20s  -  %20s %20s\n",
 				idx, "", "",
 				urn_inum_str(a->p), urn_inum_str(a->s)
 			);
@@ -632,6 +698,7 @@ static int parse_args_build_idx(int argc, char **argv) {
 
 		urn_hmap_set(depth_chn_to_pairid, depth_chn, (uintptr_t)pairid);
 		urn_hmap_set(trade_chn_to_pairid, trade_chn, (uintptr_t)pairid);
+		max_pair_id = pairid;
 		chn_ct += 2;
 	}
 
