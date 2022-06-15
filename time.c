@@ -44,9 +44,18 @@ int main(){
 	long unsigned sizeofts = sizeof(*ts);
 	printf(" malloc   : %lu\n", sizeofts);
 	ts = malloc(sizeofts);
-	// clock_gettime(CLOCK_REALTIME, ts); // same as gettimeofday()
-	clock_gettime(CLOCK_MONOTONIC_RAW, ts);
-	printf(" timesepc : %ld.%9ld\n", ts->tv_sec, ts->tv_nsec);
+
+	for (int i=0; i<10; i++) {
+		clock_gettime(CLOCK_REALTIME, ts); // same as gettimeofday()
+		printf("CLOCK_REALTIME timesepc : %ld.%20ld\n", ts->tv_sec, ts->tv_nsec);
+
+		clock_gettime(CLOCK_MONOTONIC_RAW, ts);
+		printf("CLOCK_MONOTONIC_RAW timesepc : %ld.%20ld\n", ts->tv_sec, ts->tv_nsec);
+
+		clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, ts);
+		printf("CLOCK_MONOTONIC_RAW_APPROX timesepc : %ld.%20ld\n", ts->tv_sec, ts->tv_nsec);
+	}
+
 	free(ts);
 	return 0;
 }

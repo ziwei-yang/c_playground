@@ -79,6 +79,7 @@ char         *pub_odbk_chn_arr[MAX_PAIRS];
 char         *pub_tick_chn_arr[MAX_PAIRS];
 redisContext *redis;
 
+unsigned int  brdcst_stat_rd_ct;
 unsigned int  brdcst_stat_ct;
 unsigned int  brdcst_stat_t;
 
@@ -103,6 +104,7 @@ int main(int argc, char **argv) {
 		pub_tick_chn_arr[i] = NULL;
 	}
 	brdcst_stat_ct = 0;
+	brdcst_stat_rd_ct = 0;
 	brdcst_stat_t = 0;
 
 	int rv = 0;
@@ -226,10 +228,11 @@ static int broadcast() {
 	// less than Xms = X*1_000_000 ns, return
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
 	if ((_tmp_clock.tv_sec == brdcst_t.tv_sec) && 
-			(_tmp_clock.tv_nsec - brdcst_t.tv_nsec < 1000000*brdcst_interval_ms))
+			(_tmp_clock.tv_nsec - brdcst_t.tv_nsec < 1000000l * brdcst_interval_ms))
 		return 0;
+	brdcst_stat_rd_ct ++;
 	brdcst_t.tv_sec = _tmp_clock.tv_sec;
-	brdcst_t.tv_nsec = brdcst_t.tv_nsec;
+	brdcst_t.tv_nsec = _tmp_clock.tv_nsec;
 
 	gettimeofday(&brdcst_json_t, NULL);
 
@@ -296,13 +299,18 @@ static int broadcast() {
 		gettimeofday(&brdcst_json_end_t, NULL);
 		long cost_us = urn_usdiff(brdcst_json_t, brdcst_json_end_t);
 		int diff = brdcst_t.tv_sec - brdcst_stat_t;
-		float speed = (float)brdcst_stat_ct / (float)diff;
-		if (speed > 30) {
+		int speed = brdcst_stat_ct / diff;
+		// control interval dynamically, publish redis at 50~200/s
+		if (speed > 200) {
 			brdcst_interval_ms ++;
+		} else if (speed < 50 && brdcst_interval_ms > 1) {
+			brdcst_interval_ms --;
 		}
 
-		URN_INFOF("brdcst_stat in %d sec, %8.2f/s exp:[%ld]ms cost %4.2f ms",
-				diff, speed, brdcst_interval_ms, (float)cost_us/1000.f);
+		URN_LOGF_C(GREEN, "--> brdcst in %d s %d/s rd %d/s every %ld ms, cost %4.2f ms w/ %d chn",
+				diff, speed, brdcst_stat_rd_ct/diff,
+				brdcst_interval_ms, (float)cost_us/1000.f, data_ct);
+		brdcst_stat_rd_ct = 0;
 		brdcst_stat_ct = 0;
 		brdcst_stat_t = brdcst_t.tv_sec;
 	}
@@ -316,7 +324,7 @@ static void wss_stat() {
 	time_t passed_s = _tmp_clock.tv_sec - wss_stat_t.tv_sec;
 	float ct_per_s = (float)(wss_stat_ct) / (float)passed_s;
 	float kb_per_s = (float)(wss_stat_sz) / (float)passed_s / 1000.f;
-	URN_INFOF("wss_stat in %6lu sec %8.f msg/s %8.f KB/s", passed_s, ct_per_s, kb_per_s);
+	URN_INFOF("<-- wss in %6lu s %8.f msg/s %8.f KB/s", passed_s, ct_per_s, kb_per_s);
 	if (passed_s < 5)
 		wss_stat_per_e ++; // double stat interval
 	// Reset stat
