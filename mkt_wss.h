@@ -72,6 +72,7 @@ struct timespec _tmp_clock;
 
 ///////////// broadcast ctrl //////////////
 struct timespec brdcst_t; // last time to call broadcast()
+unsigned long brdcst_interval_ms; // min ms between two broadcast
 struct timespec brdcst_t_arr[MAX_PAIRS]; // last time to publish data
 unsigned int  newodbk_arr[MAX_PAIRS];
 char         *pub_odbk_chn_arr[MAX_PAIRS];
@@ -86,6 +87,7 @@ char         exchange[32];
 
 int main(int argc, char **argv) {
 	mkt_data_set_exchange(exchange);
+	brdcst_interval_ms = 1;
 
 	if (argc > MAX_PAIRS)
 		return URN_FATAL("Raise MAX_PAIRS please", ENOMEM);
@@ -221,9 +223,10 @@ int wss_connect() {
 struct timeval brdcst_json_t;
 struct timeval brdcst_json_end_t;
 static int broadcast() {
-	// less than 1_000_000 ns, return
+	// less than Xms = X*1_000_000 ns, return
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
-	if ((_tmp_clock.tv_sec == brdcst_t.tv_sec) && (_tmp_clock.tv_nsec - brdcst_t.tv_nsec < 1000000))
+	if ((_tmp_clock.tv_sec == brdcst_t.tv_sec) && 
+			(_tmp_clock.tv_nsec - brdcst_t.tv_nsec < 1000000*brdcst_interval_ms))
 		return 0;
 	brdcst_t.tv_sec = _tmp_clock.tv_sec;
 	brdcst_t.tv_nsec = brdcst_t.tv_nsec;
@@ -292,9 +295,14 @@ static int broadcast() {
 		// stat in 10s, also print cost time this round.
 		gettimeofday(&brdcst_json_end_t, NULL);
 		long cost_us = urn_usdiff(brdcst_json_t, brdcst_json_end_t);
-
 		int diff = brdcst_t.tv_sec - brdcst_stat_t;
-		URN_INFOF("brdcst_stat in %d sec, %8.2f/s cost %4.2f ms", diff, (float)brdcst_stat_ct/(float)diff, (float)cost_us/1000.f);
+		float speed = (float)brdcst_stat_ct / (float)diff;
+		if (speed > 30) {
+			brdcst_interval_ms ++;
+		}
+
+		URN_INFOF("brdcst_stat in %d sec, %8.2f/s exp:[%ld]ms cost %4.2f ms",
+				diff, speed, brdcst_interval_ms, (float)cost_us/1000.f);
 		brdcst_stat_ct = 0;
 		brdcst_stat_t = brdcst_t.tv_sec;
 	}
