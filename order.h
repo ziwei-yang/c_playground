@@ -197,7 +197,7 @@ int urn_porder_px_cmprv(const void *o1, const void *o2) {
 }
 // should be faster than yyjson dump
 static int sprintf_odbko_json(char *s, urn_porder *o) {
-	if (o== NULL) URN_FATAL("_sprintf_odbko_json() with NULL o", EINVAL);
+	if (o == NULL) URN_FATAL("sprintf_odbko_json() with NULL o", EINVAL);
 	int ct = 0;
 	ct += sprintf(s+ct, "{\"p\":");
 	ct += urn_inum_sprintf(o->p, s+ct);
@@ -276,6 +276,8 @@ static int sprintf_odbk_json(char *s, GList *l) {
 	ct ++;
 	GList *node = tail;
 	do {
+		if (node == l && node->data == NULL)
+			break; // only head could have NULL
 		ct += sprintf_odbko_json(s+ct, node->data);
 		*(s+ct) = ','; ct++;
 		if (node == l) break;

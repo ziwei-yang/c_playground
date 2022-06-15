@@ -12,17 +12,20 @@
 // uranus options
 #undef URN_WSS_DEBUG // wss I/O log
 #define URN_MAIN_DEBUG // debug log
-//#undef URN_MAIN_DEBUG // off debug log
+#undef URN_MAIN_DEBUG // off debug log
 
 #include "urn.h"
 #include "order.h"
 #include "wss.h"
 #include "hmap.h"
+#include "redis.h"
 
 // local options
 #define MAX_DEPTH 5 // max depth in each side.
 #define MAX_PAIRS 300
 #define TSMS_LEN 13 // ms timestamp str len
+#define PUB_REDIS
+//#undef PUB_REDIS // off redis publish
 
 static int parse_args_build_idx(int argc, char **argv);
 static int to_bybit_sym(urn_pair *pair, char **str);
@@ -47,9 +50,9 @@ hashmap* trade_chn_to_pair;
 hashmap* depth_chn_to_pair;
 
 ///////////// data organized by pairid //////////////
-int max_pair_id = -1;
-hashmap* trade_chn_to_pairid;
-hashmap* depth_chn_to_pairid;
+int     max_pair_id = -1;
+hashmap *trade_chn_to_pairid;
+hashmap *depth_chn_to_pairid;
 
 char  *pair_arr[MAX_PAIRS]; // pair = pair_arr[pairid]
 GList *bids_arr[MAX_PAIRS]; // bids = bids_arr[pairid]
@@ -72,9 +75,16 @@ struct timespec _tmp_clock;
 
 ///////////// broadcast ctrl //////////////
 struct timespec brdcst_t;
-unsigned int newodbk_arr[MAX_PAIRS];
+unsigned int  newodbk_arr[MAX_PAIRS];
+char         *pub_odbk_chn_arr[MAX_PAIRS];
+char         *pub_tick_chn_arr[MAX_PAIRS];
+redisContext *redis;
+
+char         exchange[32];
 
 int main(int argc, char **argv) {
+	sprintf(exchange, "BybitU");
+
 	if (argc > MAX_PAIRS)
 		return URN_FATAL("Raise MAX_PAIRS please", ENOMEM);
 	for (int i=0; i<MAX_PAIRS; i++) {
@@ -85,14 +95,26 @@ int main(int argc, char **argv) {
 		askct_arr[i] = 0;
 		bidct_arr[i] = 0;
 		newodbk_arr[i] = 0;
+		pub_odbk_chn_arr[i] = NULL;
+		pub_tick_chn_arr[i] = NULL;
 	}
 
 	int rv = 0;
 	if ((rv = parse_args_build_idx(argc, argv)) != 0)
 		return URN_FATAL("Error in parse_args_build_idx()", rv);
 
+	URN_INFOF("max_pair_id %d", max_pair_id);
+
 	URN_INFOF("nng_tls_engine_name %s", nng_tls_engine_name());
 	URN_INFOF("nng_tls_engine_description %s", nng_tls_engine_description());
+
+#ifdef PUB_REDIS
+	urn_func_opt verbose_opt = {.verbose=1,.silent=0};
+	rv = urn_redis(&redis, getenv("REDIS_HOST"), getenv("REDIS_PORT"), getenv("REDIS_PSWD"), &verbose_opt);
+	if (rv != 0)
+		return URN_FATAL("Error in init redis", rv);
+#endif
+
 	if ((rv = wss_connect()) != 0)
 		return URN_FATAL("Error in wss_connect()", rv);
 
@@ -193,8 +215,10 @@ struct timeval brdcst_json_time;
 static int broadcast() {
 	// less than 1_000_000 ns, return
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
-	if (_tmp_clock.tv_sec == brdcst_t.tv_sec && _tmp_clock.tv_nsec - brdcst_t.tv_nsec < 1000000)
+	if ((_tmp_clock.tv_sec == brdcst_t.tv_sec) && (_tmp_clock.tv_nsec - brdcst_t.tv_nsec < 1000000))
 		return 0;
+	brdcst_t.tv_sec = _tmp_clock.tv_sec;
+	brdcst_t.tv_nsec = brdcst_t.tv_nsec;
 
 	gettimeofday(&brdcst_json_time, NULL);
 
@@ -202,9 +226,9 @@ static int broadcast() {
 	char *msg[max_pair_id]; // msg to broadcast
 	char *chn[max_pair_id]; // chn to broadcast
 	int maxslen = (2 * MAX_DEPTH * (13 + 4*URN_INUM_PRECISE) + 26);
-	for (int pairid = 0; pairid < max_pair_id; pairid ++) {
+	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
 		if (newodbk_arr[pairid] <= 0) continue;
-		URN_DEBUGF("%s, updates %d", pair_arr[pairid], newodbk_arr[pairid]);
+		URN_DEBUGF("to broadcast %s %d/%d, updates %d", pair_arr[pairid], pairid, max_pair_id, newodbk_arr[pairid]);
 
 		// build broadcast json
 		// [bids, asks, t, mkt_t]
@@ -225,15 +249,35 @@ static int broadcast() {
 				brdcst_json_time.tv_sec,
 				brdcst_json_time.tv_usec/1000,
 				odbk_t_arr[pairid]/1000);
-		URN_DEBUGF("%s, updates %d, json len %d/%d\n%s",
+		URN_DEBUGF("broadcast %s, updates %d, json len %d/%d -> %s\n%s",
 				pair_arr[pairid], newodbk_arr[pairid],
-				ct, maxslen, s);
+				ct, maxslen, pub_odbk_chn_arr[pairid], s);
 
+#ifdef PUB_REDIS
+		redisAppendCommand(redis, "PUBLISH %s %s", pub_odbk_chn_arr[pairid], s);
+#endif
 		free(s);
 		newodbk_arr[pairid] = 0; // reset new odbk ct;
 		data_ct ++;
 	}
 	if (data_ct == 0) return 0;
+
+#ifdef PUB_REDIS
+	if (redis->err) {
+		int rv = redis->err;
+		return URN_FATAL("Redis context init error", rv);
+	}
+	long long listener_ct = 0;
+	redisReply *reply = NULL;
+	for (int i=0; i< data_ct; i++) {
+		int rv = redisGetReply(redis, (void**)&reply);
+		if (rv != REDIS_OK)
+			return URN_FATAL("Redis get reply code error", rv);
+		rv = urn_redis_chkfree_reply_long(reply, &listener_ct, NULL);
+		if (rv != 0)
+			URN_FATAL("error in checking listeners", rv);
+	}
+#endif
 
 	return 0;
 }
@@ -694,6 +738,10 @@ static int parse_args_build_idx(int argc, char **argv) {
 
 		int pairid = chn_ct/2 + 1; // 0==NULL
 		pair_arr[pairid] = upcase_s;
+		pub_odbk_chn_arr[pairid] = malloc(128);
+		sprintf(pub_odbk_chn_arr[pairid], "URANUS:%s:%s:full_odbk_channel", exchange, upcase_s);
+		pub_tick_chn_arr[pairid] = malloc(128);
+		sprintf(pub_tick_chn_arr[pairid], "URANUS:%s:%s:full_tick_channel", exchange, upcase_s);
 		URN_LOGF("\tpair_arr %p pair_arr[%d] %p %s", pair_arr, pairid, &(pair_arr[pairid]), upcase_s);
 
 		urn_hmap_set(depth_chn_to_pairid, depth_chn, (uintptr_t)pairid);
