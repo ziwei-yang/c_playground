@@ -155,7 +155,7 @@ int wss_connect() {
 	nng_iov *recv_iov = NULL;
 	size_t recv_bytes = 0;
 
-	URN_INFO("Init wss conn");
+	URN_INFOF("Init wss conn %s", wss_uri);
 	if ((rv = urn_ws_init(wss_uri, &dialer, &dialer_aio)) != 0)
 		return URN_FATAL_NNG(rv);
 
@@ -270,7 +270,7 @@ static int broadcast() {
 				odbk_t_arr[pairid]/1000);
 		URN_DEBUGF("broadcast %s, updates %d, json len %d/%d -> %s\n%s",
 				pair_arr[pairid], newodbk_arr[pairid],
-				ct, maxslen, pub_odbk_chn_arr[pairid], s);
+				ct, MAX_BRDCST_LEN, pub_odbk_chn_arr[pairid], s);
 
 		redisAppendCommand(redis, "PUBLISH %s %s", pub_odbk_chn_arr[pairid], s);
 #endif

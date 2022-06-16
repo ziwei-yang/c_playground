@@ -27,13 +27,29 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 	return 0;
 }
 
+int byb_wss_mode = -1; // 0: Bybit 1: BybitU
 void mkt_data_set_exchange(char *s) {
-	sprintf(s, "BybitU"); // TODO getenv
+	char *exch = getenv("uranus_spider_exchange");
+	if (exch == NULL) {
+		byb_wss_mode = 1;
+		sprintf(s, "BybitU");
+	} else if (strcasecmp(exch, "bybitu") == 0) {
+		byb_wss_mode = 1;
+		sprintf(s, "BybitU");
+	} else if (strcasecmp(exch, "bybit") == 0) {
+		byb_wss_mode = 0;
+		sprintf(s, "Bybit");
+	} else
+		URN_FATAL(exch, EINVAL);
 }
 
 void mkt_data_set_wss_url(char *s) {
-	// "wss://stream.bybit.com/realtime"; // Bybit Coin M
-	sprintf(s, "wss://stream.bybit.com/realtime_public"); // Bybit USDT M
+	if (byb_wss_mode == 0)
+		sprintf(s, "wss://stream.bybit.com/realtime");
+	else if (byb_wss_mode == 1)
+		sprintf(s, "wss://stream.bybit.com/realtime_public");
+	else
+		URN_FATAL("Unexpected byb_wss_mode", EINVAL);
 }
 
 int on_wss_msg(char *msg, size_t len) {
@@ -50,7 +66,10 @@ int on_wss_msg(char *msg, size_t len) {
 	jroot = yyjson_doc_get_root(jdoc);
 
 	// request successful ack.
-	URN_GO_FINAL_IF(yyjson_obj_get(jroot, "request") != NULL, "omit request message");
+	if (yyjson_obj_get(jroot, "request") != NULL) {
+		URN_INFOF("on_wss_msg omit %zu %.*s", len, (int)len, msg);
+		goto final;
+	}
 
 	URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "topic"), "No topic", EINVAL);
 	const char *topic = yyjson_get_str(jval);
@@ -68,9 +87,21 @@ int on_wss_msg(char *msg, size_t len) {
 		URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "type"), "No type", EINVAL);
 		const char *type = yyjson_get_str(jval);
 		URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "timestamp_e6"), "No timestamp_e6", EINVAL);
-		const char *ts_e6 = yyjson_get_str(jval);
+		if (byb_wss_mode == 0) {
+			long ts_e6 = yyjson_get_uint(jval);
+			if (ts_e6 == 0) {
+				URN_WARNF("depth_pair id %lu %s for topic %s tse6 %ld", pairid, depth_pair, topic, ts_e6);
+				URN_GO_FINAL_ON_RV(EINVAL, "No t_e6");
+			}
+		} else if (byb_wss_mode == 1) {
+			const char *ts_e6 = yyjson_get_str(jval);
+			odbk_t_arr[pairid] = strtol(ts_e6, NULL, 10);
+			if (ts_e6 == NULL) {
+				URN_WARNF("depth_pair id %lu %s for topic %s tse6 %s", pairid, depth_pair, topic, ts_e6);
+				URN_GO_FINAL_ON_RV(EINVAL, "No t_e6");
+			}
+		}
 		newodbk_arr[pairid] ++;
-		odbk_t_arr[pairid] = strtol(ts_e6, NULL, 10);
 		wss_stat_mkt_ts = odbk_t_arr[pairid];
 
 		if (depth_pair == NULL) {
@@ -303,7 +334,11 @@ int on_odbk(int pairid, const char *type, yyjson_val *jdata) {
 
 	// Parse snapshot data
 	yyjson_val *orders = NULL;
-	URN_RET_ON_NULL(orders = yyjson_obj_get(jdata, "order_book"), "No jdata/order_book", EINVAL);
+	if (byb_wss_mode == 0) {
+		orders = jdata;
+	} else if (byb_wss_mode == 1) {
+		URN_RET_ON_NULL(orders = yyjson_obj_get(jdata, "order_book"), "No jdata/order_book", EINVAL);
+	}
 	yyjson_val *v;
 	size_t idx, max;
 	yyjson_arr_foreach(orders, idx, max, v) {
