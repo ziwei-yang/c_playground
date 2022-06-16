@@ -137,7 +137,6 @@ int main(int argc, char **argv) {
 	return 0;
 }
 
-
 char wss_uri[256];
 int wss_connect() {
 	int rv = 0;
@@ -548,4 +547,128 @@ static int parse_args_build_idx(int argc, char **argv) {
 	URN_INFOF("Parsing ARGV end, %d req str prepared.", batch+1);
 	wss_req_s[batch+1] = NULL;
 	return 0;
+}
+
+///////////// ODBK INSERT/UPDATE/DELETE //////////////
+void mkt_wss_odbk_insert(int pairid, urn_inum *p, urn_inum *s, bool buy) {
+	urn_porder *o = urn_porder_alloc(NULL, p, s, buy, NULL);
+	if (buy) { // bids from low to high, reversed
+		GList *bids = bids_arr[pairid];
+		if (bids->data == NULL) {
+			bids->data = o;
+			bidct_arr[pairid]++;
+			return;
+		}
+		bids = g_list_insert_sorted(bids, o, urn_porder_px_cmp);
+		URN_DEBUGF_C(GREEN, "\t %s %s insert bids %p->%p o %p", urn_inum_str(p), urn_inum_str(s), bids, bids->data, o);
+		if (bidct_arr[pairid]+1 > MAX_DEPTH)
+			bids = remove_top_porder(bids);
+		else
+			bidct_arr[pairid]++;
+		bids_arr[pairid] = bids;
+		bids->prev = NULL;
+	} else { // asks from high to low, reversed
+		GList *asks = asks_arr[pairid];
+		if (asks->data == NULL) {
+			asks->data = o;
+			askct_arr[pairid]++;
+			return;
+		}
+		asks = g_list_insert_sorted(asks, o, urn_porder_px_cmprv);
+		URN_DEBUGF_C(GREEN, "\t %s %s insert asks %p->%p o %p", urn_inum_str(p), urn_inum_str(s), asks, asks->data, o);
+		if (askct_arr[pairid]+1 > MAX_DEPTH)
+			asks = remove_top_porder(asks);
+		else
+			askct_arr[pairid]++;
+		asks_arr[pairid] = asks;
+		asks->prev = NULL;
+	}
+}
+
+// return if any odbk operation did
+// manage to free p and s by yourself if false is returned.
+bool mkt_wss_odbk_update_or_delete(int pairid, urn_inum *p, urn_inum *s, bool buy, bool update) {
+	bool found = false;
+	int check_idx = -1; // -1 means price not compared
+	GList *bids = bids_arr[pairid];
+	GList *asks = asks_arr[pairid];
+	GList *node = buy ? bids : asks;
+	// Find node with target price
+	while(true) {
+		if (node->next == NULL && node->data == NULL)
+			break;
+		if (node->next != NULL && node->data == NULL)
+			URN_FATAL("GList->next is not NULL but ->data is NULL", EINVAL);
+
+		check_idx++;
+		int cmpv = urn_inum_cmp(p, ((urn_porder *)(node->data))->p);
+		found = (cmpv == 0);
+		URN_DEBUGF("cmp %s %s = %d",
+				urn_inum_str(p),
+				urn_inum_str(((urn_porder *)(node->data))->p),
+				cmpv
+			  );
+		if ((buy) && cmpv < 0) break; // bids: p smaller than tail.
+		if ((!buy) && cmpv > 0) break; // asks: p higher than tail.
+		if (found) break;
+
+		if (node->next == NULL) break;
+		node = node->next;
+	}
+	if (!found) {
+		URN_DEBUGF("node not found at check_idx %d", check_idx);
+		if (check_idx == 0) {
+			URN_DEBUG("price checked but out of valid range, return not found");
+			return false;
+		}
+		// update should become insert after this
+		if (update) {
+			mkt_wss_odbk_insert(pairid, p, s, buy);
+		}
+		return true;
+	}
+
+	// found node with same price.
+	if (update) { // update p and s only
+		urn_porder_free(node->data);
+		urn_porder *o = urn_porder_alloc(NULL, p, s, buy, NULL);
+		node->data = o;
+		URN_DEBUGF_C(BLUE, "update the node %p s %s p %s", node, urn_inum_str(o->s), urn_inum_str(o->p));
+	} else { // delete this node.
+		urn_porder *o = (urn_porder *)(node->data);
+		// free node->data first.
+		if (node->data != NULL) {
+			URN_DEBUGF_C(RED, "delete the node %p s %s p %s", node, urn_inum_str(o->s), urn_inum_str(o->p));
+			urn_porder_free(o);
+		} else
+			URN_DEBUGF_C(RED, "Delete the node %p NULL data", node);
+		node->data = NULL;
+
+		if (node->prev == NULL && node->next == NULL) {
+			// node is the only one element, delete data only.
+			URN_DEBUGF_C(RED, "clear data only for node %p", node);
+		} else if (node->prev == NULL || node == bids_arr[pairid] || node == asks_arr[pairid]) {
+			// node is at head, remains after
+			URN_DEBUGF_C(RED, "free node %p as head", node);
+			if (buy)  bids = node->next;
+			if (!buy) asks = node->next;
+			g_list_free_1(node);
+		} else if (node->next == NULL) { // node is at end
+			URN_DEBUGF_C(RED, "free node %p as tail", node);
+			node->prev->next = NULL;
+			g_list_free_1(node);
+		} else { // node is in middle, connect prev<->next
+			URN_DEBUGF_C(RED, "free node %p as middle", node);
+			node->prev->next = node->next;
+			node->next->prev = node->prev;
+			g_list_free_1(node);
+		}
+		if (buy)  bidct_arr[pairid]--;
+		if (!buy) askct_arr[pairid]--;
+	}
+	bids_arr[pairid] = bids;
+	bids->prev = NULL;
+	asks_arr[pairid] = asks;
+	asks->prev = NULL;
+	return true;
 }

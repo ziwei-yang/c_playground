@@ -139,7 +139,7 @@ final:
 // op_type: 1 insert     - delta
 // op_type: 2 update     - delta
 // op_type: 3 delete     - delta
-int parse_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_type) {
+int parse_n_mod_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_type) {
 	urn_inum *p=NULL, *s=NULL; // must free by hand if insertion failed.
 	bool need_free_ps = true; // free when delete, or update failed.
 
@@ -197,116 +197,15 @@ int parse_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_type) 
 
 	// Insertion, deletion and overwriting.
 	if (op_type == 2 || op_type == 3) { // update or delete
-		GList *node = buy ? bids : asks;
-		bool found = false;
-		int check_idx = -1; // -1 means unchecked
-		// Find node with target price
-		while(true) {
-			if (node->next == NULL && node->data == NULL)
-				break;
-			if (node->next != NULL && node->data == NULL)
-				URN_FATAL("GList->next is not NULL but ->data is NULL", EINVAL);
-
-			check_idx++;
-			int cmpv = urn_inum_cmp(p, ((urn_porder *)(node->data))->p);
-			found = (cmpv == 0);
-			URN_DEBUGF("cmp %s %s = %d",
-				urn_inum_str(p),
-				urn_inum_str(((urn_porder *)(node->data))->p),
-				cmpv
-			);
-			if ((buy) && cmpv < 0) break; // bids: p smaller than tail.
-			if ((!buy) && cmpv > 0) break; // asks: p higher than tail.
-			if (found) break;
-
-			if (node->next == NULL) break;
-			node = node->next;
-		}
-		if (!found) {
-			URN_DEBUGF("node not found at check_idx %d", check_idx);
-			if (check_idx == 0) {
-				URN_DEBUG("price checked but out of valid range, goto final");
-				goto final;
-			}
-			if (op_type == 2) op_type = 1; // update -> insert
-			goto insertion;
-		}
-		// found node with same price.
-		if (op_type == 2) { // update p and s only
-			urn_porder_free(node->data);
-			urn_porder *o = urn_porder_alloc(NULL, p, s, buy, NULL);
+		bool op_done = mkt_wss_odbk_update_or_delete(pairid, p, s, buy, (op_type==2));
+		if ((op_type == 2) && op_done)
 			need_free_ps = false;
-			node->data = o;
-			URN_DEBUGF_C(BLUE, "update the node %p s %s p %s", node, urn_inum_str(o->s), urn_inum_str(o->p));
-		} else if (op_type == 3) { // delete this node.
-			urn_porder *o = (urn_porder *)(node->data);
-			// free node->data first.
-			if (node->data != NULL) {
-				URN_DEBUGF_C(RED, "delete the node %p s %s p %s", node, urn_inum_str(o->s), urn_inum_str(o->p));
-				urn_porder_free(o);
-			} else
-				URN_DEBUGF_C(RED, "Delete the node %p NULL data", node);
-			node->data = NULL;
-
-			if (node->prev == NULL && node->next == NULL) {
-				// node is the only one element, delete data only.
-				URN_DEBUGF_C(RED, "clear data only for node %p", node);
-			} else if (node->prev == NULL || node == bids_arr[pairid] || node == asks_arr[pairid]) {
-				// node is at head, remains after
-				URN_DEBUGF_C(RED, "free node %p as head", node);
-				if (buy)  bids = node->next;
-				if (!buy) asks = node->next;
-				g_list_free_1(node);
-			} else if (node->next == NULL) { // node is at end
-				URN_DEBUGF_C(RED, "free node %p as tail", node);
-				node->prev->next = NULL;
-				g_list_free_1(node);
-			} else { // node is in middle, connect prev<->next
-				URN_DEBUGF_C(RED, "free node %p as middle", node);
-				node->prev->next = node->next;
-				node->next->prev = node->prev;
-				g_list_free_1(node);
-			}
-			if (buy)  bidct_arr[pairid]--;
-			if (!buy) askct_arr[pairid]--;
-		}
-		goto final;
-	}
-insertion:
-	if (op_type == 0 || op_type == 1) { // snapshot or insert
+	} else if (op_type == 0 || op_type == 1) { // snapshot or insert
 		need_free_ps = false;
-		urn_porder *o = urn_porder_alloc(NULL, p, s, buy, NULL);
-		if (buy) { // bids from low to high, reversed
-			if (bids->data == NULL) {
-				bids->data = o;
-				bidct_arr[pairid]++;
-				goto final;
-			}
-			bids = g_list_insert_sorted(bids, o, urn_porder_px_cmp);
-			URN_DEBUGF_C(GREEN, "\t %s %s insert bids %p->%p o %p", urn_inum_str(p), urn_inum_str(s), bids, bids->data, o);
-			if (bidct_arr[pairid]+1 > MAX_DEPTH)
-				bids = remove_top_porder(bids);
-			else
-				bidct_arr[pairid]++;
-		} else { // asks from high to low, reversed
-			if (asks->data == NULL) {
-				asks->data = o;
-				askct_arr[pairid]++;
-				goto final;
-			}
-			asks = g_list_insert_sorted(asks, o, urn_porder_px_cmprv);
-			URN_DEBUGF_C(GREEN, "\t %s %s insert asks %p->%p o %p", urn_inum_str(p), urn_inum_str(s), asks, asks->data, o);
-			if (askct_arr[pairid]+1 > MAX_DEPTH)
-				asks = remove_top_porder(asks);
-			else
-				askct_arr[pairid]++;
-		}
+		mkt_wss_odbk_insert(pairid, p, s, buy);
 	}
+
 final:
-	bids_arr[pairid] = bids;
-	bids->prev = NULL;
-	asks_arr[pairid] = asks;
-	asks->prev = NULL;
 	print_odbk(pairid);
 	if (need_free_ps) {
 		if (p != NULL) free(p);
@@ -342,7 +241,7 @@ int on_odbk(int pairid, const char *type, yyjson_val *jdata) {
 	yyjson_val *v;
 	size_t idx, max;
 	yyjson_arr_foreach(orders, idx, max, v) {
-		URN_RET_ON_RV(parse_odbk_porder(pairid, type, v, 0), "Error in parse_odbk_porder()");
+		URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, type, v, 0), "Error in parse_n_mod_odbk_porder()");
 	}
 	print_odbk(pairid);
 	return 0;
@@ -360,19 +259,19 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *jdata) {
 	// delete
 	URN_RET_ON_NULL(orders = yyjson_obj_get(jdata, "delete"), "No jdata/delete", EINVAL);
 	yyjson_arr_foreach(orders, idx, max, v) {
-		URN_RET_ON_RV(parse_odbk_porder(pairid, type, v, 3), "Error in parse_odbk_porder() to delete");
+		URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, type, v, 3), "Error in parse_n_mod_odbk_porder() to delete");
 	}
 
 	// update
 	URN_RET_ON_NULL(orders = yyjson_obj_get(jdata, "update"), "No jdata/update", EINVAL);
 	yyjson_arr_foreach(orders, idx, max, v) {
-		URN_RET_ON_RV(parse_odbk_porder(pairid, type, v, 2), "Error in parse_odbk_porder() to update");
+		URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, type, v, 2), "Error in parse_n_mod_odbk_porder() to update");
 	}
 
 	// insert
 	URN_RET_ON_NULL(orders = yyjson_obj_get(jdata, "insert"), "No jdata/insert", EINVAL);
 	yyjson_arr_foreach(orders, idx, max, v) {
-		URN_RET_ON_RV(parse_odbk_porder(pairid, type, v, 1), "Error in parse_odbk_porder() to insert");
+		URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, type, v, 1), "Error in parse_n_mod_odbk_porder() to insert");
 	}
 
 	return 0;
