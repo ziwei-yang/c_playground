@@ -550,6 +550,19 @@ static int parse_args_build_idx(int argc, char **argv) {
 }
 
 ///////////// ODBK INSERT/UPDATE/DELETE //////////////
+void mkt_wss_odbk_purge(int pairid) {
+	g_list_free_full(bids_arr[pairid], urn_porder_free);
+	g_list_free_full(asks_arr[pairid], urn_porder_free);
+	bids_arr[pairid] = g_list_alloc();
+	bids_arr[pairid]->prev = NULL;
+	bids_arr[pairid]->next = NULL;
+	asks_arr[pairid] = g_list_alloc();
+	asks_arr[pairid]->prev = NULL;
+	asks_arr[pairid]->next = NULL;
+	askct_arr[pairid] = 0;
+	bidct_arr[pairid] = 0;
+}
+
 void mkt_wss_odbk_insert(int pairid, urn_inum *p, urn_inum *s, bool buy) {
 	urn_porder *o = urn_porder_alloc(NULL, p, s, buy, NULL);
 	if (buy) { // bids from low to high, reversed

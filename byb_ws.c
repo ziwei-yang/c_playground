@@ -220,16 +220,7 @@ int on_odbk(int pairid, const char *type, yyjson_val *jdata) {
 	int rv = 0;
 
 	// clear bids and asks for new snapshot.
-	g_list_free_full(bids_arr[pairid], urn_porder_free);
-	g_list_free_full(asks_arr[pairid], urn_porder_free);
-	bids_arr[pairid] = g_list_alloc();
-	bids_arr[pairid]->prev = NULL;
-	bids_arr[pairid]->next = NULL;
-	asks_arr[pairid] = g_list_alloc();
-	asks_arr[pairid]->prev = NULL;
-	asks_arr[pairid]->next = NULL;
-	askct_arr[pairid] = 0;
-	bidct_arr[pairid] = 0;
+	mkt_wss_odbk_purge(pairid);
 
 	// Parse snapshot data
 	yyjson_val *orders = NULL;
