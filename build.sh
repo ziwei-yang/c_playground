@@ -7,8 +7,10 @@ os=$( uname )
 # Linux cc linker does not support cc -lwholefilename.o
 # Pass args as cc /path/to/wholefilename.o
 ld_nng_wolfssl='-lwolfssl.o'
+nng_wolfssl_o=
 [[ $os == Linux ]] && \
-	ld_nng_wolfssl='/tmp/wolfssl.o' && \
+	ld_nng_wolfssl='' && \
+	nng_wolfssl_o='/tmp/wolfssl.o' && \
 	[ -f $HOME/install/lib/wolfssl.o ] && \
 	[ ! -f /tmp/wolfssl.o ] && \
 	cp -rv $HOME/install/lib/wolfssl.o /tmp/
@@ -29,7 +31,7 @@ done
 if [[ $os == 'Linux' ]]; then
 	glib_include=/usr/include/glib-2.0
 	glib_lib=/usr/lib/x86_64-linux-gnu
-	glib_ext_home=/usr/lib/x86_64-linux-gnu
+	glib_ext_home=/usr/lib/x86_64-linux-gnu/glib-2.0
 fi
 
 hiredis_home=
@@ -41,18 +43,21 @@ if [[ $os == 'Linux' ]]; then
 	hiredis_home=$HOME/install
 fi
 
-gcc \
-	-I /usr/include \
-	-I /usr/local/include \
-	-I $HOME/install/include \
-	-I $glib_include \
-	-I $glib_ext_home/include \
-	-I $hiredis_home/include/hiredis \
+# ubuntu must put -largs at last
+echo gcc \
+	-I/usr/include \
+	-I/usr/local/include \
+	-I$HOME/install/include \
+	-I$glib_include \
+	-I$glib_ext_home/include \
+	-I$hiredis_home/include/hiredis \
 	\
 	-L /usr/local/lib \
 	-L $HOME/install/lib \
 	-L $glib_lib \
 	-L $hiredis_home/lib \
 	\
+	$nng_wolfssl_o \
+	$@ \
+	\
 	-lnng -lpthread -lwolfssl -lmbedx509 -lmbedcrypto -lglib-2.0 -lhiredis $ld_nng_wolfssl \
-	$@
