@@ -14,6 +14,8 @@
 #include "hmap.h"
 #include "redis.h"
 
+#define PUB_REDIS
+
 #ifndef MAX_DEPTH // max depth in each side.
 #define MAX_DEPTH 5
 #endif
@@ -35,6 +37,7 @@ int   exchange_sym_alloc(urn_pair *pair, char **str);
 void  mkt_data_set_exchange(char *s); // set global exchange 
 void  mkt_data_set_wss_url(char *s);
 int   on_wss_msg(char *msg, size_t len);
+int   mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char**tick_chns);
 
 ///////////// Interface //////////////
 
@@ -70,7 +73,7 @@ int    bidct_arr[MAX_PAIRS];
 long   odbk_t_arr[MAX_PAIRS];
 
 ///////////// wss_req //////////////
-char*    wss_req_s[99];
+char*    wss_req_s[MAX_PAIRS]; // maybe one command per pair.
 int      wss_req_i; // idx of last sent wss_req_s
 
 ///////////// stat //////////////
@@ -88,7 +91,9 @@ struct timespec brdcst_t; // last time to call broadcast()
 unsigned long brdcst_interval_ms; // min ms between two broadcast
 unsigned int  newodbk_arr[MAX_PAIRS];
 char         *pub_odbk_chn_arr[MAX_PAIRS];
+char         *pub_odbk_key_arr[MAX_PAIRS]; // kv snapshot
 char         *pub_tick_chn_arr[MAX_PAIRS];
+char         *pub_tick_key_arr[MAX_PAIRS]; // kv snapshot
 redisContext *redis;
 
 #ifdef PUB_LESS_ON_ZERO_LISTENER
@@ -126,7 +131,9 @@ int main(int argc, char **argv) {
 		bidct_arr[i] = 0;
 		newodbk_arr[i] = 0;
 		pub_odbk_chn_arr[i] = NULL;
+		pub_odbk_key_arr[i] = NULL;
 		pub_tick_chn_arr[i] = NULL;
+		pub_tick_key_arr[i] = NULL;
 #ifdef PUB_LESS_ON_ZERO_LISTENER
 		brdcst_listener_arr[i] = 0;
 		brdcst_t_arr[i].tv_sec = 0;
@@ -272,28 +279,34 @@ static int broadcast() {
 		return 0;
 
 	int rv = 0;
-
 	brdcst_t.tv_sec = _tmp_clock.tv_sec;
 	brdcst_t.tv_nsec = _tmp_clock.tv_nsec;
-
 	gettimeofday(&brdcst_json_t, NULL);
+
+	bool write_snapshot = false;
+#ifdef PUB_REDIS
+	write_snapshot = ((_tmp_clock.tv_nsec & 65535) < 63);
+	if (write_snapshot)
+		URN_DEBUG(YELLOW, "write_snapshot %ld %ld, %ld, %ld",
+			_tmp_clock.tv_sec, (_tmp_clock.tv_sec & 7),
+			_tmp_clock.tv_nsec, (_tmp_clock.tv_nsec & 65535));
+#endif
 
 	int data_ct = 0;
 	char *s = brdcst_str;
 	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
-		if (newodbk_arr[pairid] <= 0) continue;
+		if ((!write_snapshot) && (newodbk_arr[pairid] <= 0))
+			continue;
 
 #ifdef PUB_LESS_ON_ZERO_LISTENER
-		if (brdcst_listener_arr[pairid] == 0) {
-			// Publish every 10s if no listener last time.
-			if (brdcst_t_arr[pairid].tv_sec + 10 > brdcst_t.tv_sec)
+		if ((!write_snapshot) && (brdcst_listener_arr[pairid] == 0)) {
+			// Publish every 2s if no listener last time.
+			if (brdcst_t_arr[pairid].tv_sec + 2 > brdcst_t.tv_sec)
 				continue;
 			brdcst_t_arr[pairid].tv_sec = brdcst_t.tv_sec;
 		}
 #endif
-
 		brdcst_stat_ct ++;
-
 		URN_DEBUGF("to broadcast %s %d/%d, updates %d", pair_arr[pairid], pairid, max_pair_id, newodbk_arr[pairid]);
 
 #ifdef PUB_REDIS
@@ -311,6 +324,10 @@ static int broadcast() {
 				ct, MAX_BRDCST_LEN, pub_odbk_chn_arr[pairid], s);
 
 		redisAppendCommand(redis, "PUBLISH %s %s", pub_odbk_chn_arr[pairid], s);
+		if (write_snapshot) {
+			URN_DEBUGF("also snapshot to %s", pub_odbk_key_arr[pairid]);
+			redisAppendCommand(redis, "SET %s %s", pub_odbk_key_arr[pairid], s);
+		}
 #endif
 		newodbk_arr[pairid] = 0; // reset new odbk ct;
 		brdcst_pairs[data_ct] = pairid;
@@ -327,18 +344,24 @@ static int broadcast() {
 	long long listener_ct = 0;
 	redisReply *reply = NULL;
 	for (int i=0; i<data_ct; i++) {
-		URN_GO_FINAL_ON_RV(redisGetReply(redis, (void**)&reply),
-			"Redis get reply code error");
+		rv = redisGetReply(redis, (void**)&reply);
+		URN_GO_FINAL_ON_RV(rv, "Redis get reply code error");
 		int pairid = brdcst_pairs[i];
-		URN_GO_FINAL_ON_RV(urn_redis_chkfree_reply_long(
-			reply, &listener_ct, NULL), "error in checking listeners");
+		rv = urn_redis_chkfree_reply_long(reply, &listener_ct, NULL);
+		URN_GO_FINAL_ON_RV(rv, "error in checking listeners");
+		if (write_snapshot) {
+			rv = redisGetReply(redis, (void**)&reply);
+			URN_GO_FINAL_ON_RV(rv, "Redis get reply code error");
+			rv = urn_redis_chkfree_reply_str(reply, "OK", NULL);
+			URN_GO_FINAL_ON_RV(rv, "error in checking listeners");
+		}
 #ifdef PUB_LESS_ON_ZERO_LISTENER
 		brdcst_listener_arr[pairid] = listener_ct;
 #endif
 		listener_ttl_ct += listener_ct;
 	}
 #endif
-	if (brdcst_t.tv_sec - brdcst_stat_t > 10) {
+	if (write_snapshot || (brdcst_t.tv_sec - brdcst_stat_t > 10)) {
 		// stat in 10s, also print cost time this round.
 		gettimeofday(&brdcst_json_end_t, NULL);
 		long cost_us = urn_usdiff(brdcst_json_t, brdcst_json_end_t);
@@ -354,10 +377,15 @@ static int broadcast() {
 			brdcst_interval_ms --;
 		}
 
-		URN_LOGF_C(GREEN, "--> brdcst in %d s %d/s rd %d/s per %ld ms, %4.2f ms > %d chn > %lld ears",
-			diff, speed, brdcst_stat_rd_ct/diff,
-			brdcst_interval_ms, (float)cost_us/1000.f,
-			data_ct, listener_ttl_ct);
+#ifdef PUB_REDIS
+		URN_LOGF_C(GREEN, "--> %d/s %dr/s in %d, every %ldms, %4.2fms > %d chn > %lld ears %s",
+			speed, brdcst_stat_rd_ct/diff, diff, brdcst_interval_ms,
+			(float)cost_us/1000.f, data_ct, listener_ttl_ct,
+			(write_snapshot ? "FULL" : ""));
+#else
+		URN_LOGF_C(GREEN, "--> %d/s %dr/s in %d, every %ldms",
+			speed, brdcst_stat_rd_ct/diff, diff, brdcst_interval_ms);
+#endif
 		brdcst_stat_rd_ct = 0;
 		brdcst_stat_ct = 0;
 		brdcst_stat_t = brdcst_t.tv_sec;
@@ -478,7 +506,8 @@ static int parse_args_build_idx(int argc, char **argv) {
 	trade_chn_to_pairid = urn_hmap_init(max_pairn*5);
 
 	int chn_ct = 0;
-	const char *byb_chns[max_pairn*2]; // both depth and trade
+	const char *odbk_chns[max_pairn]; // both depth and trade
+	const char *tick_chns[max_pairn]; // both depth and trade
 
 	urn_pair pairs[argc];
 	for (int i=1; i<argc; i++) {
@@ -523,25 +552,28 @@ static int parse_args_build_idx(int argc, char **argv) {
 			return URN_FATAL("Not enough memory for creating channel str", ENOMEM);
 		sprintf(depth_chn, "orderBookL2_25.%s", byb_sym);
 		sprintf(trade_chn, "trade.%s", byb_sym);
-		byb_chns[chn_ct] = depth_chn;
-		byb_chns[chn_ct+1] = trade_chn;
-		URN_LOGF("\targv %d chn %d %s", i, chn_ct, depth_chn);
-		URN_LOGF("\targv %d chn %d %s", i, chn_ct+1, trade_chn);
+		odbk_chns[chn_ct] = depth_chn;
+		tick_chns[chn_ct] = trade_chn;
+		URN_LOGF("\targv %d chn %d %s & %s", i, chn_ct, depth_chn, trade_chn);
 		urn_hmap_setstr(depth_chn_to_pair, depth_chn, upcase_s);
 		urn_hmap_setstr(trade_chn_to_pair, trade_chn, upcase_s);
 
-		int pairid = chn_ct/2 + 1; // 0==NULL
+		int pairid = chn_ct + 1; // 0==NULL
 		pair_arr[pairid] = upcase_s;
 		pub_odbk_chn_arr[pairid] = malloc(128);
 		sprintf(pub_odbk_chn_arr[pairid], "URANUS:%s:%s:full_odbk_channel", exchange, upcase_s);
+		pub_odbk_key_arr[pairid] = malloc(128);
+		sprintf(pub_odbk_key_arr[pairid], "URANUS:%s:%s:orderbook", exchange, upcase_s);
 		pub_tick_chn_arr[pairid] = malloc(128);
 		sprintf(pub_tick_chn_arr[pairid], "URANUS:%s:%s:full_tick_channel", exchange, upcase_s);
+		pub_tick_key_arr[pairid] = malloc(128);
+		sprintf(pub_tick_key_arr[pairid], "URANUS:%s:%s:trades", exchange, upcase_s);
 		URN_LOGF("\tpair_arr %p pair_arr[%d] %p %s", pair_arr, pairid, &(pair_arr[pairid]), upcase_s);
 
 		urn_hmap_set(depth_chn_to_pairid, depth_chn, (uintptr_t)pairid);
 		urn_hmap_set(trade_chn_to_pairid, trade_chn, (uintptr_t)pairid);
 		max_pair_id = pairid;
-		chn_ct += 2;
+		chn_ct ++;
 	}
 
 	brdcst_max_speed = URN_MIN(max_pair_id*300, 2000);
@@ -555,50 +587,13 @@ static int parse_args_build_idx(int argc, char **argv) {
 	urn_hmap_printi(depth_chn_to_pairid, "depth_to_pairid");
 	urn_hmap_printi(trade_chn_to_pairid, "trade_to_pairid");
 
-	URN_LOGF("Generate req json with %d channels", chn_ct);
+	URN_LOGF("Generate req json with %d odbk and tick channels", chn_ct);
 
 	URN_LOG("pair by pairid:");
 	for (int i=0; i<=argc; i++)
 		URN_LOGF("\tpair_arr %d %s", i, pair_arr[i]);
 
-	// Send no more than 40 channels per request.
-	int batch_sz = 40;
-	int batch = 0;
-	for (; batch <= (chn_ct/batch_sz+1); batch++) {
-		yyjson_mut_doc *wss_req_j = yyjson_mut_doc_new(NULL);
-		yyjson_mut_val *jroot = yyjson_mut_obj(wss_req_j);
-		if (jroot == NULL)
-			return URN_FATAL("Error in creating json root", EINVAL);
-		yyjson_mut_doc_set_root(wss_req_j, jroot);
-		yyjson_mut_obj_add_str(wss_req_j, jroot, "op", "subscribe");
-		URN_LOGF("channels for batch %d:", batch);
-
-		int i_s = batch*batch_sz;
-		int i_e = MIN((batch+1)*batch_sz, chn_ct);
-		if (i_s >= i_e) {
-			yyjson_mut_doc_free(wss_req_j);
-			batch--;
-			break;
-		}
-		const char *batch_chn[i_e-i_s];
-		for (int i=i_s; i<i_e; i++) {
-			URN_LOGF("\tchn %d %s", i, byb_chns[i]);
-			batch_chn[i-i_s] = byb_chns[i];
-		}
-		yyjson_mut_val *target_chns = yyjson_mut_arr_with_strcpy(wss_req_j, batch_chn, i_e-i_s);
-		if (target_chns == NULL)
-			return URN_FATAL("Error in creating channel json array", EINVAL);
-		yyjson_mut_obj_add_val(wss_req_j, jroot, "args", target_chns);
-		wss_req_s[batch] = yyjson_mut_write(wss_req_j, YYJSON_WRITE_PRETTY, NULL);
-		URN_LOGF("req %d : %s", batch, wss_req_s[batch]);
-		free(wss_req_s[batch]);
-		wss_req_s[batch] = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
-		URN_INFOF("req %d : %s", batch, wss_req_s[batch]);
-		yyjson_mut_doc_free(wss_req_j);
-	}
-
-	URN_INFOF("Parsing ARGV end, %d req str prepared.", batch+1);
-	wss_req_s[batch+1] = NULL;
+	mkt_wss_prepare_reqs(chn_ct, odbk_chns, tick_chns);
 	return 0;
 }
 

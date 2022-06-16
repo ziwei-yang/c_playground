@@ -3,9 +3,6 @@
 #define URN_MAIN_DEBUG // debug log
 #undef URN_MAIN_DEBUG // off debug log
 
-// local options
-//#undef PUB_REDIS // off redis publish
-
 #define PUB_LESS_ON_ZERO_LISTENER
 //#undef  PUB_LESS_ON_ZERO_LISTENER
 
@@ -45,6 +42,49 @@ void mkt_data_set_wss_url(char *s) {
 		sprintf(s, "wss://stream.bybit.com/realtime_public");
 	else
 		URN_FATAL("Unexpected byb_wss_mode", EINVAL);
+}
+
+int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char**tick_chns) {
+	// Send no more than 40 channels per request.
+	int batch_sz = 20; // 20 odbk + 20 tick = 40 requests
+	int batch = 0;
+	for (; batch <= (chn_ct/batch_sz+1); batch++) {
+		int i_s = batch*batch_sz;
+		int i_e = MIN((batch+1)*batch_sz, chn_ct);
+		if (i_s >= i_e) {
+			batch--; break;
+		}
+
+		yyjson_mut_doc *wss_req_j = yyjson_mut_doc_new(NULL);
+		yyjson_mut_val *jroot = yyjson_mut_obj(wss_req_j);
+		if (jroot == NULL)
+			return URN_FATAL("Error in creating json root", EINVAL);
+		yyjson_mut_doc_set_root(wss_req_j, jroot);
+		yyjson_mut_obj_add_str(wss_req_j, jroot, "op", "subscribe");
+		URN_LOGF("preparing wss req NO. %d:", batch);
+
+		const char *batch_chn[(i_e-i_s)*2];
+		for (int i=i_s; i<i_e; i++) {
+			URN_LOGF("\tchn %d %s %s", i, odbk_chns[i], tick_chns[i]);
+			batch_chn[(i-i_s)*2]   = odbk_chns[i];
+			batch_chn[(i-i_s)*2+1] = tick_chns[i];
+		}
+		yyjson_mut_val *target_chns = yyjson_mut_arr_with_strcpy(
+			wss_req_j, batch_chn, (i_e-i_s)*2);
+		if (target_chns == NULL)
+			return URN_FATAL("Error in strcpy json array", EINVAL);
+		yyjson_mut_obj_add_val(wss_req_j, jroot, "args", target_chns);
+		wss_req_s[batch] = yyjson_mut_write(wss_req_j, YYJSON_WRITE_PRETTY, NULL);
+		URN_LOGF("req %d : %s", batch, wss_req_s[batch]);
+		free(wss_req_s[batch]);
+		wss_req_s[batch] = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
+		URN_INFOF("req %d : %s", batch, wss_req_s[batch]);
+		yyjson_mut_doc_free(wss_req_j);
+	}
+	wss_req_s[batch+1] = NULL;
+
+	URN_INFOF("Parsing ARGV end, %d req str prepared.", batch+1);
+	return 0;
 }
 
 int on_wss_msg(char *msg, size_t len) {
