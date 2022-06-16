@@ -3,7 +3,6 @@
 #include <string.h>
 #include <glib.h>
 
-#include <mbedtls/mbedtls_config.h>
 #include <nng/nng.h>
 #include <nng/supplemental/tls/tls.h>
 
@@ -14,6 +13,12 @@
 #include "wss.h"
 #include "hmap.h"
 #include "redis.h"
+
+#ifdef __linux__ // only macos has CLOCK_MONOTONIC_RAW_APPROX
+#ifndef CLOCK_MONOTONIC_RAW_APPROX
+#define CLOCK_MONOTONIC_RAW_APPROX CLOCK_MONOTONIC_RAW
+#endif
+#endif
 
 ///////////// Interface //////////////
 // To use mkt_data.h, must implement below methods:
@@ -263,7 +268,7 @@ static int broadcast() {
 		ct += sprintf_odbk_json(s+ct, bids_arr[pairid]);
 		*(s+ct) = ','; ct++;
 		ct += sprintf_odbk_json(s+ct, asks_arr[pairid]);
-		ct += sprintf(s+ct, ",%ld%03d,%ld]",
+		ct += sprintf(s+ct, ",%ld%03ld,%ld]",
 				brdcst_json_t.tv_sec,
 				brdcst_json_t.tv_usec/1000,
 				odbk_t_arr[pairid]/1000);

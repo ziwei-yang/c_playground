@@ -7,7 +7,7 @@ HOMEBREW=
 [ -d /usr/local/Cellar ] && HOMEBREW=/usr/local/Cellar # macos 11
 [ -d /opt/homebrew/Cellar ] && HOMEBREW=/opt/homebrew/Cellar # macos 12+
 
-[[ $os == Darwin ]] && brew install cmake
+[[ $os == Darwin ]] && brew install cmake libglib2.0-dev libglib2.9
 [[ $os == Linux ]] && echo sudo apt install cmake && sudo apt install cmake
 
 cd $DIR
