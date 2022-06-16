@@ -45,7 +45,7 @@ fi
 
 # for ubuntu gcc:
 # must put -o a.out at first, linker options -largs at last
-echo gcc $@ \
+gcc $@ \
 	-I/usr/include \
 	-I/usr/local/include \
 	-I$HOME/install/include \

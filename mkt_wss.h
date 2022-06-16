@@ -84,6 +84,7 @@ char         *pub_odbk_chn_arr[MAX_PAIRS];
 char         *pub_tick_chn_arr[MAX_PAIRS];
 redisContext *redis;
 
+unsigned int  brdcst_max_speed = 1000;
 unsigned int  brdcst_stat_rd_ct;
 unsigned int  brdcst_stat_ct;
 unsigned int  brdcst_stat_t;
@@ -302,10 +303,13 @@ static int broadcast() {
 		long cost_us = urn_usdiff(brdcst_json_t, brdcst_json_end_t);
 		int diff = brdcst_t.tv_sec - brdcst_stat_t;
 		int speed = brdcst_stat_ct / diff;
-		// control interval dynamically, publish redis at 50~200/s
-		if (speed > 200) {
-			brdcst_interval_ms ++;
-		} else if (speed < 50 && brdcst_interval_ms > 1) {
+		// control interval to publish redis at MAX_SPEED ~ MAX_SPEED/4
+		if (speed > brdcst_max_speed) {
+			if (brdcst_interval_ms < 10)
+				brdcst_interval_ms ++;
+			else
+				brdcst_interval_ms += brdcst_interval_ms/5;
+		} else if (speed < brdcst_max_speed/4 && brdcst_interval_ms > 1) {
 			brdcst_interval_ms --;
 		}
 
@@ -497,6 +501,8 @@ static int parse_args_build_idx(int argc, char **argv) {
 		max_pair_id = pairid;
 		chn_ct += 2;
 	}
+
+	brdcst_max_speed = URN_MIN(max_pair_id*300, 2000);
 
 	URN_INFO("parsing end, building index now");
 
