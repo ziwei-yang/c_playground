@@ -446,7 +446,7 @@ static int parse_args_build_idx(int argc, char **argv) {
 
 		// parsing urn_pair
 		urn_pair pair = pairs[i-1];
-		rv = urn_pair_parse(&pair, argv[i], strlen(argv[i]), NULL);
+		rv = urn_pair_alloc(&pair, argv[i], strlen(argv[i]), NULL);
 		if (rv != 0)
 			return URN_FATAL("Error in parsing pairs", EINVAL);
 		if (pair.expiry == NULL)

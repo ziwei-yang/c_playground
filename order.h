@@ -148,7 +148,7 @@ void urn_pair_free(urn_pair *p) {
 }
 
 // parse currency-asset@expiry, or currency-asset
-int urn_pair_parse(urn_pair *pair, char *s, int slen, urn_func_opt *opt) {
+int urn_pair_alloc(urn_pair *pair, char *s, int slen, urn_func_opt *opt) {
 	gchar **currency_and_left = NULL;
 	gchar **asset_exp = NULL;
 	// copy to new place for splitting.
