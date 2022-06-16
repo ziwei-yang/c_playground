@@ -155,12 +155,13 @@ int urn_pair_alloc(urn_pair *pair, char *s, int slen, urn_func_opt *opt) {
 	gchar *gs = g_ascii_strup(s, slen);
 
 	// get currency
-	currency_and_left= g_strsplit(gs, "-", 3);
+	currency_and_left = g_strsplit(gs, "-", 3);
 	if (currency_and_left[1] == NULL) goto error;
 	if (currency_and_left[2] != NULL) goto error;
 	// get asset and expiry
 	asset_exp = g_strsplit(currency_and_left[1], "@", 3);
-	if (asset_exp[2] != NULL) goto error;
+	// asset_exp might not have [1 expiry], check [1] first.
+	if (asset_exp[1] != NULL && asset_exp[2] != NULL) goto error;
 
 	pair->currency = currency_and_left[0];
 
@@ -263,6 +264,7 @@ static int sprintf_odbk_json(char *s, GList *l) {
 	while(tail->next != NULL)
 		tail = tail->next;
 	// build from tail to head
+	int node_ct = 0;
 	int ct = 0;
 	*(s+ct) = '[';
 	ct ++;
@@ -270,13 +272,20 @@ static int sprintf_odbk_json(char *s, GList *l) {
 	do {
 		if (node == l && node->data == NULL)
 			break; // only head could have NULL
+		node_ct ++;
 		ct += sprintf_odbko_json(s+ct, node->data);
 		*(s+ct) = ','; ct++;
 		if (node == l) break;
 		node = node->prev;
 	} while(true);
-	// change last char to ']'
-	*(s+ct-1) = ']';
+	if (node_ct == 0) {
+		// Append ']'
+		*(s+ct) = ']';
+		ct++;
+	} else {
+		// change last ',' char to ']'
+		*(s+ct-1) = ']';
+	}
 	return ct;
 }
 
