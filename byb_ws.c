@@ -14,6 +14,8 @@
 #define PUB_REDIS
 //#undef PUB_REDIS // off redis publish
 
+#define PUB_LESS_ON_ZERO_LISTENER
+
 #include "mkt_wss.h"
 
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);

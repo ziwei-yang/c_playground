@@ -78,11 +78,15 @@ struct timespec _tmp_clock;
 ///////////// broadcast ctrl //////////////
 struct timespec brdcst_t; // last time to call broadcast()
 unsigned long brdcst_interval_ms; // min ms between two broadcast
-struct timespec brdcst_t_arr[MAX_PAIRS]; // last time to publish data
 unsigned int  newodbk_arr[MAX_PAIRS];
 char         *pub_odbk_chn_arr[MAX_PAIRS];
 char         *pub_tick_chn_arr[MAX_PAIRS];
 redisContext *redis;
+
+#ifdef PUB_LESS_ON_ZERO_LISTENER
+struct timespec brdcst_t_arr[MAX_PAIRS]; // last time to publish pair
+long long brdcst_listener_arr[MAX_PAIRS];// listeners last time.
+#endif
 
 unsigned int  brdcst_max_speed = 1000;
 unsigned int  brdcst_stat_rd_ct;
@@ -108,6 +112,10 @@ int main(int argc, char **argv) {
 		newodbk_arr[i] = 0;
 		pub_odbk_chn_arr[i] = NULL;
 		pub_tick_chn_arr[i] = NULL;
+#ifdef PUB_LESS_ON_ZERO_LISTENER
+		brdcst_listener_arr[i] = 0;
+		brdcst_t_arr[i].tv_sec = 0;
+#endif
 	}
 	brdcst_stat_ct = 0;
 	brdcst_stat_rd_ct = 0;
@@ -240,6 +248,7 @@ struct timeval brdcst_json_end_t;
 // 	2 * DEPTH * (13 + 4X) + 26
 #define MAX_BRDCST_LEN (2 * MAX_DEPTH * (13 + 4*URN_INUM_PRECISE) + 26)
 char   brdcst_str[MAX_BRDCST_LEN];
+int    brdcst_pairs[MAX_PAIRS];
 static int broadcast() {
 	// less than Xms = X*1_000_000 ns, return
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
@@ -249,7 +258,6 @@ static int broadcast() {
 
 	int rv = 0;
 
-	brdcst_stat_rd_ct ++;
 	brdcst_t.tv_sec = _tmp_clock.tv_sec;
 	brdcst_t.tv_nsec = _tmp_clock.tv_nsec;
 
@@ -259,6 +267,16 @@ static int broadcast() {
 	char *s = brdcst_str;
 	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
 		if (newodbk_arr[pairid] <= 0) continue;
+
+#ifdef PUB_LESS_ON_ZERO_LISTENER
+		if (brdcst_listener_arr[pairid] == 0) {
+			// Publish every 10s if no listener last time.
+			if (brdcst_t_arr[pairid].tv_sec + 10 > _tmp_clock.tv_sec)
+				continue;
+			brdcst_t_arr[pairid].tv_sec = _tmp_clock.tv_sec;
+		}
+#endif
+
 		brdcst_stat_ct ++;
 
 		URN_DEBUGF("to broadcast %s %d/%d, updates %d", pair_arr[pairid], pairid, max_pair_id, newodbk_arr[pairid]);
@@ -281,20 +299,25 @@ static int broadcast() {
 #endif
 		newodbk_arr[pairid] = 0; // reset new odbk ct;
 		data_ct ++;
+		brdcst_pairs[data_ct] = pairid;
 	}
 	if (data_ct == 0)
 		goto final;
 
+	brdcst_stat_rd_ct ++;
+
 #ifdef PUB_REDIS
 	URN_GO_FINAL_ON_RV(redis->err, "redis context err");
-	long long listener_ct = 0;
+	long long listener_ttl_ct = 0;
 	redisReply *reply = NULL;
-	for (int i=0; i< data_ct; i++) {
+	for (int i=0; i<data_ct; i++) {
 		URN_GO_FINAL_ON_RV(redisGetReply(redis, (void**)&reply),
 			"Redis get reply code error");
-		URN_GO_FINAL_ON_RV(
-			urn_redis_chkfree_reply_long(reply, &listener_ct, NULL),
+		int pairid = brdcst_pairs[i];
+		URN_GO_FINAL_ON_RV(urn_redis_chkfree_reply_long(
+			reply, &(brdcst_listener_arr[pairid]), NULL),
 			"error in checking listeners");
+		listener_ttl_ct += brdcst_listener_arr[pairid];
 	}
 #endif
 	if (brdcst_t.tv_sec - brdcst_stat_t > 10) {
@@ -303,7 +326,7 @@ static int broadcast() {
 		long cost_us = urn_usdiff(brdcst_json_t, brdcst_json_end_t);
 		int diff = brdcst_t.tv_sec - brdcst_stat_t;
 		int speed = brdcst_stat_ct / diff;
-		// control interval to publish redis at MAX_SPEED ~ MAX_SPEED/4
+		// control interval to publish redis at MAX_SPEED ~ MAX_SPEED/5
 		if (speed > brdcst_max_speed) {
 			if (brdcst_interval_ms < 10)
 				brdcst_interval_ms ++;
@@ -313,9 +336,10 @@ static int broadcast() {
 			brdcst_interval_ms --;
 		}
 
-		URN_LOGF_C(GREEN, "--> brdcst in %d s %d/s rd %d/s every %ld ms, cost %4.2f ms w/ %d chn",
-				diff, speed, brdcst_stat_rd_ct/diff,
-				brdcst_interval_ms, (float)cost_us/1000.f, data_ct);
+		URN_LOGF_C(GREEN, "--> brdcst in %d s %d/s rd %d/s per %ld ms, cost %4.2f ms w/ %d chn >> %lld",
+			diff, speed, brdcst_stat_rd_ct/diff,
+			brdcst_interval_ms, (float)cost_us/1000.f,
+			data_ct, listener_ttl_ct);
 		brdcst_stat_rd_ct = 0;
 		brdcst_stat_ct = 0;
 		brdcst_stat_t = brdcst_t.tv_sec;
