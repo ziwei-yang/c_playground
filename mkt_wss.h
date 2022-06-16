@@ -283,9 +283,11 @@ static int broadcast() {
 	brdcst_t.tv_nsec = _tmp_clock.tv_nsec;
 	gettimeofday(&brdcst_json_t, NULL);
 
+	bool do_stat = brdcst_t.tv_sec - brdcst_stat_t > 10;
+	// Every stat round, 1/8 chance to write full snapshot.
 	bool write_snapshot = false;
 #ifdef PUB_REDIS
-	write_snapshot = ((_tmp_clock.tv_nsec & 65535) < 63);
+	write_snapshot = do_stat && ((_tmp_clock.tv_nsec & 8) < 1);
 	if (write_snapshot)
 		URN_DEBUG(YELLOW, "write_snapshot %ld %ld, %ld, %ld",
 			_tmp_clock.tv_sec, (_tmp_clock.tv_sec & 7),
@@ -361,11 +363,14 @@ static int broadcast() {
 		listener_ttl_ct += listener_ct;
 	}
 #endif
-	if (write_snapshot || (brdcst_t.tv_sec - brdcst_stat_t > 10)) {
+	if (do_stat) {
 		// stat in 10s, also print cost time this round.
 		gettimeofday(&brdcst_json_end_t, NULL);
 		long cost_us = urn_usdiff(brdcst_json_t, brdcst_json_end_t);
 		int diff = brdcst_t.tv_sec - brdcst_stat_t;
+		if (write_snapshot && (diff == 0))
+			goto final;
+
 		int speed = brdcst_stat_ct / diff;
 		// control interval to publish redis at MAX_SPEED ~ MAX_SPEED/5
 		if (speed > brdcst_max_speed) {
