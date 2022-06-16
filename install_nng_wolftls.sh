@@ -3,6 +3,7 @@ SOURCE="${BASH_SOURCE[0]}"
 DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
 cd $HOME/Proj
+os=$( uname )
 
 ################################################
 # Step 0 Build WolfSSL.
@@ -78,8 +79,9 @@ if [ ! -f $HOME/install/include/nng/nng.h ]; then
 	################################################
 	cd $HOME/Proj/nng/ && \
 		git init && \
-		git add CMakeLists.txt && \
-		git apply $DIR/patch/nng_cmakelists.diff
+		git add CMakeLists.txt src/supplemental/tls/wolfssl/CMakeLists.txt && \
+		git apply $DIR/patch/nng_cmakelists.$os.diff
+	[[ $os == Linux ]] && cp -rv $HOME/install/lib/wolfssl.o /tmp/
 
 	################################################
 	# Step 4 Build NNG with WolfTLS

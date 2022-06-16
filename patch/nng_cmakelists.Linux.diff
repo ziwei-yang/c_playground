@@ -1,0 +1,24 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ef4c2bc..bfee6ef 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -26,6 +26,7 @@
+ #
+ 
+ cmake_minimum_required(VERSION 3.13)
++add_link_options("/tmp/wolfssl.o" "-lwolfssl")
+ 
+ project(nng C)
+ include(CheckCCompilerFlag)
+diff --git a/src/supplemental/tls/wolfssl/CMakeLists.txt b/src/supplemental/tls/wolfssl/CMakeLists.txt
+index f38f5db..30fbf5d 100644
+--- a/src/supplemental/tls/wolfssl/CMakeLists.txt
++++ b/src/supplemental/tls/wolfssl/CMakeLists.txt
+@@ -14,7 +14,6 @@
+ if (NNG_TLS_ENGINE STREQUAL "wolf")
+     add_subdirectory(${PROJECT_SOURCE_DIR}/extern/nng-wolfssl nng-wolfssl)
+     target_include_directories(nng-wolfssl PRIVATE)
+-    nng_check_lib(nng-wolfssl)
+ 
+     nng_defines(NNG_TLS_ENGINE_INIT=nng_tls_engine_init_wolf)
+     nng_defines(NNG_TLS_ENGINE_FINI=nng_tls_engine_fini_wolf)
