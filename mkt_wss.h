@@ -270,7 +270,7 @@ static int broadcast() {
 		ct += sprintf_odbk_json(s+ct, asks_arr[pairid]);
 		ct += sprintf(s+ct, ",%ld%03ld,%ld]",
 				brdcst_json_t.tv_sec,
-				brdcst_json_t.tv_usec/1000,
+				(long)(brdcst_json_t.tv_usec/1000),
 				odbk_t_arr[pairid]/1000);
 		URN_DEBUGF("broadcast %s, updates %d, json len %d/%d -> %s\n%s",
 				pair_arr[pairid], newodbk_arr[pairid],
