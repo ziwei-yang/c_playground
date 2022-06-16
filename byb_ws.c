@@ -19,6 +19,14 @@
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
+int exchange_sym_alloc(urn_pair *pair, char **str) {
+	*str = malloc(strlen(pair->name));
+	if ((*str) == NULL) return ENOMEM;
+	// USDT-BTC@P -> BTCUSDT
+	sprintf(*str, "%s%s", pair->asset, pair->currency);
+	return 0;
+}
+
 void mkt_data_set_exchange(char *s) {
 	sprintf(s, "BybitU"); // TODO getenv
 }

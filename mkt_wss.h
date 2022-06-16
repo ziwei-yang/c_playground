@@ -18,6 +18,7 @@
 ///////////// Interface //////////////
 // To use mkt_data.h, must implement below methods:
 
+int   exchange_sym_alloc(urn_pair *pair, char **str);
 void  mkt_data_set_exchange(char *s); // set global exchange 
 void  mkt_data_set_wss_url(char *s);
 int   on_wss_msg(char *msg, size_t len);
@@ -27,7 +28,6 @@ int   on_wss_msg(char *msg, size_t len);
 int wss_connect();
 
 static int parse_args_build_idx(int argc, char **argv);
-static int to_bybit_sym(urn_pair *pair, char **str);
 static GList *remove_top_porder(GList *asks);
 static void wss_stat();
 static int broadcast();
@@ -456,7 +456,7 @@ static int parse_args_build_idx(int argc, char **argv) {
 		// urn_pair_print(pair);
 
 		char *byb_sym = NULL;
-		if ((rv = to_bybit_sym(&pair, &byb_sym)) != 0) {
+		if ((rv = exchange_sym_alloc(&pair, &byb_sym)) != 0) {
 			URN_WARNF("Invalid pair for bybit arg[%d] %s", i, pair.name);
 			continue;
 		}
@@ -467,8 +467,8 @@ static int parse_args_build_idx(int argc, char **argv) {
 		urn_hmap_setstr(sym_to_pair, byb_sym, upcase_s);
 
 		// Prepare channels.
-		char *depth_chn = malloc(20+strlen(byb_sym));
-		char *trade_chn = malloc(20+strlen(byb_sym));
+		char *depth_chn = malloc(64+strlen(byb_sym));
+		char *trade_chn = malloc(64+strlen(byb_sym));
 		if (depth_chn == NULL || trade_chn == NULL)
 			return URN_FATAL("Not enough memory for creating channel str", ENOMEM);
 		sprintf(depth_chn, "orderBookL2_25.%s", byb_sym);
@@ -547,12 +547,5 @@ static int parse_args_build_idx(int argc, char **argv) {
 
 	URN_INFOF("Parsing ARGV end, %d req str prepared.", batch+1);
 	wss_req_s[batch+1] = NULL;
-	return 0;
-}
-
-static int to_bybit_sym(urn_pair *pair, char **str) {
-	*str = malloc(strlen(pair->name));
-	if ((*str) == NULL) return ENOMEM;
-	sprintf(*str, "%s%s", pair->asset, pair->currency);
 	return 0;
 }

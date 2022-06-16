@@ -12,22 +12,6 @@ typedef struct urn_inum {
 	char   s[64-sizeof(long)-sizeof(size_t)-sizeof(_Bool)];
 } urn_inum;
 
-typedef struct urn_pair {
-	gchar *name; // name str at first for printf directly.
-	gchar *currency;
-	gchar *asset;
-	gchar *expiry;
-} urn_pair;
-
-typedef struct urn_porder {
-	urn_pair *pair;
-	urn_inum *p;
-	urn_inum *s;
-	struct timeval  *t;
-	_Bool    T; // 1: buy, 0: sell
-	char    *desc; // self managed description cache.
-} urn_porder;
-
 //////////////////////////////////////////
 // Market number represent in integer.
 //////////////////////////////////////////
@@ -138,8 +122,77 @@ int urn_inum_cmp(urn_inum *i1, urn_inum *i2) {
 }
 
 //////////////////////////////////////////
+// Pair
+//////////////////////////////////////////
+
+typedef struct urn_pair {
+	gchar *name; // name str at first for printf directly.
+	gchar *currency;
+	gchar *asset;
+	gchar *expiry;
+} urn_pair;
+
+void urn_pair_print(urn_pair pair) {
+	URN_LOGF("currency %s", pair.currency);
+	URN_LOGF("asset    %s", pair.asset);
+	URN_LOGF("expiry   %s", pair.expiry);
+	URN_LOGF("name     %s", pair.name);
+}
+
+void urn_pair_free(urn_pair *p) {
+	if (p->name != NULL) g_free(p->name);
+	if (p->currency != NULL) g_free(p->currency);
+	if (p->asset != NULL) g_free(p->asset);
+	if (p->expiry != NULL) g_free(p->expiry);
+	free(p);
+}
+
+// parse currency-asset@expiry, or currency-asset
+int urn_pair_parse(urn_pair *pair, char *s, int slen, urn_func_opt *opt) {
+	gchar **currency_and_left = NULL;
+	gchar **asset_exp = NULL;
+	// copy to new place for splitting.
+	gchar *gs = g_ascii_strup(s, slen);
+
+	// get currency
+	currency_and_left= g_strsplit(gs, "-", 3);
+	if (currency_and_left[1] == NULL) goto error;
+	if (currency_and_left[2] != NULL) goto error;
+	// get asset and expiry
+	asset_exp = g_strsplit(currency_and_left[1], "@", 3);
+	if (asset_exp[2] != NULL) goto error;
+
+	pair->currency = currency_and_left[0];
+
+	pair->asset = asset_exp[0];
+	pair->expiry = asset_exp[1];
+	pair->name = gs;
+
+	g_free(currency_and_left[1]); // [0] taken, [2] NULL
+	g_free(currency_and_left);
+	g_free(asset_exp); // [0,1] taken, [2] NULL
+	return 0;
+error:
+	g_strfreev(currency_and_left);
+	g_strfreev(asset_exp);
+	if (opt == NULL || !(opt->silent))
+		URN_LOGF_C(RED, "failed to parse pair from %s", s);
+	return EINVAL;
+}
+
+//////////////////////////////////////////
 // Public order from market data
 //////////////////////////////////////////
+
+typedef struct urn_porder {
+	urn_pair *pair;
+	urn_inum *p;
+	urn_inum *s;
+	struct timeval  *t;
+	_Bool    T; // 1: buy, 0: sell
+	char    *desc; // self managed description cache.
+} urn_porder;
+
 urn_porder *urn_porder_alloc(urn_pair *pair, urn_inum *p, urn_inum *s, _Bool buy, struct timeval *t) {
 	urn_porder *o = malloc(sizeof(urn_porder));
 	if (o == NULL) return o;
@@ -195,57 +248,6 @@ static int sprintf_odbko_json(char *s, urn_porder *o) {
 	ct += urn_inum_sprintf(o->s, s+ct);
 	*(s+ct) = '}'; ct++;
 	return ct;
-}
-
-//////////////////////////////////////////
-// Pair
-//////////////////////////////////////////
-void urn_pair_print(urn_pair pair) {
-	URN_LOGF("currency %s", pair.currency);
-	URN_LOGF("asset    %s", pair.asset);
-	URN_LOGF("expiry   %s", pair.expiry);
-	URN_LOGF("name     %s", pair.name);
-}
-
-void urn_pair_free(urn_pair *p) {
-	if (p->name != NULL) g_free(p->name);
-	if (p->currency != NULL) g_free(p->currency);
-	if (p->asset != NULL) g_free(p->asset);
-	if (p->expiry != NULL) g_free(p->expiry);
-	free(p);
-}
-
-// parse currency-asset@expiry, or currency-asset
-int urn_pair_parse(urn_pair *pair, char *s, int slen, urn_func_opt *opt) {
-	gchar **currency_and_left = NULL;
-	gchar **asset_exp = NULL;
-	// copy to new place for splitting.
-	gchar *gs = g_ascii_strup(s, slen);
-
-	// get currency
-	currency_and_left= g_strsplit(gs, "-", 3);
-	if (currency_and_left[1] == NULL) goto error;
-	if (currency_and_left[2] != NULL) goto error;
-	// get asset and expiry
-	asset_exp = g_strsplit(currency_and_left[1], "@", 3);
-	if (asset_exp[2] != NULL) goto error;
-
-	pair->currency = currency_and_left[0];
-
-	pair->asset = asset_exp[0];
-	pair->expiry = asset_exp[1];
-	pair->name = gs;
-
-	g_free(currency_and_left[1]); // [0] taken, [2] NULL
-	g_free(currency_and_left);
-	g_free(asset_exp); // [0,1] taken, [2] NULL
-	return 0;
-error:
-	g_strfreev(currency_and_left);
-	g_strfreev(asset_exp);
-	if (opt == NULL || !(opt->silent))
-		URN_LOGF_C(RED, "failed to parse pair from %s", s);
-	return EINVAL;
 }
 
 //////////////////////////////////////////
