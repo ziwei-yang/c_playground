@@ -43,8 +43,9 @@ if [[ $os == 'Linux' ]]; then
 	hiredis_home=$HOME/install
 fi
 
-# ubuntu must put -largs at last
-echo gcc \
+# for ubuntu gcc:
+# must put -o a.out at first, linker options -largs at last
+echo gcc $@ \
 	-I/usr/include \
 	-I/usr/local/include \
 	-I$HOME/install/include \
@@ -58,6 +59,4 @@ echo gcc \
 	-L $hiredis_home/lib \
 	\
 	$nng_wolfssl_o \
-	$@ \
-	\
 	-lnng -lpthread -lwolfssl -lmbedx509 -lmbedcrypto -lglib-2.0 -lhiredis $ld_nng_wolfssl \

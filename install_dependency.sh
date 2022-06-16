@@ -48,27 +48,31 @@ cd $DIR
 [[ $os == Darwin ]] && \
 	[ ! -f $HOMEBREW/hiredis/1.0.2/include/hiredis/hiredis.h ] && \
 	brew install hiredis
-[[ $os == Linux ]] && [ ! -f $HOME/install/lib/libhiredis.so ] && (
+[[ $os == Linux ]] && [ ! -f $HOME/install/lib/libhiredis.so.1.0.0 ] && (
 	if [ ! -d $HOME/Proj/hiredis-1.0.2 ]; then
 		echo "get hiredis-1.0.2 into $HOME/Proj/ first"
 		cd $HOME/Proj
 		wget -O hiredis-1.0.2.tar.gz https://github.com/redis/hiredis/archive/refs/tags/v1.0.2.tar.gz
 		tar xf hiredis-1.0.2.tar.gz && rm hiredis-1.0.2.tar.gz
-		echo "remember to change Makefile: PREFIX?=$HOME/install"
-		exit 1
 	fi
-	cd $HOME/Proj/hiredis-1.0.2
 
-	# make install failed in copying files on ubuntu2004
+	echo "Go to change $HOME/Proj/hiredis-1.0.2/Makefile : PREFIX?=$HOME/install"
+	cd $HOME/Proj/hiredis-1.0.2 && \
+		git init && \
+		git add Makefile && \
+		git apply $DIR/patch/hiredis_Makefile.diff
+
+	# make install failed in copying files on ubuntu2004, do it mannually
 	make && make install
 	[ ! -f $HOME/install/lib/libhiredis.so ] && cp -v libhiredis.so $HOME/install/lib/
 	[ ! -f $HOME/install/lib/libhiredis.a ] && cp -v libhiredis.a $HOME/install/lib/
 	[ ! -f $HOME/install/lib/pkgconfig/hiredis.pc ] && cp -v hiredis.pc $HOME/install/lib/pkgconfig/
-	# cd $HOME/install/lib
-	# ln -sf libhiredis.so.1.0.0 libhiredis.so
+	cd $HOME/install/lib
+	ln -sf libhiredis.so libhiredis.so.1.0.0 
+
 	cd $DIR
 )
-if [[ $os == Linux ]] && [[ ! -f $HOME/install/lib/libhiredis.so ]]; then
+if [[ $os == Linux ]] && [[ ! -f $HOME/install/lib/libhiredis.so.1.0.0 ]]; then
 	echo "hiredis build failed"
 	exit 1
 elif [[ $os == Darwin ]] && [[ ! -f $HOMEBREW/hiredis/1.0.2/include/hiredis/hiredis.h ]]; then

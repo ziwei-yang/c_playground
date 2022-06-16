@@ -1,0 +1,13 @@
+diff --git a/Makefile b/Makefile
+index a8d37a2..827a99a 100644
+--- a/Makefile
++++ b/Makefile
+@@ -21,7 +21,7 @@ HIREDIS_PATCH=$(shell grep HIREDIS_PATCH hiredis.h | awk '{print $$3}')
+ HIREDIS_SONAME=$(shell grep HIREDIS_SONAME hiredis.h | awk '{print $$3}')
+ 
+ # Installation related variables and target
+-PREFIX?=/usr/local
++PREFIX?=$(shell cd ~/install && pwd)
+ INCLUDE_PATH?=include/hiredis
+ LIBRARY_PATH?=lib
+ PKGCONF_PATH?=pkgconfig
