@@ -15,6 +15,7 @@
 //#undef PUB_REDIS // off redis publish
 
 #define PUB_LESS_ON_ZERO_LISTENER
+//#undef  PUB_LESS_ON_ZERO_LISTENER
 
 #include "mkt_wss.h"
 

@@ -271,9 +271,9 @@ static int broadcast() {
 #ifdef PUB_LESS_ON_ZERO_LISTENER
 		if (brdcst_listener_arr[pairid] == 0) {
 			// Publish every 10s if no listener last time.
-			if (brdcst_t_arr[pairid].tv_sec + 10 > _tmp_clock.tv_sec)
+			if (brdcst_t_arr[pairid].tv_sec + 10 > brdcst_t.tv_sec)
 				continue;
-			brdcst_t_arr[pairid].tv_sec = _tmp_clock.tv_sec;
+			brdcst_t_arr[pairid].tv_sec = brdcst_t.tv_sec;
 		}
 #endif
 
@@ -298,8 +298,8 @@ static int broadcast() {
 		redisAppendCommand(redis, "PUBLISH %s %s", pub_odbk_chn_arr[pairid], s);
 #endif
 		newodbk_arr[pairid] = 0; // reset new odbk ct;
-		data_ct ++;
 		brdcst_pairs[data_ct] = pairid;
+		data_ct ++;
 	}
 	if (data_ct == 0)
 		goto final;
@@ -309,15 +309,18 @@ static int broadcast() {
 #ifdef PUB_REDIS
 	URN_GO_FINAL_ON_RV(redis->err, "redis context err");
 	long long listener_ttl_ct = 0;
+	long long listener_ct = 0;
 	redisReply *reply = NULL;
 	for (int i=0; i<data_ct; i++) {
 		URN_GO_FINAL_ON_RV(redisGetReply(redis, (void**)&reply),
 			"Redis get reply code error");
 		int pairid = brdcst_pairs[i];
 		URN_GO_FINAL_ON_RV(urn_redis_chkfree_reply_long(
-			reply, &(brdcst_listener_arr[pairid]), NULL),
-			"error in checking listeners");
-		listener_ttl_ct += brdcst_listener_arr[pairid];
+			reply, &listener_ct, NULL), "error in checking listeners");
+#ifdef PUB_LESS_ON_ZERO_LISTENER
+		brdcst_listener_arr[pairid] = listener_ct;
+#endif
+		listener_ttl_ct += listener_ct;
 	}
 #endif
 	if (brdcst_t.tv_sec - brdcst_stat_t > 10) {
@@ -336,7 +339,7 @@ static int broadcast() {
 			brdcst_interval_ms --;
 		}
 
-		URN_LOGF_C(GREEN, "--> brdcst in %d s %d/s rd %d/s per %ld ms, cost %4.2f ms w/ %d chn >> %lld",
+		URN_LOGF_C(GREEN, "--> brdcst in %d s %d/s rd %d/s per %ld ms, %4.2f ms > %d chn > %lld ears",
 			diff, speed, brdcst_stat_rd_ct/diff,
 			brdcst_interval_ms, (float)cost_us/1000.f,
 			data_ct, listener_ttl_ct);
