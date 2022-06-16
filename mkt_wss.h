@@ -224,12 +224,26 @@ int wss_connect() {
 // broadcast every few milliseconds.
 struct timeval brdcst_json_t;
 struct timeval brdcst_json_end_t;
+// build broadcast json
+// [bids, asks, t, mkt_t]
+// for each order:
+// 	strlen({"p":X.X,"s":X.X}) = 13+4X
+// total orderbook len:
+// 	2 * DEPTH * (13 + 4X)
+// timestamp len = 1655250053846 = 13
+// [bids, asks, ts, ts] len:
+// 	2 * DEPTH * (13 + 4X) + 26
+#define MAX_BRDCST_LEN (2 * MAX_DEPTH * (13 + 4*URN_INUM_PRECISE) + 26)
+char   brdcst_str[MAX_BRDCST_LEN];
 static int broadcast() {
 	// less than Xms = X*1_000_000 ns, return
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
 	if ((_tmp_clock.tv_sec == brdcst_t.tv_sec) && 
 			(_tmp_clock.tv_nsec - brdcst_t.tv_nsec < 1000000l * brdcst_interval_ms))
 		return 0;
+
+	int rv = 0;
+
 	brdcst_stat_rd_ct ++;
 	brdcst_t.tv_sec = _tmp_clock.tv_sec;
 	brdcst_t.tv_nsec = _tmp_clock.tv_nsec;
@@ -237,26 +251,14 @@ static int broadcast() {
 	gettimeofday(&brdcst_json_t, NULL);
 
 	int data_ct = 0;
-	char *msg[max_pair_id]; // msg to broadcast
-	char *chn[max_pair_id]; // chn to broadcast
-	int maxslen = (2 * MAX_DEPTH * (13 + 4*URN_INUM_PRECISE) + 26);
+	char *s = brdcst_str;
 	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
 		if (newodbk_arr[pairid] <= 0) continue;
 		brdcst_stat_ct ++;
 
-#ifdef PUB_REDIS
 		URN_DEBUGF("to broadcast %s %d/%d, updates %d", pair_arr[pairid], pairid, max_pair_id, newodbk_arr[pairid]);
 
-		// build broadcast json
-		// [bids, asks, t, mkt_t]
-		// for each order:
-		// 	strlen({"p":X.X,"s":X.X}) = 13+4X
-		// total orderbook len:
-		// 	2 * DEPTH * (13 + 4X)
-		// timestamp len = 1655250053846 = 13
-		// [bids, asks, ts, ts] len:
-		// 	2 * DEPTH * (13 + 4X) + 26
-		char *s = malloc(maxslen);
+#ifdef PUB_REDIS
 		int ct = 0;
 		*(s+ct) = '['; ct++;
 		ct += sprintf_odbk_json(s+ct, bids_arr[pairid]);
@@ -272,26 +274,22 @@ static int broadcast() {
 
 		redisAppendCommand(redis, "PUBLISH %s %s", pub_odbk_chn_arr[pairid], s);
 #endif
-		free(s);
 		newodbk_arr[pairid] = 0; // reset new odbk ct;
 		data_ct ++;
 	}
-	if (data_ct == 0) return 0;
+	if (data_ct == 0)
+		goto final;
 
 #ifdef PUB_REDIS
-	if (redis->err) {
-		int rv = redis->err;
-		return URN_FATAL("Redis context init error", rv);
-	}
+	URN_GO_FINAL_ON_RV(redis->err, "redis context err");
 	long long listener_ct = 0;
 	redisReply *reply = NULL;
 	for (int i=0; i< data_ct; i++) {
-		int rv = redisGetReply(redis, (void**)&reply);
-		if (rv != REDIS_OK)
-			return URN_FATAL("Redis get reply code error", rv);
-		rv = urn_redis_chkfree_reply_long(reply, &listener_ct, NULL);
-		if (rv != 0)
-			URN_FATAL("error in checking listeners", rv);
+		URN_GO_FINAL_ON_RV(redisGetReply(redis, (void**)&reply),
+			"Redis get reply code error");
+		URN_GO_FINAL_ON_RV(
+			urn_redis_chkfree_reply_long(reply, &listener_ct, NULL),
+			"error in checking listeners");
 	}
 #endif
 	if (brdcst_t.tv_sec - brdcst_stat_t > 10) {
@@ -315,8 +313,8 @@ static int broadcast() {
 		brdcst_stat_t = brdcst_t.tv_sec;
 	}
 
-
-	return 0;
+final:
+	return rv;
 }
 
 static void wss_stat() {
