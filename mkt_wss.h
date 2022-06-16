@@ -14,6 +14,14 @@
 #include "hmap.h"
 #include "redis.h"
 
+#ifndef MAX_DEPTH // max depth in each side.
+#define MAX_DEPTH 5
+#endif
+
+#ifndef MAX_PAIRS
+#define MAX_PAIRS 300
+#endif
+
 #ifdef __linux__ // only macos has CLOCK_MONOTONIC_RAW_APPROX
 #ifndef CLOCK_MONOTONIC_RAW_APPROX
 #define CLOCK_MONOTONIC_RAW_APPROX CLOCK_MONOTONIC_RAW
@@ -97,6 +105,13 @@ unsigned int  brdcst_stat_t;
 char         exchange[32];
 
 int main(int argc, char **argv) {
+	if (argc <= 1)
+		return URN_FATAL("Args: usdt-btc@p", ENOMEM);
+	if (argc > 1 && (strcasecmp(argv[1], "-v") == 0)) {
+		URN_LOG("Compiled at " __TIMESTAMP__);
+		return 0;
+	}
+
 	mkt_data_set_exchange(exchange);
 	brdcst_interval_ms = 1;
 
@@ -306,9 +321,9 @@ static int broadcast() {
 
 	brdcst_stat_rd_ct ++;
 
+	long long listener_ttl_ct = 0;
 #ifdef PUB_REDIS
 	URN_GO_FINAL_ON_RV(redis->err, "redis context err");
-	long long listener_ttl_ct = 0;
 	long long listener_ct = 0;
 	redisReply *reply = NULL;
 	for (int i=0; i<data_ct; i++) {

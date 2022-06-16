@@ -1,17 +1,9 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 // uranus options
 #undef URN_WSS_DEBUG // wss I/O log
 #define URN_MAIN_DEBUG // debug log
 #undef URN_MAIN_DEBUG // off debug log
 
 // local options
-#define MAX_DEPTH 5 // max depth in each side.
-#define MAX_PAIRS 300
-#define TSMS_LEN 13 // ms timestamp str len
-#define PUB_REDIS
 //#undef PUB_REDIS // off redis publish
 
 #define PUB_LESS_ON_ZERO_LISTENER
