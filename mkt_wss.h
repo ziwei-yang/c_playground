@@ -432,7 +432,7 @@ static void wss_stat() {
 	time_t passed_s = _tmp_clock.tv_sec - wss_stat_t.tv_sec;
 	float ct_per_s = (float)(wss_stat_ct) / (float)passed_s;
 	float kb_per_s = (float)(wss_stat_sz) / (float)passed_s / 1000.f;
-	URN_INFOF("<-- wss in %6lu s %8.f msg/s %8.f KB/s + %ld ms", passed_s, ct_per_s, kb_per_s, mkt_latency_ms);
+	URN_INFOF("<-- %s in %6lu s %8.f msg/s %8.f KB/s + %ld ms", exchange, passed_s, ct_per_s, kb_per_s, mkt_latency_ms);
 	if (passed_s < 5)
 		wss_stat_per_e ++; // double stat interval
 	// Reset stat

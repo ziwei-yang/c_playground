@@ -194,7 +194,7 @@ int parse_n_mod_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_
 		if (el_ct == 0) { // price
 			pricef = yyjson_get_real(v_el);
 			if (pricef != 0) {
-				sprintf(prices, "%f", pricef);
+				sprintf(prices, "%12.12f", pricef); // %f loses precision
 			} else {
 				pricei = yyjson_get_uint(v_el);
 				sprintf(prices, "%d", pricei);
@@ -207,7 +207,7 @@ int parse_n_mod_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_
 					op_type = 3; // delete
 				} else {
 					op_type = 2; // update
-					sprintf(sizes, "%f", sizef);
+					sprintf(sizes, "%12.12f", sizef); // %f loses precision
 					urn_inum_alloc(&s, sizes);
 				}
 			} else {

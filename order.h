@@ -49,15 +49,16 @@ char *urn_inum_str(urn_inum *i) {
 }
 
 int urn_inum_sprintf(urn_inum *i, char *s) {
-	if (i == NULL) return 0;
+	// too many spaces in urn_inum_str()
+	// return sprintf(s, "%s", urn_inum_str(i));
 	if (i->frac_ext == 0) // integer only.
 		return sprintf(s, "%ld", i->intg);
 	else if (i->pstv)
-		return sprintf(s, "%ld.%zu", i->intg, i->frac_ext);
+		return sprintf(s, "%ld.%012zu", i->intg, i->frac_ext);
 	else if (i->intg != 0)
-		return sprintf(s, "%ld.%zu", i->intg, i->frac_ext);
+		return sprintf(s, "%ld.%012zu", i->intg, i->frac_ext);
 	else // intg=0 and negative.
-		return sprintf(s, "-%ld.%zu", i->intg, i->frac_ext);
+		return sprintf(s, "-%ld.%012zu", i->intg, i->frac_ext);
 }
 
 // Every inum should be initialized here.

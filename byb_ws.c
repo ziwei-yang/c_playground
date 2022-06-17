@@ -220,13 +220,13 @@ int parse_n_mod_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_
 			urn_inum_alloc(&s, sizestr);
 		} else if (sizef != 0) {
 			// check float value before int, in case of 1.9 -> 1, 0.9 -> 0
-			sprintf(sizestr2, "%f", sizef);
+			sprintf(sizestr2, "%12.12f", sizef); // %f loses precision
 			urn_inum_alloc(&s, sizestr2);
 		} else if (sizei != 0) {
 			sprintf(sizestr2, "%d", sizei);
 			urn_inum_alloc(&s, sizestr2);
 		}
-		URN_DEBUGF("OP %d %s %s %s %s sizes %s %s %f %d", op_type, price, symbol, side, yyjson_get_type_desc(sizev), sizestr, sizestr2, sizef, sizei);
+		URN_DEBUGF("OP %d %s %s %s %s sizes %s %s %12.12f %d", op_type, price, symbol, side, yyjson_get_type_desc(sizev), sizestr, sizestr2, sizef, sizei);
 	} else
 		URN_DEBUGF("OP %d %s %s %s no size", op_type, price, symbol, side);
 
