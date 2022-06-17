@@ -129,8 +129,7 @@ int urn_ws_send_async(nng_stream *strm, char *s, int slen, nng_aio **aiop, nng_i
 	if ((rv = nngaio_init(s, slen, aiop, iovp)) != 0)
 		return rv;
 	// asynchronously send
-	URN_DEBUG("--> async req");
-	URN_DEBUG(s);
+	URN_DEBUGF("--> async req: %s", s);
 	nng_stream_send(strm, *aiop);
 	return 0;
 }

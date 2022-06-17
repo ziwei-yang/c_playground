@@ -158,6 +158,7 @@ int urn_pair_alloc(urn_pair *pair, char *s, int slen, urn_func_opt *opt) {
 	currency_and_left = g_strsplit(gs, "-", 3);
 	if (currency_and_left[1] == NULL) goto error;
 	if (currency_and_left[2] != NULL) goto error;
+
 	// get asset and expiry
 	asset_exp = g_strsplit(currency_and_left[1], "@", 3);
 	// asset_exp might not have [1 expiry], check [1] first.

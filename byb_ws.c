@@ -6,6 +6,8 @@
 #define PUB_LESS_ON_ZERO_LISTENER
 //#undef  PUB_LESS_ON_ZERO_LISTENER
 
+//#define PUB_NO_REDIS
+
 #include "mkt_wss.h"
 
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
@@ -88,6 +90,7 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char**tick_ch
 	wss_req_s[batch+1] = NULL;
 
 	URN_INFOF("Parsing ARGV end, %d req str prepared.", batch+1);
+	wss_req_interval_e = 10 ; // 1req/1024rd or bybit may disconnect
 	return 0;
 }
 
@@ -175,6 +178,7 @@ final:
 	return rv;
 }
 
+// type: no use here
 // op_type: 0 order_book - snapshot
 // op_type: 1 insert     - delta
 // op_type: 2 update     - delta

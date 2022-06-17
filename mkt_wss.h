@@ -14,7 +14,9 @@
 #include "hmap.h"
 #include "redis.h"
 
+#ifndef PUB_NO_REDIS
 #define PUB_REDIS
+#endif
 
 #ifndef MAX_DEPTH // max depth in each side.
 #define MAX_DEPTH 5
@@ -77,8 +79,11 @@ long   odbk_t_arr[MAX_PAIRS];
 ///////////// wss_req //////////////
 // Maybe two command per pair, 1 more for NULL
 // After initial stage, we can reuse this by move wss_req_i
-char*    wss_req_s[MAX_PAIRS*2+1];
-int      wss_req_i; // idx of last sent wss_req_s
+#define  MAX_WSS_REQ_BUFF (MAX_PAIRS*2+1)
+char*    wss_req_s[MAX_WSS_REQ_BUFF];
+int      wss_req_i = 0; // idx of next sent wss_req_s
+int      wss_req_interval_e = 1; // try send next req every 2^e msgs received.
+unsigned int wss_req_wait_ct;
 
 ///////////// stat //////////////
 unsigned int wss_stat_sz;
@@ -177,6 +182,24 @@ int main(int argc, char **argv) {
 	return 0;
 }
 
+int wss_req_next(nng_stream *stream) {
+	char *req_s = wss_req_s[wss_req_i];
+	if (req_s == NULL) return 0;
+
+	wss_req_wait_ct = 0;
+	int rv = 0;
+	URN_INFOF("Sending wss_req_s[%d] %lu bytes: %s", wss_req_i, strlen(req_s), req_s);
+	if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
+		return URN_FATAL_NNG(rv);
+	free(wss_req_s[wss_req_i]);
+	wss_req_s[wss_req_i] = NULL;
+
+	wss_req_i++;
+	if (wss_req_i >= MAX_WSS_REQ_BUFF)
+		wss_req_i = 0;
+	return 0;
+}
+
 char wss_uri[256];
 int wss_connect() {
 	int rv = 0;
@@ -203,14 +226,8 @@ int wss_connect() {
 		return URN_FATAL_NNG(rv);
 	URN_INFO("Wss conn stream is ready");
 
-	char *req_s = wss_req_s[0];
-	if (req_s != NULL) {
-		URN_INFOF("Sending wss_req_s[0] %lu bytes: %s", strlen(req_s), req_s);
-		if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
-			return URN_FATAL_NNG(rv);
-		wss_req_i = 0; // 0 has been sent
-		free(wss_req_s[wss_req_i]);
-	}
+	if ((rv = wss_req_next(stream)) != 0)
+		return URN_FATAL_NNG(rv);
 
 	// Reuse iov buffer and aio to receive data.
 	if ((rv = nngaio_init(recv_buf, recv_buflen, &recv_aio, &recv_iov)) != 0)
@@ -219,6 +236,7 @@ int wss_connect() {
 
 	wss_stat_sz = 0;
 	wss_stat_ct = 0;
+	wss_req_wait_ct = 0;
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &wss_stat_t);
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &brdcst_t);
 
@@ -243,20 +261,17 @@ int wss_connect() {
 		
 		broadcast();
 
-		// stat every few seconds, also send unfinished requests after.
+		// every 32 rounds, send unfinished requests after.
 		// Too many subscribes at once may cause wss server drops conn.
-		if ((wss_stat_ct >> wss_stat_per_e) > 0) {
-			wss_stat();
-
-			req_s = wss_req_s[wss_req_i+1];
-			if (req_s != NULL) {
-				wss_req_i++;
-				URN_INFOF("Sending wss_req_s[%d] %lu bytes: %s", wss_req_i, strlen(req_s), req_s);
-				free(wss_req_s[wss_req_i]);
-				if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
-					return URN_FATAL_NNG(rv);
-			}
+		wss_req_wait_ct ++;
+		if ((wss_req_wait_ct >> wss_req_interval_e) > 0) {
+			if ((rv = wss_req_next(stream)) != 0)
+				return URN_FATAL_NNG(rv);
 		}
+
+		// stat every few seconds
+		if ((wss_stat_ct >> wss_stat_per_e) > 0)
+			wss_stat();
 	}
 	URN_INFOF("wss_connect finished at wss_stat_ct %u", wss_stat_ct);
 	return 0;
@@ -525,6 +540,16 @@ static int parse_args_build_idx(int argc, char **argv) {
 		char *upcase_s = argv[i];
 		urn_s_upcase(upcase_s, strlen(upcase_s));
 
+		// auto completion: xrp -> btc-xrp
+		gchar **currency_and_left = g_strsplit(upcase_s, "-", 3);
+		if (currency_and_left[1] == NULL) {
+			gchar *gs = g_strjoin("-", "BTC", upcase_s, NULL);
+			upcase_s = malloc(strlen(gs)+1);
+			strcpy(upcase_s, gs);
+			g_free(gs);
+		}
+		g_strfreev(currency_and_left);
+
 		// Check dup args
 		char *dupval;
 		int dup = urn_hmap_getstr(pair_to_sym, upcase_s, &dupval);
@@ -536,7 +561,7 @@ static int parse_args_build_idx(int argc, char **argv) {
 
 		// parsing urn_pair
 		urn_pair pair = pairs[i-1];
-		rv = urn_pair_alloc(&pair, argv[i], strlen(argv[i]), NULL);
+		rv = urn_pair_alloc(&pair, upcase_s, strlen(upcase_s), NULL);
 		if (rv != 0)
 			return URN_FATAL("Error in parsing pairs", EINVAL);
 		// urn_pair_print(pair);
@@ -685,9 +710,13 @@ bool mkt_wss_odbk_update_or_delete(int pairid, urn_inum *p, urn_inum *s, bool bu
 	}
 	if (!found) {
 		URN_DEBUGF("node not found at check_idx %d", check_idx);
+		// abort update when out_of_range && range==max
 		if (check_idx == 0) {
-			URN_DEBUG("price checked but out of valid range, return not found");
-			return false;
+			if ((buy && bidct_arr[pairid] >= MAX_DEPTH) ||
+					((!buy)&& askct_arr[pairid] >= MAX_DEPTH)) {
+				URN_DEBUG("price checked but out of valid range, return not found");
+				return false;
+			}
 		}
 		// update should become insert after this
 		if (update) {
