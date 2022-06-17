@@ -13,6 +13,8 @@
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
+char *preprocess_pair(char *pair) { return pair; }
+
 int exchange_sym_alloc(urn_pair *pair, char **str) {
 	*str = malloc(strlen(pair->name));
 	if ((*str) == NULL) return ENOMEM;
@@ -48,12 +50,15 @@ void mkt_data_set_wss_url(char *s) {
 
 void mkt_data_odbk_channel(char *sym, char *chn) { sprintf(chn, "orderBookL2_25.%s", sym); }
 
+void mkt_data_odbk_snpsht_channel(char *sym, char *chn) { chn[0] = '\0'; }
+
 void mkt_data_tick_channel(char *sym, char *chn) { sprintf(chn, "trade.%s", sym); }
 
-int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char**tick_chns) {
+int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_snpsht_chns, const char**tick_chns) {
 	// Send no more than 40 channels per request.
 	int batch_sz = 20; // 20 odbk + 20 tick = 40 requests
 	int batch = 0;
+	int cmd_ct = 0;
 	for (; batch <= (chn_ct/batch_sz+1); batch++) {
 		int i_s = batch*batch_sz;
 		int i_e = MIN((batch+1)*batch_sz, chn_ct);
@@ -67,7 +72,7 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char**tick_ch
 			return URN_FATAL("Error in creating json root", EINVAL);
 		yyjson_mut_doc_set_root(wss_req_j, jroot);
 		yyjson_mut_obj_add_str(wss_req_j, jroot, "op", "subscribe");
-		URN_LOGF("preparing wss req NO. %d:", batch);
+		URN_LOGF("preparing wss req batch %d:", batch);
 
 		const char *batch_chn[(i_e-i_s)*2];
 		for (int i=i_s; i<i_e; i++) {
@@ -80,16 +85,19 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char**tick_ch
 		if (target_chns == NULL)
 			return URN_FATAL("Error in strcpy json array", EINVAL);
 		yyjson_mut_obj_add_val(wss_req_j, jroot, "args", target_chns);
-		wss_req_s[batch] = yyjson_mut_write(wss_req_j, YYJSON_WRITE_PRETTY, NULL);
-		URN_LOGF("req %d : %s", batch, wss_req_s[batch]);
-		free(wss_req_s[batch]);
-		wss_req_s[batch] = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
-		URN_INFOF("req %d : %s", batch, wss_req_s[batch]);
+		// save command
+		char *prettyj = yyjson_mut_write(wss_req_j, YYJSON_WRITE_PRETTY, NULL);
+		URN_LOGF("req %d : %s", cmd_ct, prettyj);
+		free(prettyj);
+		char *cmd = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
+		wss_req_s[cmd_ct] = cmd;
+		URN_INFOF("req %d : %s", cmd_ct, cmd);
+		cmd_ct++;
 		yyjson_mut_doc_free(wss_req_j);
 	}
-	wss_req_s[batch+1] = NULL;
+	wss_req_s[cmd_ct] = NULL;
 
-	URN_INFOF("Parsing ARGV end, %d req str prepared.", batch+1);
+	URN_INFOF("Parsing ARGV end, %d req str prepared.", cmd_ct);
 	wss_req_interval_e = 10 ; // 1req/1024rd or bybit may disconnect
 	return 0;
 }

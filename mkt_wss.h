@@ -23,7 +23,7 @@
 #endif
 
 #ifndef MAX_PAIRS
-#define MAX_PAIRS 300
+#define MAX_PAIRS 1024
 #endif
 
 #ifdef __linux__ // only macos has CLOCK_MONOTONIC_RAW_APPROX
@@ -35,13 +35,16 @@
 ///////////// Interface //////////////
 // To use mkt_data.h, must implement below methods:
 
+// free(pair) and return mapped pair.
+char *preprocess_pair(char *pair); // BUSD-BTC -> USD-BTC
 int   exchange_sym_alloc(urn_pair *pair, char **str);
 void  mkt_data_set_exchange(char *s); // set global exchange 
 void  mkt_data_set_wss_url(char *s);
 void  mkt_data_odbk_channel(char *sym, char *chn);
+void  mkt_data_odbk_snpsht_channel(char *sym, char *chn);
 void  mkt_data_tick_channel(char *sym, char *chn);
 int   on_wss_msg(char *msg, size_t len);
-int   mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char**tick_chns);
+int   mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_snpsht_chns, const char**tick_chns);
 
 ///////////// Interface //////////////
 
@@ -63,11 +66,13 @@ hashmap* pair_to_sym;
 hashmap* sym_to_pair;
 hashmap* trade_chn_to_pair;
 hashmap* depth_chn_to_pair;
+hashmap* depth_snpsht_chn_to_pair;
 
 ///////////// data organized by pairid //////////////
 int     max_pair_id = -1;
 hashmap *trade_chn_to_pairid;
 hashmap *depth_chn_to_pairid;
+hashmap *depth_snpsht_chn_to_pairid;
 
 char  *pair_arr[MAX_PAIRS]; // pair = pair_arr[pairid]
 GList *bids_arr[MAX_PAIRS]; // bids = bids_arr[pairid]
@@ -173,11 +178,13 @@ int main(int argc, char **argv) {
 
 	// pair are actually argv
 	urn_hmap_free_with_keys(depth_chn_to_pair);
+	urn_hmap_free_with_keys(depth_snpsht_chn_to_pair);
 	urn_hmap_free_with_keys(trade_chn_to_pair);
 	// same key/val in sym_to_pair and pair_to_sym
 	urn_hmap_free(sym_to_pair);
 	urn_hmap_free(pair_to_sym);
 	urn_hmap_free(depth_chn_to_pairid);
+	urn_hmap_free(depth_snpsht_chn_to_pairid);
 	urn_hmap_free(trade_chn_to_pairid);
 	return 0;
 }
@@ -516,6 +523,7 @@ static int parse_args_build_idx(int argc, char **argv) {
 	pair_to_sym = urn_hmap_init(max_pairn*5); // to avoid resizing.
 	sym_to_pair = urn_hmap_init(max_pairn*5);
 	depth_chn_to_pair = urn_hmap_init(max_pairn*5);
+	depth_snpsht_chn_to_pair= urn_hmap_init(max_pairn*5);
 	trade_chn_to_pair = urn_hmap_init(max_pairn*5);
 
 	// dont use 0=NULL as pairid
@@ -529,16 +537,22 @@ static int parse_args_build_idx(int argc, char **argv) {
 	}
 
 	depth_chn_to_pairid = urn_hmap_init(max_pairn*5);
+	depth_snpsht_chn_to_pairid = urn_hmap_init(max_pairn*5);
 	trade_chn_to_pairid = urn_hmap_init(max_pairn*5);
 
 	int chn_ct = 0;
-	const char *odbk_chns[max_pairn]; // both depth and trade
-	const char *tick_chns[max_pairn]; // both depth and trade
+	const char *odbk_chns[max_pairn];
+	const char *odbk_snpsht_chns[max_pairn];
+	const char *tick_chns[max_pairn];
 
 	urn_pair pairs[argc];
 	for (int i=1; i<argc; i++) {
 		char *upcase_s = argv[i];
 		urn_s_upcase(upcase_s, strlen(upcase_s));
+
+		// preprocess real pair to its mapping
+		// For binance: BUSD-XRP -> USD-XRP
+		upcase_s = preprocess_pair(upcase_s);
 
 		// auto completion: xrp -> btc-xrp
 		gchar **currency_and_left = g_strsplit(upcase_s, "-", 3);
@@ -577,17 +591,21 @@ static int parse_args_build_idx(int argc, char **argv) {
 		urn_hmap_setstr(pair_to_sym, upcase_s, exch_sym);
 		urn_hmap_setstr(sym_to_pair, exch_sym, upcase_s);
 
-		// Prepare channels.
+		// Prepare channels, some exchanges need snapshot channel.
 		char *depth_chn = malloc(64+strlen(exch_sym));
+		char *depth_snpsht_chn = malloc(64+strlen(exch_sym));
 		char *trade_chn = malloc(64+strlen(exch_sym));
 		if (depth_chn == NULL || trade_chn == NULL)
 			return URN_FATAL("Not enough memory for creating channel str", ENOMEM);
 		mkt_data_odbk_channel(exch_sym, depth_chn);
+		mkt_data_odbk_snpsht_channel(exch_sym, depth_snpsht_chn);
 		mkt_data_tick_channel(exch_sym, trade_chn);
 		odbk_chns[chn_ct] = depth_chn;
+		odbk_snpsht_chns[chn_ct] = depth_snpsht_chn;
 		tick_chns[chn_ct] = trade_chn;
-		URN_LOGF("\targv %d chn %d %s & %s", i, chn_ct, depth_chn, trade_chn);
+		URN_LOGF("\targv %d chn %d %s, %s, %s", i, chn_ct, depth_chn, depth_snpsht_chn, trade_chn);
 		urn_hmap_setstr(depth_chn_to_pair, depth_chn, upcase_s);
+		urn_hmap_setstr(depth_snpsht_chn_to_pair, depth_snpsht_chn, upcase_s);
 		urn_hmap_setstr(trade_chn_to_pair, trade_chn, upcase_s);
 
 		int pairid = chn_ct + 1; // 0==NULL
@@ -603,6 +621,7 @@ static int parse_args_build_idx(int argc, char **argv) {
 		URN_LOGF("\tpair_arr %p pair_arr[%d] %p %s", pair_arr, pairid, &(pair_arr[pairid]), upcase_s);
 
 		urn_hmap_set(depth_chn_to_pairid, depth_chn, (uintptr_t)pairid);
+		urn_hmap_set(depth_snpsht_chn_to_pairid, depth_snpsht_chn, (uintptr_t)pairid);
 		urn_hmap_set(trade_chn_to_pairid, trade_chn, (uintptr_t)pairid);
 		max_pair_id = pairid;
 		chn_ct ++;
@@ -615,8 +634,10 @@ static int parse_args_build_idx(int argc, char **argv) {
 	urn_hmap_print(pair_to_sym, "pair_to_sym");
 	urn_hmap_print(sym_to_pair, "sym_to_pair");
 	urn_hmap_print(depth_chn_to_pair, "depth_to_pair");
+	urn_hmap_print(depth_snpsht_chn_to_pair, "depth_snpsht_to_pair");
 	urn_hmap_print(trade_chn_to_pair, "trade_to_pair");
 	urn_hmap_printi(depth_chn_to_pairid, "depth_to_pairid");
+	urn_hmap_printi(depth_snpsht_chn_to_pairid, "depth_snpsht_to_pairid");
 	urn_hmap_printi(trade_chn_to_pairid, "trade_to_pairid");
 
 	URN_LOGF("Generate req json with %d odbk and tick channels", chn_ct);
@@ -625,7 +646,7 @@ static int parse_args_build_idx(int argc, char **argv) {
 	for (int i=0; i<=argc; i++)
 		URN_LOGF("\tpair_arr %d %s", i, pair_arr[i]);
 
-	mkt_wss_prepare_reqs(chn_ct, odbk_chns, tick_chns);
+	mkt_wss_prepare_reqs(chn_ct, odbk_chns, odbk_snpsht_chns, tick_chns);
 	return 0;
 }
 

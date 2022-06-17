@@ -189,6 +189,13 @@ void urn_s_upcase(char *s, int slen) {
 	}
 }
 
+void urn_s_downcase(char *s, int slen) {
+	for (int i = 0; s[i]!='\0' && i<slen; i++) {
+		if(s[i] >= 'A' && s[i] <= 'Z')
+			s[i] = s[i] +32;
+	}
+}
+
 //// substring of origin
 //typedef struct urn_s {
 //	// char   *origin; /* known of original string address, could be same as s */

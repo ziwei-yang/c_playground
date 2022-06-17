@@ -14,6 +14,8 @@
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
+char *preprocess_pair(char *pair) { return pair; }
+
 int exchange_sym_alloc(urn_pair *pair, char **str) {
 	*str = malloc(strlen(pair->name));
 	if ((*str) == NULL) return ENOMEM;
@@ -38,21 +40,27 @@ void mkt_data_set_wss_url(char *s) { sprintf(s, "wss://ftx.com/ws/"); }
 
 void mkt_data_odbk_channel(char *sym, char *chn) { sprintf(chn, "%s", sym); }
 
+void mkt_data_odbk_snpsht_channel(char *sym, char *chn) { chn[0] = '\0'; }
+
 void mkt_data_tick_channel(char *sym, char *chn) { sprintf(chn, "%s", sym); }
 
-int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char**tick_chns) {
-	int i=0;
-	for(; i<chn_ct; i++) {
+int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_snpsht_chns, const char**tick_chns) {
+	int cmd_ct = 0;
+	for(int i=0; i<chn_ct; i++) {
 		char *cmd = malloc(128);
 		sprintf(cmd, "{\"op\":\"subscribe\",\"channel\":\"orderbook\",\"market\":\"%s\"}", odbk_chns[i]);
-		wss_req_s[i*2] = cmd;
+		wss_req_s[cmd_ct] = cmd;
+		URN_INFOF("%d: %s", cmd_ct, cmd);
+		cmd_ct++;
 
 		cmd = malloc(128);
 		sprintf(cmd, "{\"op\":\"subscribe\",\"channel\":\"trades\",\"market\":\"%s\"}", tick_chns[i]);
-		wss_req_s[i*2+1] = cmd;
+		wss_req_s[cmd_ct] = cmd;
+		URN_INFOF("%d: %s", cmd_ct, cmd);
+		cmd_ct++;
 	}
-	wss_req_s[i*2+2] = NULL;
-	URN_INFOF("Parsing ARGV end, %d req str prepared.", i*2+2);
+	wss_req_s[cmd_ct] = NULL;
+	URN_INFOF("Parsing ARGV end, %d req str prepared.", cmd_ct);
 	wss_req_interval_e = 1;
 	return 0;
 }
@@ -225,11 +233,7 @@ int parse_n_mod_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_
 		el_ct ++;
 	}
 
-	if (s == NULL) {
-		URN_DEBUGF("\tOP %d %d %s no size", op_type, buy, urn_inum_str(p));
-	} else {
-		URN_DEBUGF("\tOP %d %d %s %s", op_type, buy, urn_inum_str(p), urn_inum_str(s));
-	}
+	URN_DEBUGF("\tOP %d %d %s %s", op_type, buy, urn_inum_str(p), urn_inum_str(s));
 
 	// update or delete, should not become insert or snapshot
 	bool op_done = mkt_wss_odbk_update_or_delete(pairid, p, s, buy, (op_type==2));
