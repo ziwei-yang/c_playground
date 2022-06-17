@@ -36,6 +36,8 @@
 int   exchange_sym_alloc(urn_pair *pair, char **str);
 void  mkt_data_set_exchange(char *s); // set global exchange 
 void  mkt_data_set_wss_url(char *s);
+void  mkt_data_odbk_channel(char *sym, char *chn);
+void  mkt_data_tick_channel(char *sym, char *chn);
 int   on_wss_msg(char *msg, size_t len);
 int   mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char**tick_chns);
 
@@ -73,7 +75,9 @@ int    bidct_arr[MAX_PAIRS];
 long   odbk_t_arr[MAX_PAIRS];
 
 ///////////// wss_req //////////////
-char*    wss_req_s[MAX_PAIRS]; // maybe one command per pair.
+// Maybe two command per pair, 1 more for NULL
+// After initial stage, we can reuse this by move wss_req_i
+char*    wss_req_s[MAX_PAIRS*2+1];
 int      wss_req_i; // idx of last sent wss_req_s
 
 ///////////// stat //////////////
@@ -205,6 +209,7 @@ int wss_connect() {
 		if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
 			return URN_FATAL_NNG(rv);
 		wss_req_i = 0; // 0 has been sent
+		free(wss_req_s[wss_req_i]);
 	}
 
 	// Reuse iov buffer and aio to receive data.
@@ -239,7 +244,7 @@ int wss_connect() {
 		broadcast();
 
 		// stat every few seconds, also send unfinished requests after.
-		// Too many subscribes at once may cause bybit server drops conn.
+		// Too many subscribes at once may cause wss server drops conn.
 		if ((wss_stat_ct >> wss_stat_per_e) > 0) {
 			wss_stat();
 
@@ -247,6 +252,7 @@ int wss_connect() {
 			if (req_s != NULL) {
 				wss_req_i++;
 				URN_INFOF("Sending wss_req_s[%d] %lu bytes: %s", wss_req_i, strlen(req_s), req_s);
+				free(wss_req_s[wss_req_i]);
 				if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
 					return URN_FATAL_NNG(rv);
 			}
@@ -289,7 +295,7 @@ static int broadcast() {
 #ifdef PUB_REDIS
 	write_snapshot = do_stat && ((_tmp_clock.tv_nsec & 8) < 1);
 	if (write_snapshot)
-		URN_DEBUG(YELLOW, "write_snapshot %ld %ld, %ld, %ld",
+		URN_DEBUGF_C(YELLOW, "write_snapshot %ld %ld, %ld, %ld",
 			_tmp_clock.tv_sec, (_tmp_clock.tv_sec & 7),
 			_tmp_clock.tv_nsec, (_tmp_clock.tv_nsec & 65535));
 #endif
@@ -533,30 +539,26 @@ static int parse_args_build_idx(int argc, char **argv) {
 		rv = urn_pair_alloc(&pair, argv[i], strlen(argv[i]), NULL);
 		if (rv != 0)
 			return URN_FATAL("Error in parsing pairs", EINVAL);
-		if (pair.expiry == NULL)
-			return URN_FATAL("Pair must have expiry", EINVAL);
-		if (strcmp(pair.expiry, "P") != 0)
-			return URN_FATAL("Pair expiry must be P", EINVAL);
 		// urn_pair_print(pair);
 
-		char *byb_sym = NULL;
-		if ((rv = exchange_sym_alloc(&pair, &byb_sym)) != 0) {
-			URN_WARNF("Invalid pair for bybit arg[%d] %s", i, pair.name);
+		char *exch_sym = NULL;
+		if ((rv = exchange_sym_alloc(&pair, &exch_sym)) != 0) {
+			URN_WARNF("Invalid pair arg[%d] %s", i, pair.name);
 			continue;
 		}
-		URN_LOGF("bybu sym %s", byb_sym);
+		URN_LOGF("exchange sym %s", exch_sym);
 
 		// Prepare symbol <-> pair map.
-		urn_hmap_setstr(pair_to_sym, upcase_s, byb_sym);
-		urn_hmap_setstr(sym_to_pair, byb_sym, upcase_s);
+		urn_hmap_setstr(pair_to_sym, upcase_s, exch_sym);
+		urn_hmap_setstr(sym_to_pair, exch_sym, upcase_s);
 
 		// Prepare channels.
-		char *depth_chn = malloc(64+strlen(byb_sym));
-		char *trade_chn = malloc(64+strlen(byb_sym));
+		char *depth_chn = malloc(64+strlen(exch_sym));
+		char *trade_chn = malloc(64+strlen(exch_sym));
 		if (depth_chn == NULL || trade_chn == NULL)
 			return URN_FATAL("Not enough memory for creating channel str", ENOMEM);
-		sprintf(depth_chn, "orderBookL2_25.%s", byb_sym);
-		sprintf(trade_chn, "trade.%s", byb_sym);
+		mkt_data_odbk_channel(exch_sym, depth_chn);
+		mkt_data_tick_channel(exch_sym, trade_chn);
 		odbk_chns[chn_ct] = depth_chn;
 		tick_chns[chn_ct] = trade_chn;
 		URN_LOGF("\targv %d chn %d %s & %s", i, chn_ct, depth_chn, trade_chn);

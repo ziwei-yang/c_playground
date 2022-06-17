@@ -44,6 +44,10 @@ void mkt_data_set_wss_url(char *s) {
 		URN_FATAL("Unexpected byb_wss_mode", EINVAL);
 }
 
+void mkt_data_odbk_channel(char *sym, char *chn) { sprintf(chn, "orderBookL2_25.%s", sym); }
+
+void mkt_data_tick_channel(char *sym, char *chn) { sprintf(chn, "trade.%s", sym); }
+
 int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char**tick_chns) {
 	// Send no more than 40 channels per request.
 	int batch_sz = 20; // 20 odbk + 20 tick = 40 requests
@@ -124,6 +128,7 @@ int on_wss_msg(char *msg, size_t len) {
 		URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "timestamp_e6"), "No timestamp_e6", EINVAL);
 		if (byb_wss_mode == 0) {
 			long ts_e6 = yyjson_get_uint(jval);
+			odbk_t_arr[pairid] = ts_e6;
 			if (ts_e6 == 0) {
 				URN_WARNF("depth_pair id %lu %s for topic %s tse6 %ld", pairid, depth_pair, topic, ts_e6);
 				URN_GO_FINAL_ON_RV(EINVAL, "No t_e6");
@@ -163,7 +168,7 @@ int on_wss_msg(char *msg, size_t len) {
 	}
 
 	// Unknown topic
-	URN_GO_FINAL_ON_RV(EINVAL, topic);
+	URN_GO_FINAL_ON_RV(EINVAL, msg);
 
 final:
 	if (jdoc != NULL) yyjson_doc_free(jdoc);
