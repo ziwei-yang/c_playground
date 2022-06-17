@@ -363,6 +363,7 @@ static int broadcast() {
 		brdcst_pairs[data_ct] = pairid;
 		data_ct ++;
 	}
+	URN_DEBUGF("broadcast check full=%d stat=%d data_ct=%d", write_snapshot, do_stat, data_ct);
 	if (data_ct == 0)
 		goto final;
 
