@@ -72,7 +72,7 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	// Too many channels in one command may cause binance server NO response.
 	//
 	// Send no more than 60 channels per request.
-	int batch_sz = 20; // 20 odbk + 20 snapshot + 20 tick = 60 requests
+	int batch_sz = 40; // odbk + snapshot + tick = 120 requests
 	int batch = 0;
 	int cmd_ct = 0;
 	for (; batch <= (chn_ct/batch_sz+1); batch++) {
@@ -116,7 +116,7 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	wss_req_s[cmd_ct] = NULL;
 
 	URN_INFOF("Parsing ARGV end, %d req str prepared.", cmd_ct);
-	wss_req_interval_e = 9 ; // 1req/512or binance may disconnect
+	wss_req_interval_e = 10 ; // 1req/2^10or binance may disconnect
 	return 0;
 }
 
