@@ -14,16 +14,21 @@
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
+int bnn_wss_mode = -1; // 0: Binance 1: BNUM 2: BNCM
+
 char *preprocess_pair(char *pair) {
-	// BUSD-ASSET -> USD-ASSET
 	if (pair == NULL) URN_FATAL("pair is NULL", EINVAL);
 	int slen = strlen(pair);
-	if (slen > 5 && pair[0] == 'B' && pair[1] == 'U' &&
-		pair[2] == 'S' && pair[3] == 'S' && pair[4] == '-') {
-		char *new_p = malloc(slen+1-1);
-		strcpy(new_p, pair+1);
-		free(pair);
-		return new_p;
+	if (bnn_wss_mode == 0) { // SPOT mode
+		// BUSD-ASSET -> USD-ASSET
+		if (slen > 5 && pair[0] == 'B' && pair[1] == 'U' &&
+				pair[2] == 'S' && pair[3] == 'S' && pair[4] == '-') {
+			char *new_p = malloc(slen+1-1);
+			strcpy(new_p, pair+1);
+			free(pair);
+			return new_p;
+		}
+		return pair;
 	}
 	return pair;
 }
@@ -32,29 +37,67 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 	int slen = strlen(pair->name);
 	*str = malloc(slen+2);
 	if ((*str) == NULL) return ENOMEM;
-	// USDT-BTC   -> btcusdt
-	// USD-BTC   ->  btcbusd
-	if (pair->expiry == NULL) {
+	if (bnn_wss_mode == 0) { // SPOT mode
+		if (pair->expiry != NULL)
+			return URN_FATAL("Pair with expiry in spot mode", EINVAL);
+		// USDT-BTC   -> btcusdt
+		// USD-BTC   ->  btcbusd
 		if (strcmp(pair->currency, "USD") == 0) {
 			// see preprocess_pair()
 			sprintf(*str, "%sBUSD", pair->asset);
-		} else {
+		} else
 			sprintf(*str, "%s%s", pair->asset, pair->currency);
-		}
 		urn_s_downcase(*str, slen);
-	} else {
-		return URN_FATAL("Not expected pair", EINVAL);
-	}
+	} else if (bnn_wss_mode == 1 || bnn_wss_mode == 2) {
+		// perpetual contracts only.
+		// BNUM USDT-BTC@P -> btcusdt
+		// BNCM USDT-BTC@P -> btcusdt_perp
+		if (pair->expiry == NULL) {
+			return URN_FATAL("Spot pair in BNUM mode", EINVAL);
+		} else if (strcmp(pair->expiry, "P") != 0) {
+			return URN_FATAL("Not perpetual pair in BNUM mode", EINVAL);
+		}
+		if (bnn_wss_mode == 1) // BNUM
+			sprintf(*str, "%s%s", pair->asset, pair->currency);
+		else if (bnn_wss_mode == 2) // BNCM
+			sprintf(*str, "%s%s_perp", pair->asset, pair->currency);
+		else
+			URN_FATAL(exchange, EINVAL);
+		urn_s_downcase(*str, slen);
+	} else
+		URN_FATAL(exchange, EINVAL);
 	return 0;
 }
 
-void mkt_data_set_exchange(char *s) { sprintf(s, "Binance"); }
+void mkt_data_set_exchange(char *s) {
+	char *exch = getenv("uranus_spider_exchange");
+	if (exch == NULL) {
+		bnn_wss_mode = 0;
+		sprintf(s, "Binance");
+	} else if (strcasecmp(exch, "bnum") == 0) {
+		bnn_wss_mode = 1;
+		sprintf(s, "BNUM");
+	} else if (strcasecmp(exch, "bncm") == 0) {
+		bnn_wss_mode = 2;
+		sprintf(s, "BNCM");
+	} else
+		URN_FATAL(exch, EINVAL);
+}
 
-void mkt_data_set_wss_url(char *s) { sprintf(s, "wss://stream.binance.com:9443/stream"); }
+void mkt_data_set_wss_url(char *s) {
+	if (bnn_wss_mode == 0)
+		sprintf(s, "wss://stream.binance.com:9443/stream");
+	else if (bnn_wss_mode == 1)
+		sprintf(s, "wss://fstream.binance.com/stream");
+	else if (bnn_wss_mode == 2)
+		sprintf(s, "wss://dstream.binance.com/stream");
+	else
+		URN_FATAL(exchange, EINVAL);
+}
 
 void mkt_data_odbk_channel(char *sym, char *chn) { sprintf(chn, "%s@depth@100ms", sym); }
 
-void mkt_data_odbk_snpsht_channel(char *sym, char *chn) { sprintf(chn, "%s@depth10", sym); }
+void mkt_data_odbk_snpsht_channel(char *sym, char *chn) { sprintf(chn, "%s@depth10@500ms", sym); }
 
 void mkt_data_tick_channel(char *sym, char *chn) { sprintf(chn, "%s@aggTrade", sym); }
 
