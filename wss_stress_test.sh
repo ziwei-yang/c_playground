@@ -18,7 +18,7 @@ elif [[ $1 == 'bncm' ]]; then
 	export uranus_spider_exchange=BNCM
 	$DIR/run.sh bnn_ws.c usd-ada@p usd-bnb@p usd-doge@p usd-eos@p usd-sol@p usd-xrp@p
 elif [[ $1 == 'coinbase' ]]; then
-	$DIR/run.sh cb_ws.c 1inch aave ada atom bal bat comp dash doge eos eth link ltc storj uni zec zrx eth-ada eth-bat eth-link usdc-ada usdc-ada usdc-bat usdc-bat usdc-btc usdc-btc usdc-cvc usdc-cvc usdc-dnt usdc-dnt usdc-eth usdc-eth usdc-usdt usdc-usdt usdc-zec usdc-zec usdt-ada usdt-alcx usdt-ape usdt-atom usdt-avax usdt-axs usdt-badger usdt-bat usdt-btc usdt-cro usdt-doge usdt-eth usdt-gala usdt-icp usdt-iotx usdt-link usdt-mina usdt-tru usdt-zec
+	$DIR/run.sh cb_ws.c 1inch aave ada atom bal bat comp dash doge eos eth link ltc storj uni zec zrx eth-ada eth-bat eth-link usdc-ada usdc-ada usdc-bat usdc-btc usdc-btc usdc-cvc usdc-cvc usdc-dnt usdc-dnt usdc-eth usdc-eth usdc-usdt usdc-usdt usdc-zec usdc-zec usdt-ada usdt-alcx usdt-ape usdt-atom usdt-avax usdt-axs usdt-badger usdt-btc usdt-cro usdt-doge usdt-eth usdt-gala usdt-icp usdt-link usdt-mina usdt-tru
 else
 	echo "Not supported $@"
 	exit 1
