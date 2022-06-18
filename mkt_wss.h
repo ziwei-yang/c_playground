@@ -227,7 +227,8 @@ int wss_connect() {
 	nng_stream_dialer *dialer = NULL;
 	nng_stream *stream = NULL;
 
-	int recv_buflen = 256*1024;
+	// coinbase snapshot msg larger than 256KB
+	int recv_buflen = 4*1024*1024;
 	char *recv_buf = malloc(recv_buflen);
 	if (recv_buf == NULL)
 		return URN_FATAL("Not enough memory for wss recv_buf", ENOMEM);
@@ -272,10 +273,14 @@ int wss_connect() {
 		}
 		wss_stat_ct++;
 		wss_stat_sz += recv_bytes;
+		URN_DEBUGF("pre on_wss_msg %lu/%d %.*s", recv_bytes, recv_buflen,
+				URN_MIN(200, ((int)recv_bytes)), recv_buf);
 		// only 0..recv_bytes is message received this time.
+		// terminate it, some message does not have '\0\ at last
+		recv_buf[recv_bytes] = '\0';
 		rv = on_wss_msg(recv_buf, recv_bytes);
 		if (rv != 0) {
-			URN_WARNF("Error in processing wss msg %.*s", (int)recv_bytes, recv_buf);
+			URN_WARNF("Error in processing wss msg len(%lu) %.*s", recv_bytes, (int)recv_bytes, recv_buf);
 			return rv;
 		}
 		

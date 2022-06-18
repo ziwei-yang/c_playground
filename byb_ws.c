@@ -110,7 +110,7 @@ int on_wss_msg(char *msg, size_t len) {
 	yyjson_val *jval = NULL;
 	yyjson_val *jcore_data = NULL;
 
-	URN_DEBUGF("on_wss_msg %zu %.*s", len, (int)len, msg);
+	URN_DEBUGF("on_wss_msg %zu %.*s", len, URN_MIN(1024, ((int)len)), msg);
 
 	// Parsing key values from json
 	jdoc = yyjson_read(msg, len, 0);

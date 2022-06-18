@@ -83,7 +83,7 @@
 //////////////////////////////////////////
 
 struct timeval urn_global_tv;
-char   urn_global_log_buf[65536];
+char   urn_global_log_buf[1024*1024]; // 64K was small for large log
 #if __APPLE__
 #define URN_PRINT_WRAP(pipe, pre, msg, tail) gettimeofday(&urn_global_tv, NULL), \
 	fprintf (pipe, "%s%02lu:%02lu:%02lu.%06u %12.12s:%-4d: %s%s\n", \
