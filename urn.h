@@ -154,6 +154,7 @@ char   urn_global_log_buf[1024*1024]; // 64K was small for large log
 //////////////////////////////////////////
 
 #define URN_MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define URN_MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define _URN_RGCAP(a, min, max) ((a<min) ? min : ((a>max) ? max : a)) // internal use
 #define URN_INTCAP(a) (int)(_URN_RGCAP((long long)(a), (long long)INT_MIN, (long long)INT_MAX))
 

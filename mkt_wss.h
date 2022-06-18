@@ -329,7 +329,7 @@ static int broadcast() {
 	brdcst_t.tv_nsec = _tmp_clock.tv_nsec;
 	gettimeofday(&brdcst_json_t, NULL);
 
-	bool do_stat = brdcst_t.tv_sec - brdcst_stat_t > 10;
+	bool do_stat = brdcst_t.tv_sec - brdcst_stat_t > 4;
 	// Every stat round, 1/8 chance to write full snapshot.
 	bool write_snapshot = false;
 #ifdef PUB_REDIS
@@ -415,10 +415,20 @@ static int broadcast() {
 		listener_ttl_ct += listener_ct;
 	}
 #endif
+
 	if (do_stat) {
-		// stat in 10s, also print cost time this round.
+		// stat in few seconds, also print cost time this round.
 		gettimeofday(&brdcst_json_end_t, NULL);
 		long cost_us = urn_usdiff(brdcst_json_t, brdcst_json_end_t);
+		bool redis_slow = (cost_us > 1000) ? true : false;
+		if (cost_us*5 > brdcst_interval_ms*1000) {
+			// should not spend >= 20% time of interval
+			unsigned long new_brdcst_interval_ms = URN_MAX(brdcst_interval_ms+1, 4*cost_us/1000);
+			URN_LOGF_C(YELLOW, "brdcst cost_us %ld = %ld ms, interval_ms %lu, incr to %lu",
+				cost_us, cost_us/1000, brdcst_interval_ms, new_brdcst_interval_ms);
+			brdcst_interval_ms = new_brdcst_interval_ms;
+		}
+
 		int diff = brdcst_t.tv_sec - brdcst_stat_t;
 		if (write_snapshot && (diff == 0))
 			goto final;
@@ -426,11 +436,15 @@ static int broadcast() {
 		int speed = brdcst_stat_ct / diff;
 		// control interval to publish redis at MAX_SPEED ~ MAX_SPEED/5
 		if (speed > brdcst_max_speed) {
+			URN_LOGF_C(YELLOW, "brdcst max speed %d < real %d, cost_us %ld, incr interval",
+				brdcst_max_speed, speed, cost_us)
 			if (brdcst_interval_ms < 10)
 				brdcst_interval_ms ++;
 			else
 				brdcst_interval_ms += brdcst_interval_ms/5;
-		} else if (speed < brdcst_max_speed/4 && brdcst_interval_ms > 1) {
+		} else if ((!redis_slow) && speed < brdcst_max_speed/4 && brdcst_interval_ms > 1) {
+			URN_LOGF_C(YELLOW, "brdcst max speed %d > real %d, cost_us %ld, decr interval",
+				brdcst_max_speed, speed, cost_us)
 			brdcst_interval_ms --;
 		}
 
