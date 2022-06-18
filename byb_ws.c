@@ -98,7 +98,8 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	wss_req_s[cmd_ct] = NULL;
 
 	URN_INFOF("Parsing ARGV end, %d req str prepared.", cmd_ct);
-	wss_req_interval_e = 10 ; // 1req/1024rd or bybit may disconnect
+	wss_req_interval_e = 10; // 1req/1024rd or bybit may disconnect
+	wss_req_interval_ms = 1000;
 	return 0;
 }
 

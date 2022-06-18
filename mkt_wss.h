@@ -87,7 +87,9 @@ long   odbk_t_arr[MAX_PAIRS];
 #define  MAX_WSS_REQ_BUFF (MAX_PAIRS*2+1)
 char*    wss_req_s[MAX_WSS_REQ_BUFF];
 int      wss_req_i = 0; // idx of next sent wss_req_s
-int      wss_req_interval_e = 1; // try send next req every 2^e msgs received.
+int      wss_req_interval_e = 1; // call wss_req_next() at least 2^e msgs received.
+int      wss_req_interval_ms = 0; // interval in ms
+struct timespec wss_req_t; // last time to call wss_req_next()
 unsigned int wss_req_wait_ct;
 
 ///////////// stat //////////////
@@ -190,10 +192,20 @@ int main(int argc, char **argv) {
 }
 
 int wss_req_next(nng_stream *stream) {
+	// reset timer no matter did req or not.
+	// Don't come here every round.
+	wss_req_wait_ct = 0;
+
+	// less than wss_req_interval_ms, return
+	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
+	if (((_tmp_clock.tv_sec - wss_req_t.tv_sec)*1000l + (_tmp_clock.tv_nsec - wss_req_t.tv_nsec)/1000000l) < wss_req_interval_ms)
+		return 0;
+	wss_req_t.tv_sec = _tmp_clock.tv_sec;
+	wss_req_t.tv_nsec = _tmp_clock.tv_nsec;
+
 	char *req_s = wss_req_s[wss_req_i];
 	if (req_s == NULL) return 0;
 
-	wss_req_wait_ct = 0;
 	int rv = 0;
 	URN_INFOF("Sending wss_req_s[%d] %lu bytes: %s", wss_req_i, strlen(req_s), req_s);
 	if ((rv = urn_ws_send_sync(stream, req_s)) != 0)
@@ -246,6 +258,7 @@ int wss_connect() {
 	wss_req_wait_ct = 0;
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &wss_stat_t);
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &brdcst_t);
+	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &wss_req_t);
 
 	while(true) {
 #ifdef URN_WSS_DEBUG
@@ -268,7 +281,7 @@ int wss_connect() {
 		
 		broadcast();
 
-		// every 32 rounds, send unfinished requests after.
+		// every 2^e rounds, send unfinished requests after.
 		// Too many subscribes at once may cause wss server drops conn.
 		wss_req_wait_ct ++;
 		if ((wss_req_wait_ct >> wss_req_interval_e) > 0) {
@@ -336,8 +349,13 @@ static int broadcast() {
 			brdcst_t_arr[pairid].tv_sec = brdcst_t.tv_sec;
 		}
 #endif
+
+		URN_DEBUGF("to broadcast %s %d/%d, updates %d bids %d asks %d",
+			pair_arr[pairid], pairid, max_pair_id, newodbk_arr[pairid],
+			bidct_arr[pairid], askct_arr[pairid]);
+		if ((bidct_arr[pairid] == 0) || (askct_arr[pairid] == 0))
+			continue;
 		brdcst_stat_ct ++;
-		URN_DEBUGF("to broadcast %s %d/%d, updates %d", pair_arr[pairid], pairid, max_pair_id, newodbk_arr[pairid]);
 
 #ifdef PUB_REDIS
 		int ct = 0;
@@ -441,7 +459,7 @@ static void wss_stat() {
 	float ct_per_s = (float)(wss_stat_ct) / (float)passed_s;
 	float kb_per_s = (float)(wss_stat_sz) / (float)passed_s / 1000.f;
 	URN_INFOF("<-- %s in %6lu s %8.f msg/s %8.f KB/s + %ld ms", exchange, passed_s, ct_per_s, kb_per_s, mkt_latency_ms);
-	if (passed_s < 5)
+	if (passed_s < 2)
 		wss_stat_per_e ++; // double stat interval
 	// Reset stat
 	wss_stat_ct = 0;
