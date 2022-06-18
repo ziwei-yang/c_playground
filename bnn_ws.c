@@ -114,8 +114,28 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 
 	// Too many channels in one command may cause binance server NO response.
 	//
-	// Send no more than 60 channels per request.
+	// For Binance SPOT market, no more than 120 channels per request.
 	int batch_sz = 40; // odbk + snapshot + tick = 120 requests
+	// For BNUM and BNCM it is okay to send all in one.
+	if (bnn_wss_mode != 0) batch_sz = max_pair_id;
+
+	// Over than 180~200 subscribes in total makes BNUM server hang
+	int chn_per_pair = 3;
+	bool req_trades = true;
+	if (bnn_wss_mode != 0 && (max_pair_id * 3 > 180)) {
+		URN_WARNF("BNUM/BNCM %d pairs, give up trades listening", max_pair_id);
+		req_trades = false;
+		chn_per_pair = 2;
+	}
+	bool req_snapshot = true;
+	if (bnn_wss_mode != 0 && (max_pair_id * 2 > 180)) {
+		URN_WARNF("BNUM/BNCM %d pairs, give up snapshot listening", max_pair_id);
+		req_snapshot = false;
+		chn_per_pair = 1;
+	}
+	if (bnn_wss_mode != 0 && max_pair_id > 180)
+		URN_WARNF("BNUM/BNCM %d pairs, more than 180~200 subscrptions might get hang there", max_pair_id);
+
 	int batch = 0;
 	int cmd_ct = 0;
 	for (; batch <= (chn_ct/batch_sz+1); batch++) {
@@ -133,33 +153,40 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 		yyjson_mut_obj_add_str(wss_req_j, jroot, "method", "SUBSCRIBE");
 		URN_LOGF("preparing wss req batch %d:", batch);
 
-		const char *batch_chn[(i_e-i_s)*3];
+		const char *batch_chn[(i_e-i_s)*chn_per_pair];
 		for (int i=i_s; i<i_e; i++) {
-			URN_LOGF("\tchn %d %s %s %s", i, odbk_chns[i], odbk_snpsht_chns[i], tick_chns[i]);
-			batch_chn[(i-i_s)*3]   = odbk_chns[i];
-			batch_chn[(i-i_s)*3+1] = odbk_snpsht_chns[i];
-			batch_chn[(i-i_s)*3+2] = tick_chns[i];
+			URN_DEBUGF("\tchn %d %s %s %s", i, odbk_chns[i], odbk_snpsht_chns[i], tick_chns[i]);
+			batch_chn[(i-i_s)*chn_per_pair]   = odbk_chns[i];
+			if (chn_per_pair >= 2)
+			batch_chn[(i-i_s)*chn_per_pair+1] = odbk_snpsht_chns[i];
+			if (chn_per_pair >= 3)
+				batch_chn[(i-i_s)*chn_per_pair+2] = tick_chns[i];
 		}
 		yyjson_mut_val *target_chns = yyjson_mut_arr_with_strcpy(
-			wss_req_j, batch_chn, (i_e-i_s)*3);
+			wss_req_j, batch_chn, (i_e-i_s)*chn_per_pair);
 		if (target_chns == NULL)
 			return URN_FATAL("Error in strcpy json array", EINVAL);
 		yyjson_mut_obj_add_val(wss_req_j, jroot, "params", target_chns);
 		yyjson_mut_obj_add_int(wss_req_j, jroot, "id", cmd_ct+1);
 		// save command
 		char *prettyj = yyjson_mut_write(wss_req_j, YYJSON_WRITE_PRETTY, NULL);
-		URN_LOGF("req %d : %s", cmd_ct, prettyj);
+		URN_DEBUGF("req %d : %s", cmd_ct, prettyj);
 		free(prettyj);
 		char *cmd = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
 		wss_req_s[cmd_ct] = cmd;
-		URN_INFOF("req %d : %s", cmd_ct, cmd);
+		URN_DEBUGF("req %d : %s", cmd_ct, cmd);
 		cmd_ct++;
 		yyjson_mut_doc_free(wss_req_j);
 	}
 	wss_req_s[cmd_ct] = NULL;
 
 	URN_INFOF("Parsing ARGV end, %d req str prepared.", cmd_ct);
-	wss_req_interval_e = 10 ; // 1req/2^10or binance may disconnect
+	if (bnn_wss_mode != 0) {
+		wss_req_interval_e = 4;
+		wss_req_interval_ms = 300;
+	} else
+		wss_req_interval_e = 6; // 1req/2^10or binance may disconnect
+		wss_req_interval_ms = 500;
 	return 0;
 }
 
