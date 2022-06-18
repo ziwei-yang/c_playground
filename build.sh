@@ -43,9 +43,15 @@ if [[ $os == 'Linux' ]]; then
 	hiredis_home=$HOME/install
 fi
 
-# for ubuntu gcc:
+# Flags requirements
+# ubuntu:
+# -D_GNU_SOURCE=1 # fix function ‘strptime’ not found
+
+# Orders requirements
+# ubuntu:
 # must put -o a.out at first, linker options -largs at last
-gcc $@ \
+
+gcc -D_GNU_SOURCE=1 $@ \
 	-I/usr/include \
 	-I/usr/local/include \
 	-I$HOME/install/include \

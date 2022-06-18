@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <glib.h>
+#include <time.h>
 
 #include <nng/nng.h>
 #include <nng/supplemental/tls/tls.h>
@@ -26,7 +27,8 @@
 #define MAX_PAIRS 1024
 #endif
 
-#ifdef __linux__ // only macos has CLOCK_MONOTONIC_RAW_APPROX
+// linux has no CLOCK_MONOTONIC_RAW_APPROX
+#ifdef CLOCK_MONOTONIC_RAW
 #ifndef CLOCK_MONOTONIC_RAW_APPROX
 #define CLOCK_MONOTONIC_RAW_APPROX CLOCK_MONOTONIC_RAW
 #endif
