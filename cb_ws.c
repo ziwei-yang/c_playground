@@ -131,6 +131,7 @@ long parse_coinbase_time_to_e6(const char *s) {
 	// parse microsecond
 	char *invalid_char;
 	long us = strtol(end+1, &invalid_char, 10);
+	long ts_e6 = epoch*1000000l + us;
 	if (invalid_char-end-1 != 6) {
 		URN_WARNF("\tparse_coinbase_time_to_e6:%s -> [%s] + epoch %ld tmzone %ld, us %ld %p->%p len %ld",
 			s, end+1, epoch, timezone, us, end+1, invalid_char, (invalid_char-end-1));
@@ -139,7 +140,6 @@ long parse_coinbase_time_to_e6(const char *s) {
 		URN_DEBUGF("\tparse_coinbase_time_to_e6:%s -> [%s] + epoch %ld tmzone %ld, us %ld %p->%p len %ld",
 			s, end+1, epoch, timezone, us, end+1, invalid_char, (invalid_char-end-1));
 	}
-	long ts_e6 = epoch*1000000l + us;
 	return ts_e6;
 }
 
@@ -159,9 +159,26 @@ int on_wss_msg(char *msg, size_t len) {
 	const char *type = yyjson_get_str(jval);
 	URN_RET_ON_NULL(type, "No type", EINVAL);
 
+	const char *timestr = NULL;
+	long ts_e6 = 0;
+	jval = yyjson_obj_get(jroot, "time");
+	if (jval != NULL) {
+		timestr = yyjson_get_str(jval);
+		ts_e6 = parse_coinbase_time_to_e6(timestr);
+		URN_DEBUGF("on_wss_msg %s %ld %s", timestr, ts_e6, type);
+		if (ts_e6 <= 0) {
+			URN_WARNF("parse_coinbase_time_to_e6 failed %s", timestr);
+			rv = EINVAL;
+			goto final;
+		}
+	}
+
+	const char *product_id = NULL;
+	jval = yyjson_obj_get(jroot, "product_id");
+	if (jval != NULL)
+		product_id = yyjson_get_str(jval);
+
 	if (strcmp(type, "snapshot") == 0) {
-		URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "product_id"), "No product_id", EINVAL);
-		const char *product_id = yyjson_get_str(jval);
 		URN_RET_ON_NULL(product_id, "No product_id", EINVAL);
 
 		uintptr_t pairid = 0;
@@ -175,41 +192,29 @@ int on_wss_msg(char *msg, size_t len) {
 			goto final;
 		}
 	} else if (strcmp(type, "l2update") == 0) {
-		URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "product_id"), "No product_id", EINVAL);
-		const char *product_id = yyjson_get_str(jval);
 		URN_RET_ON_NULL(product_id, "No product_id", EINVAL);
+		URN_RET_ON_NULL(timestr, "No time", EINVAL);
 
 		uintptr_t pairid = 0;
 		urn_hmap_get(depth_chn_to_pairid, product_id, &pairid);
 		if (pairid != 0) {
-			// Parse E in l2update data.
-			URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "time"), "No time", EINVAL);
-			const char *timestr = yyjson_get_str(jval);
-			URN_RET_ON_NULL(timestr, "No time", EINVAL);
-			long ts_e6 = parse_coinbase_time_to_e6(timestr);
-			if (ts_e6 > 0) {
-				odbk_t_arr[pairid] = ts_e6;
-				wss_stat_mkt_ts = ts_e6;
-			} else {
-				URN_WARNF("parse_coinbase_time_to_e6 failed %s", timestr);
-			}
 			newodbk_arr[pairid] ++;
+			odbk_t_arr[pairid] = ts_e6;
 
 			char *depth_pair = pair_arr[pairid];
-			URN_DEBUGF("\t -> odbk pair delta    %lu %s", pairid, depth_pair);
+			URN_DEBUGF("\t -> odbk pair delta    %lu %s %ld", pairid, depth_pair, ts_e6);
 			URN_GO_FINAL_ON_RV(on_odbk_update(pairid, NULL, jroot), "Err in odbk handling")
 			goto final;
 		}
 	} else if (strcmp(type, "ticker") == 0) {
-		URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "product_id"), "No product_id", EINVAL);
-		const char *product_id = yyjson_get_str(jval);
 		URN_RET_ON_NULL(product_id, "No product_id", EINVAL);
+		URN_RET_ON_NULL(timestr, "No time", EINVAL);
 
 		uintptr_t pairid = 0;
-		urn_hmap_get(depth_chn_to_pairid, product_id, &pairid);
+		urn_hmap_get(trade_chn_to_pairid, product_id, &pairid);
 		if (pairid != 0) {
 			char *trade_pair = pair_arr[pairid];
-			URN_DEBUGF("\t -> odbk pair ticker   %lu %s", pairid, trade_pair);
+			URN_DEBUGF("\t -> odbk pair ticker   %lu %s", pairid, trade_pair, ts_e6);
 			goto final;
 		}
 	} else if (strcmp(type, "subscriptions") == 0) {
