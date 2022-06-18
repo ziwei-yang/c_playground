@@ -421,9 +421,10 @@ static int broadcast() {
 	if (do_stat) {
 		// stat in few seconds, also print cost time this round.
 		gettimeofday(&brdcst_json_end_t, NULL);
+		// if in full writing mode, cost_us should be much higher.
 		long cost_us = urn_usdiff(brdcst_json_t, brdcst_json_end_t);
-		bool redis_slow = (cost_us > 1000) ? true : false;
-		if (cost_us*5 > brdcst_interval_ms*1000) {
+		bool redis_slow = (!write_snapshot && (cost_us > 1000)) ? true : false;
+		if (!write_snapshot && (cost_us*5 > brdcst_interval_ms*1000)) {
 			// should not spend >= 20% time of interval
 			unsigned long new_brdcst_interval_ms = URN_MAX(brdcst_interval_ms+1, 4*cost_us/1000);
 			URN_LOGF_C(YELLOW, "brdcst cost_us %ld = %ld ms, interval_ms %lu, incr to %lu",
