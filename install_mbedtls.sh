@@ -12,9 +12,9 @@ if [ ! -d $HOME/Proj/mbedtls-3.1.0 ]; then
 fi
 
 cd $HOME/Proj/mbedtls-3.1.0
+rm -rf ./build
+mkdir ./build 
 src_dir=$HOME/Proj/mbedtls-3.1.0
-rm ./build && mkdir ./build && cd ./build
-build_dir=$HOME/Proj/mbedtls-3.1.0/build
 cmake $src_dir && \
-	cmake --build $build_dir && \
-	cmake --install $build_dir --prefix $HOME/install \
+	make && \
+	cmake --install . --prefix $HOME/install \
