@@ -4,6 +4,7 @@
 #include <string.h>
 #include <glib.h>
 
+/* 64 bits fixed size of num, fixed size for share memory  */
 typedef struct urn_inum {
 	long   intg;
 	size_t frac_ext; // frac_ext = frac * 1e-URN_INUM_PRECISE
@@ -186,6 +187,20 @@ error:
 //////////////////////////////////////////
 // Public order from market data
 //////////////////////////////////////////
+#define URN_ODBK_DEPTH 10
+/* whole orderbook in fixed size to be put in share memory */
+/* each urn_inum has a fixed size 8 bytes */
+typedef struct urn_odbk {
+	char desc[64-sizeof(_Bool)-2*sizeof(unsigned long)]; // 64bit padding
+	_Bool complete; // current data is ready to be use.
+	unsigned long mkt_ts_e6;
+	unsigned long w_ts_e6;
+	// size: 4*DEPTH x 64
+	urn_inum bidp[URN_ODBK_DEPTH];
+	urn_inum bids[URN_ODBK_DEPTH];
+	urn_inum askp[URN_ODBK_DEPTH];
+	urn_inum asks[URN_ODBK_DEPTH];
+} urn_odbk;
 
 typedef struct urn_porder {
 	urn_pair *pair;

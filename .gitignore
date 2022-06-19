@@ -8,3 +8,7 @@ jsmn.h
 .DS_Store
 yyjson.*
 *.json
+
+ruby_ext/Makefile
+ruby_ext/*.bundle
+ruby_ext/*.o

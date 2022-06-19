@@ -15,16 +15,20 @@
 #include "hmap.h"
 #include "redis.h"
 
-#ifndef PUB_NO_REDIS
-#define PUB_REDIS
-#endif
-
 #ifndef MAX_DEPTH // max depth in each side.
 #define MAX_DEPTH 5
 #endif
 
 #ifndef MAX_PAIRS
 #define MAX_PAIRS 1024
+#endif
+
+#ifndef PUB_NO_REDIS
+#define PUB_REDIS
+#endif
+
+#ifndef WRITE_NO_SHRMEM
+#define WRITE_SHRMEM
 #endif
 
 // linux has no CLOCK_MONOTONIC_RAW_APPROX
@@ -347,7 +351,11 @@ static int broadcast() {
 	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
 		if ((!write_snapshot) && (newodbk_arr[pairid] <= 0))
 			continue;
+#ifdef WRITE_SHRMEM
+		// write odbk to share memory.
+#endif
 
+#ifdef PUB_REDIS
 #ifdef PUB_LESS_ON_ZERO_LISTENER
 		if ((!write_snapshot) && (brdcst_listener_arr[pairid] == 0)) {
 			// Publish every 2s if no listener last time.
@@ -355,6 +363,7 @@ static int broadcast() {
 				continue;
 			brdcst_t_arr[pairid].tv_sec = brdcst_t.tv_sec;
 		}
+#endif
 #endif
 
 		URN_DEBUGF("to broadcast %s %d/%d, updates %d bids %d asks %d",

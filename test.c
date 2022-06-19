@@ -69,8 +69,18 @@ int test_inum () {
 	return rv;
 }
 
+int test_odbk() {
+	URN_LOGF("sizeof urn_odbk _Bool %zu", sizeof(_Bool));
+	URN_LOGF("sizeof urn_odbk unsigned long %zu", sizeof(unsigned long));
+	URN_LOGF("sizeof urn_odbk %zu", sizeof(urn_odbk));
+	unsigned long expected_s = 64*(4*URN_ODBK_DEPTH+1);
+	URN_RET_UNLESS(sizeof(urn_odbk)==expected_s, "sizeof(inum) should == 64*(4*DEPTH+1)", EINVAL);
+	return 0;
+}
+
 int main() {
 	int rv = 0;
 	URN_RET_ON_RV(test_inum(), "Error in test_inum()");
+	URN_RET_ON_RV(test_odbk(), "Error in test_inum()");
 	return rv;
 }
