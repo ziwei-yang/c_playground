@@ -22,11 +22,10 @@ char *preprocess_pair(char *pair) {
 	if (bnn_wss_mode == 0) { // SPOT mode
 		// BUSD-ASSET -> USD-ASSET
 		if (slen > 5 && pair[0] == 'B' && pair[1] == 'U' &&
-				pair[2] == 'S' && pair[3] == 'S' && pair[4] == '-') {
-			char *new_p = malloc(slen+1-1);
-			strcpy(new_p, pair+1);
-			free(pair);
-			return new_p;
+				pair[2] == 'S' && pair[3] == 'D' && pair[4] == '-') {
+			// move 1 forward.
+			strcpy(pair, pair+1);
+			return pair;
 		}
 		return pair;
 	}
