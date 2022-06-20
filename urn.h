@@ -227,7 +227,7 @@ void urn_s_downcase(char *s, int slen) {
 // Market number represent in integer.
 //////////////////////////////////////////
 #define URN_INUM_PRECISE 12
-#define URN_INUM_FRACEXP 100000000000000ul
+#define URN_INUM_FRACEXP 1000000000000
 /* 64 bits fixed size of num, fixed size for share memory  */
 typedef struct urn_inum {
 	long   intg;
@@ -343,6 +343,13 @@ int urn_inum_cmp(urn_inum *i1, urn_inum *i2) {
 	return 0;
 }
 
+double urn_inum_to_db(urn_inum *i) {
+	if (i->intg == 0 && !(i->pstv))
+		return 0 - (double)(i->frac_ext)/URN_INUM_FRACEXP;
+	else
+		return (double)(i->intg) + (double)(i->frac_ext)/URN_INUM_FRACEXP;
+}
+
 int urn_inum_alloc(urn_inum **i, const char *s) {
 	URN_RET_ON_NULL(*i = malloc(sizeof(urn_inum)), "Not enough memory", ENOMEM);
 	return urn_inum_parse(*i, s);
@@ -381,7 +388,9 @@ typedef struct urn_odbk_mem {
 	urn_odbk odbks[512][2];
 } urn_odbk_mem;
 
-const char *urn_shm_exchanges[] = { "Binance", "BNCM", "BNUM", "Bybit", "BybitU", "Coinbase", "FTX", "\0"};
+const int   urn_shm_exch_num = 7;
+char *urn_shm_exchanges[] = { "Binance", "BNCM", "BNUM", "Bybit", "BybitU", "Coinbase", "FTX", "\0"};
+
 int urn_odbk_shm_i(char *exchange) {
 	int i = 0;
 	while(1) {
@@ -401,8 +410,8 @@ int urn_odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, ur
 	// SHMKEY starts from 0xA001, return -1 if not found.
 	*shmkey += 0xA001;
 
-	URN_LOGF("odbk_shm_init() get  at key %#08x size %lu writer %d",
-		*shmkey, sizeof(urn_odbk_mem), writer);
+	URN_LOGF("odbk_shm_init() get  at key %#08x size %lu %c",
+		*shmkey, sizeof(urn_odbk_mem), writer ? 'W' : 'R');
 	*shmid = shmget(*shmkey, sizeof(urn_odbk_mem), (writer ? (0644|IPC_CREAT) : (0644)));
 	if (*shmid == -1)
 		URN_FATAL("Could not get shmid in odbk_shm_init()", errno);
@@ -410,8 +419,8 @@ int urn_odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, ur
 	*shmptr = shmat(*shmid, NULL, 0);
 	if (*shmptr == (void *) -1)
 		URN_FATAL("Unable to attach share memory in odbk_shm_init()", errno);
-	URN_INFOF("odbk_shm_init() done at key %#08x id %d size %lu ptr %p writer %d",
-		*shmkey, *shmid, sizeof(urn_odbk_mem), *shmptr, writer);
+	URN_INFOF("odbk_shm_init() done at key %#08x id %d size %lu ptr %p %c",
+		*shmkey, *shmid, sizeof(urn_odbk_mem), *shmptr, writer ? 'W' : 'R');
 	return rv;
 }
 
