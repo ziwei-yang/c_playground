@@ -371,10 +371,8 @@ static int broadcast() {
 		rv = urn_redis_chkfree_reply_long(reply, &listener_ct, NULL);
 		URN_GO_FINAL_ON_RV(rv, "error in checking listeners");
 		if (brdcst_last_w_snapshot) {
-			URN_LOG("get reply");
 			rv = redisGetReply(redis, (void**)&reply);
 			URN_GO_FINAL_ON_RV(rv, "Redis get reply code error");
-			URN_LOGF("get reply type %d str %s", reply->type, reply->str);
 			rv = urn_redis_chkfree_reply_str(reply, "OK", NULL);
 			URN_GO_FINAL_ON_RV(rv, "error in checking listeners");
 		}
