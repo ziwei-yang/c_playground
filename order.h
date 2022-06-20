@@ -2,6 +2,8 @@
 #define URANUS_TRADE_ORDER
 
 #include <string.h>
+#include <stdbool.h>
+
 #include <glib.h>
 
 /* 64 bits fixed size of num, fixed size for share memory  */
@@ -92,9 +94,16 @@ int urn_inum_parse(urn_inum *i, const char *s) {
 
 	return 0;
 }
+
 int urn_inum_alloc(urn_inum **i, const char *s) {
 	URN_RET_ON_NULL(*i = malloc(sizeof(urn_inum)), "Not enough memory", ENOMEM);
 	return urn_inum_parse(*i, s);
+}
+
+bool urn_inum_iszero(urn_inum *i) {
+	if (i->intg == 0 && i->frac_ext == 0)
+		return true;
+	return false;
 }
 
 int urn_inum_cmp(urn_inum *i1, urn_inum *i2) {
@@ -304,6 +313,198 @@ static int sprintf_odbk_json(char *s, GList *l) {
 		*(s+ct-1) = ']';
 	}
 	return ct;
+}
+
+//////////////////////////////////////////
+// orderbook data read/write in share memory
+//////////////////////////////////////////
+
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/types.h>
+
+// First data is a 512 pair index
+// For each pair, get a swap writing 2 odbk cache [full, dirty] -> [dirty, full]
+// on macos the sizeof(urn_odbk_mem) is 2695168, enough to fit in its SHMMAX 4MB
+// 	$sysctl kern.sysv.shmmax 
+// 	kern.sysv.shmmax: 4194304
+const int urn_odbk_mem_cap = 512;
+typedef struct urn_odbk_mem {
+	char pairs[512][16];
+	urn_odbk odbks[512][2];
+} urn_odbk_mem;
+
+int odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, urn_odbk_mem **shmptr) {
+	int rv = 0;
+	if (strcasecmp(exchange, "Binance") == 0)
+		*shmkey = 0xA001;
+	else if (strcasecmp(exchange, "BNCM") == 0)
+		*shmkey = 0xA002;
+	else if (strcasecmp(exchange, "BNUM") == 0)
+		*shmkey = 0xA003;
+	else if (strcasecmp(exchange, "Bybit") == 0)
+		*shmkey = 0xA004;
+	else if (strcasecmp(exchange, "BybitU") == 0)
+		*shmkey = 0xA005;
+	else if (strcasecmp(exchange, "Coinbase") == 0)
+		*shmkey = 0xA006;
+	else if (strcasecmp(exchange, "FTX") == 0)
+		*shmkey = 0xA007;
+	else
+		URN_RET_ON_RV(EINVAL, "Unknown exchange in odbk_shm_init()");
+
+	URN_LOGF("odbk_shm_init() get  at key %#08x size %lu writer %d",
+		*shmkey, sizeof(urn_odbk_mem), writer);
+	*shmid = shmget(*shmkey, sizeof(urn_odbk_mem), (writer ? (0644|IPC_CREAT) : (0644)));
+	if (*shmid == -1)
+		URN_FATAL("Could not get shmid in odbk_shm_init()", errno);
+
+	*shmptr = shmat(*shmid, NULL, 0);
+	if (*shmptr == (void *) -1)
+		URN_FATAL("Unable to attach share memory in odbk_shm_init()", errno);
+	URN_INFOF("odbk_shm_init() done at key %#08x id %d size %lu ptr %p writer %d",
+		*shmkey, *shmid, sizeof(urn_odbk_mem), *shmptr, writer);
+	return rv;
+}
+
+int odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
+	if (len > urn_odbk_mem_cap && len <= 1) {
+		// pair_arr[0] should always be pair name of NULL(no such pair)
+		URN_WARNF("odbk_shm_write_index() with illegal len %d", len);
+		return ERANGE;
+	}
+	// mark [0] as useless
+	strcpy(shmp->pairs[0], "USELESS");
+	for (int i = 1; i <= len; i++)
+		strcpy(shmp->pairs[i], pair_arr[i]);
+	// set unused pair name NULL
+	for (int i = len+1; i < urn_odbk_mem_cap; i++)
+		shmp->pairs[i][0] = '\0';
+	// Mark all odbk dirty.
+	for (int i = 0; i < urn_odbk_mem_cap; i++) {
+		shmp->odbks[i][0].complete = false;
+		shmp->odbks[i][1].complete = false;
+	}
+	return 0;
+}
+
+/* asks and bids are sorted desc, from bottom to top */
+int odbk_shm_write(
+		urn_odbk_mem *shmp,
+		int pairid,
+		GList *asks, int ask_ct,
+		GList *bids, int bid_ct,
+		long mkt_ts_e6,
+		long w_ts_e6,
+		char *desc
+		)
+{
+	URN_RET_IF((pairid >= urn_odbk_mem_cap), "pairid too big", ERANGE);
+	// choose a dirty side to write in.
+	urn_odbk *odbk = NULL;
+	int mark_i_complete = -1;
+	int mark_i_dirty = -1;
+	if (shmp->odbks[pairid][0].complete == false) {
+		odbk = &(shmp->odbks[pairid][0]);
+		mark_i_complete = 0;
+		mark_i_dirty = 1;
+	} else if (shmp->odbks[pairid][1].complete == false) {
+		odbk = &(shmp->odbks[pairid][1]);
+		mark_i_complete = 1;
+		mark_i_dirty = 0;
+	}
+
+	// Write depth no more than URN_ODBK_DEPTH
+	urn_porder *tmp_o = NULL;
+	if (asks != NULL) {
+		// skip too deep data
+		while (ask_ct > URN_ODBK_DEPTH) {
+			asks = asks->next;
+			ask_ct --;
+			URN_RET_IF((asks == NULL), "asks is NULL", EINVAL);
+		}
+		// write NULL for ask_ct+1 order
+		if (ask_ct < URN_ODBK_DEPTH) {
+			memset(&(odbk->askp[ask_ct]), 0, sizeof(urn_inum));
+			memset(&(odbk->asks[ask_ct]), 0, sizeof(urn_inum));
+		}
+		// write data from [ask_ct-1] to [0]
+		while (ask_ct > 0) {
+			URN_RET_IF((asks == NULL), "asks is NULL", EINVAL);
+			tmp_o = asks->data;
+			URN_RET_IF((tmp_o == NULL), "asks o is NULL", EINVAL);
+			memcpy(&(odbk->askp[ask_ct-1]), tmp_o->p, sizeof(urn_inum));
+			memcpy(&(odbk->asks[ask_ct-1]), tmp_o->s, sizeof(urn_inum));
+			asks = asks->next;
+			ask_ct --;
+		}
+	}
+	if (bids != NULL) {
+		// skip too deep data
+		while (bid_ct > URN_ODBK_DEPTH) {
+			bids = bids->next;
+			bid_ct --;
+			URN_RET_IF((bids == NULL), "bids is NULL", EINVAL);
+		}
+		// write NULL for bid_ct+1 order
+		if (bid_ct < URN_ODBK_DEPTH) {
+			memset(&(odbk->bidp[bid_ct]), 0, sizeof(urn_inum));
+			memset(&(odbk->bids[bid_ct]), 0, sizeof(urn_inum));
+		}
+		// write data from [bid_ct-1] to [0]
+		while (bid_ct > 0) {
+			URN_RET_IF((bids == NULL), "bids is NULL", EINVAL);
+			tmp_o = bids->data;
+			URN_RET_IF((tmp_o == NULL), "bids o is NULL", EINVAL);
+			memcpy(&(odbk->bidp[bid_ct-1]), tmp_o->p, sizeof(urn_inum));
+			memcpy(&(odbk->bids[bid_ct-1]), tmp_o->s, sizeof(urn_inum));
+			bids = bids->next;
+			bid_ct --;
+		}
+	}
+
+	odbk->mkt_ts_e6 = mkt_ts_e6;
+	odbk->w_ts_e6 = w_ts_e6;
+	if (desc != NULL)
+		strcpy(odbk->desc, desc);
+
+	// mark this side complete and another side dirty (place to write next)
+	shmp->odbks[pairid][mark_i_complete].complete = true;
+	shmp->odbks[pairid][mark_i_dirty].complete = false;
+	return 0;
+}
+
+int odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
+	URN_RET_IF((pairid >= urn_odbk_mem_cap), "pairid too big", ERANGE);
+	printf("odbk_shm_init %d [%s] complete: [%d, %d]\n", pairid, shmp->pairs[pairid],
+		shmp->odbks[pairid][0].complete, shmp->odbks[pairid][1].complete);
+
+	urn_odbk *odbk = NULL;
+	if (shmp->odbks[pairid][0].complete) {
+		odbk = &(shmp->odbks[pairid][0]);
+	} else if (shmp->odbks[pairid][1].complete) {
+		odbk = &(shmp->odbks[pairid][1]);
+	}
+	if (odbk == NULL) {
+		printf("odbk_shm_init %d [%s] -- N/A --\n", pairid, shmp->pairs[pairid]);
+		return 0;
+	}
+
+	for (int i = 0; i < urn_odbk_mem_cap; i++) {
+		if (urn_inum_iszero(&(odbk->bidp[i])) &&
+			urn_inum_iszero(&(odbk->bids[i])) &&
+			urn_inum_iszero(&(odbk->askp[i])) &&
+			urn_inum_iszero(&(odbk->asks[i]))) {
+			break;
+		}
+		printf("%d %24s %24s - %24s %24s\n", i,
+			urn_inum_str(&(odbk->bidp[i])),
+			urn_inum_str(&(odbk->bids[i])),
+			urn_inum_str(&(odbk->askp[i])),
+			urn_inum_str(&(odbk->asks[i])));
+	}
+	printf("odbk_shm_init %d [%s] -- end --\n", pairid, shmp->pairs[pairid]);
+	return 0;
 }
 
 #endif

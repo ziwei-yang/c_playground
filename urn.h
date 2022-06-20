@@ -58,7 +58,7 @@
 		stderr, "%s:%d %s(): ERROR %s return with %d\n", \
 		__FILE__, __LINE__, __FUNCTION__, \
 		msg, ret), ret;
-#define URN_FATAL(msg, ret) fprintf (\
+#define URN_FATAL(msg, ret) perror(msg) , fprintf (\
 		stderr, "%s:%d %s(): FATAL %s\nexit with %d\n", \
 		__FILE__, __LINE__, __FUNCTION__, \
 		msg, ret), \

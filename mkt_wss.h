@@ -20,7 +20,7 @@
 #endif
 
 #ifndef MAX_PAIRS
-#define MAX_PAIRS 1024
+#define MAX_PAIRS 512
 #endif
 
 #ifndef PUB_NO_REDIS
@@ -118,6 +118,11 @@ char         *pub_tick_chn_arr[MAX_PAIRS];
 char         *pub_tick_key_arr[MAX_PAIRS]; // kv snapshot
 redisContext *redis;
 
+///////////// broadcast to SHRMEM //////////////
+key_t  urn_odbk_shmkey= 0;
+int    urn_odbk_shmid = -1;
+struct urn_odbk_mem *urn_odbk_shmptr = NULL;
+
 #ifdef PUB_LESS_ON_ZERO_LISTENER
 struct timespec brdcst_t_arr[MAX_PAIRS]; // last time to publish pair
 long long brdcst_listener_arr[MAX_PAIRS];// listeners last time.
@@ -180,6 +185,14 @@ int main(int argc, char **argv) {
 	if (rv != 0)
 		return URN_FATAL("Error in init redis", rv);
 #endif
+#ifdef WRITE_SHRMEM
+	rv = odbk_shm_init(true, exchange, &urn_odbk_shmkey, &urn_odbk_shmid, &urn_odbk_shmptr);
+	if (rv != 0)
+		return URN_FATAL("Error in init share memory", rv);
+	rv = odbk_shm_write_index(urn_odbk_shmptr, pair_arr, max_pair_id);
+	if (rv != 0)
+		return URN_FATAL("Error in odbk_shm_write_index()", rv);
+#endif
 
 	if ((rv = wss_connect()) != 0)
 		return URN_FATAL("Error in wss_connect()", rv);
@@ -233,7 +246,7 @@ int wss_connect() {
 	nng_stream_dialer *dialer = NULL;
 	nng_stream *stream = NULL;
 
-	// coinbase snapshot msg larger than 256KB
+	// coinbase snapshot msg larger than 256KB, 4MB is better
 	int recv_buflen = 4*1024*1024;
 	char *recv_buf = malloc(recv_buflen);
 	if (recv_buf == NULL)
@@ -309,8 +322,8 @@ int wss_connect() {
 }
 
 // broadcast every few milliseconds.
-struct timeval brdcst_json_t;
-struct timeval brdcst_json_end_t;
+struct timeval brdcst_start_t;
+struct timeval brdcst_end_t;
 // build broadcast json
 // [bids, asks, t, mkt_t]
 // for each order:
@@ -333,7 +346,7 @@ static int broadcast() {
 	int rv = 0;
 	brdcst_t.tv_sec = _tmp_clock.tv_sec;
 	brdcst_t.tv_nsec = _tmp_clock.tv_nsec;
-	gettimeofday(&brdcst_json_t, NULL);
+	gettimeofday(&brdcst_start_t, NULL);
 
 	bool do_stat = brdcst_t.tv_sec - brdcst_stat_t > 4;
 	// Every stat round, 1/8 chance to write full snapshot.
@@ -351,8 +364,18 @@ static int broadcast() {
 	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
 		if ((!write_snapshot) && (newodbk_arr[pairid] <= 0))
 			continue;
+
 #ifdef WRITE_SHRMEM
-		// write odbk to share memory.
+		if (newodbk_arr[pairid] > 0) {
+			// write odbk to share memory.
+			odbk_shm_write(urn_odbk_shmptr, pairid,
+				asks_arr[pairid], askct_arr[pairid],
+				bids_arr[pairid], bidct_arr[pairid],
+				odbk_t_arr[pairid]/1000,
+				brdcst_start_t.tv_sec + (long)(brdcst_start_t.tv_usec/1000),
+				exchange
+			      );
+		}
 #endif
 
 #ifdef PUB_REDIS
@@ -380,8 +403,8 @@ static int broadcast() {
 		*(s+ct) = ','; ct++;
 		ct += sprintf_odbk_json(s+ct, asks_arr[pairid]);
 		ct += sprintf(s+ct, ",%ld%03ld,%ld]",
-				brdcst_json_t.tv_sec,
-				(long)(brdcst_json_t.tv_usec/1000),
+				brdcst_start_t.tv_sec,
+				(long)(brdcst_start_t.tv_usec/1000),
 				odbk_t_arr[pairid]/1000);
 		URN_DEBUGF("broadcast %s, updates %d, json len %d/%d -> %s\n%s",
 				pair_arr[pairid], newodbk_arr[pairid],
@@ -429,9 +452,9 @@ static int broadcast() {
 
 	if (do_stat) {
 		// stat in few seconds, also print cost time this round.
-		gettimeofday(&brdcst_json_end_t, NULL);
+		gettimeofday(&brdcst_end_t, NULL);
 		// if in full writing mode, cost_us should be much higher.
-		long cost_us = urn_usdiff(brdcst_json_t, brdcst_json_end_t);
+		long cost_us = urn_usdiff(brdcst_start_t, brdcst_end_t);
 		bool redis_slow = (!write_snapshot && (cost_us > 1000)) ? true : false;
 		if (!write_snapshot && (cost_us*5 > brdcst_interval_ms*1000)) {
 			// should not spend >= 20% time of interval
@@ -675,6 +698,10 @@ static int parse_args_build_idx(int argc, char **argv) {
 		urn_hmap_set(trade_chn_to_pairid, trade_chn, (uintptr_t)pairid);
 		max_pair_id = pairid;
 		chn_ct ++;
+	}
+
+	if (max_pair_id >= MAX_PAIRS) {
+		URN_FATAL("pairs more than predefined", EINVAL);
 	}
 
 	brdcst_max_speed = URN_MIN(max_pair_id*300, 2000);
