@@ -2,8 +2,12 @@
 #define URANUS_COMMON
 
 #include <time.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
 #include <sys/time.h>
 #include <errno.h>
+#include <limits.h>
 
 //////////////////////////////////////////
 // Terminal color control. ///////////////
@@ -405,7 +409,7 @@ int urn_odbk_shm_i(char *exchange) {
 int urn_odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, urn_odbk_mem **shmptr) {
 	int rv = 0;
 	*shmkey = urn_odbk_shm_i(exchange);
-	if (*shmkey <= 0)
+	if (*shmkey < 0)
 		URN_RET_ON_RV(EINVAL, "Unknown exchange in odbk_shm_init()");
 	// SHMKEY starts from 0xA001, return -1 if not found.
 	*shmkey += 0xA001;

@@ -1,9 +1,6 @@
 #ifndef URANUS_TRADE_ORDER
 #define URANUS_TRADE_ORDER
 
-#include <string.h>
-#include <stdbool.h>
-
 //////////////////////////////////////////
 // Extended methods, with glib's help
 //////////////////////////////////////////

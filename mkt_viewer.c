@@ -20,14 +20,19 @@ int main(int argc, char **argv) {
 	if (rv != 0)
 		URN_FATAL("Error in odbk_shm_init", rv);
 
+	int pairid = -1;
 	for (int i=0; i<urn_odbk_mem_cap; i++) {
 		if (shmptr->pairs[i][0] == '\0')
 			break;
 		URN_INFOF("%d pair %s", i, shmptr->pairs[i]);
+		if (strcasecmp(argv[2], shmptr->pairs[i]) == 0)
+			pairid = i;
 	}
+	if (pairid <= 1)
+		URN_FATAL("Pair not found", ERANGE);
 
 	while(true) {
-		urn_odbk_shm_print(shmptr, 1);
+		urn_odbk_shm_print(shmptr, pairid);
 		usleep(50*1000);
 	}
 }
