@@ -83,19 +83,28 @@ urn_odbk * _get_valid_urn_odbk(VALUE v_idx, VALUE v_pairid) {
 }
 
 VALUE method_mktdata_odbk(VALUE self, VALUE v_idx, VALUE v_pairid, VALUE v_max_row) {
-	urn_odbk *odbk = _get_valid_urn_odbk(v_idx, v_pairid);
-	if (odbk == NULL) return Qnil;
-
 	if (RB_TYPE_P(v_max_row, T_FIXNUM) != 1)
 		return Qnil;
 	int max_row = NUM2INT(v_max_row);
 	if (max_row <= 0) return Qnil;
 	max_row = URN_MIN(max_row, URN_ODBK_DEPTH);
 
-	// [bids, asks, t, t]
+	long data_ts_e6 = 0;
+
+read_shmem:
 	VALUE r_odbk = rb_ary_new_capa(4);
 	VALUE r_bids = rb_ary_new_capa(max_row);
 	VALUE r_asks = rb_ary_new_capa(max_row);
+
+	urn_odbk *odbk = _get_valid_urn_odbk(v_idx, v_pairid);
+	if (odbk == NULL) return Qnil;
+
+	// writer changes timestamp first.
+	// For readers, check ts_e6 before and after reading all data.
+	// if ts_e6 changed, data should be dirty.
+	data_ts_e6 = odbk->w_ts_e6;
+
+	// [bids, asks, t, t]
 	for (int i = 0; i < max_row; i++) {
 		if (urn_inum_iszero(&(odbk->bidp[i])) &&
 				urn_inum_iszero(&(odbk->askp[i]))) {
@@ -122,6 +131,11 @@ VALUE method_mktdata_odbk(VALUE self, VALUE v_idx, VALUE v_pairid, VALUE v_max_r
 	rb_ary_push(r_odbk, r_asks);
 	rb_ary_push(r_odbk, LONG2NUM(odbk->w_ts_e6/1000));
 	rb_ary_push(r_odbk, LONG2NUM(odbk->mkt_ts_e6/1000));
+
+	if (data_ts_e6 != odbk->w_ts_e6) {
+		URN_LOG("data_ts_e6 changed, data dirty, retry.");
+		goto read_shmem;
+	}
 
 	return r_odbk;
 }

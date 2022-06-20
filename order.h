@@ -204,7 +204,15 @@ int urn_odbk_shm_write(
 		odbk = &(shmp->odbks[pairid][1]);
 		mark_i_complete = 1;
 		mark_i_dirty = 0;
+	} else {
+		URN_RET_IF(true, "shmem 2 odbks are completed, two writers?", EINVAL);
 	}
+
+	// writer changes timestamp first.
+	// For readers, check ts_e6 before and after reading all data.
+	// if ts_e6 changed, data should be dirty.
+	odbk->w_ts_e6 = w_ts_e6;
+	odbk->mkt_ts_e6 = mkt_ts_e6;
 
 	// Write depth no more than URN_ODBK_DEPTH
 	urn_porder *tmp_o = NULL;
@@ -255,12 +263,10 @@ int urn_odbk_shm_write(
 		}
 	}
 
-	odbk->mkt_ts_e6 = mkt_ts_e6;
-	odbk->w_ts_e6 = w_ts_e6;
 	if (desc != NULL)
 		strcpy(odbk->desc, desc);
 
-	// mark this side complete and another side dirty (place to write next)
+	// mark this side complete, flip another side dirty (write next)
 	shmp->odbks[pairid][mark_i_complete].complete = true;
 	shmp->odbks[pairid][mark_i_dirty].complete = false;
 	return 0;
