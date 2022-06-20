@@ -4,136 +4,14 @@
 #include <string.h>
 #include <stdbool.h>
 
+//////////////////////////////////////////
+// Extended methods, with glib's help
+//////////////////////////////////////////
+
 #include <glib.h>
 
-/* 64 bits fixed size of num, fixed size for share memory  */
-typedef struct urn_inum {
-	long   intg;
-	size_t frac_ext; // frac_ext = frac * 1e-URN_INUM_PRECISE
-	_Bool  pstv; // when intg is zero, use this for sign.
-	// description size padding to 64
-	char   s[64-sizeof(long)-sizeof(size_t)-sizeof(_Bool)];
-} urn_inum;
-
 //////////////////////////////////////////
-// Market number represent in integer.
-//////////////////////////////////////////
-#define URN_INUM_PRECISE 12
-#define URN_INUM_FRACEXP 100000000000000ul
-
-// print inum into s (or internal description pointer)
-char *urn_inum_str(urn_inum *i) {
-	if (i == NULL) return NULL;
-	char *s = i->s;
-	if (s[0] != '\0') // cached already.
-		return s;
-
-	if (i->frac_ext == 0) {
-		sprintf(s, "%ld%*s", i->intg, URN_INUM_PRECISE+1, "");
-		return s;
-	}
-
-	int chars = 0;
-	if (i->pstv)
-		chars = sprintf(s, "%ld.%012zu", i->intg, i->frac_ext);
-	else if (i->intg != 0)
-		chars = sprintf(s, "%ld.%012zu", i->intg, i->frac_ext);
-	else // intg=0 and negative.
-		chars = sprintf(s, "-%ld.%012zu", i->intg, i->frac_ext);
-	// Replace 0s in fraction at end with space.
-	while (chars > 0) {
-		if (s[chars-1] == '0') {
-			s[chars-1] = ' ';
-			chars--;
-		} else
-			break;
-	}
-	return s;
-}
-
-int urn_inum_sprintf(urn_inum *i, char *s) {
-	// too many spaces in urn_inum_str()
-	// return sprintf(s, "%s", urn_inum_str(i));
-	if (i->frac_ext == 0) // integer only.
-		return sprintf(s, "%ld", i->intg);
-	else if (i->pstv)
-		return sprintf(s, "%ld.%012zu", i->intg, i->frac_ext);
-	else if (i->intg != 0)
-		return sprintf(s, "%ld.%012zu", i->intg, i->frac_ext);
-	else // intg=0 and negative.
-		return sprintf(s, "-%ld.%012zu", i->intg, i->frac_ext);
-}
-
-// Every inum should be initialized here.
-int urn_inum_parse(urn_inum *i, const char *s) {
-	(i->s)[0] = '\0'; // clear desc
-	int rv = 0;
-	// -0.00456 -> intg=0 intg_s='-0'  frac_s='00456'
-	char intg_s[99];
-	sscanf(s, "%s.", intg_s);
-	i->pstv = (intg_s[0] == '-') ? 0 : 1;
-
-	char frac_s[99];
-	rv = sscanf(s, "%ld.%s", &(i->intg), frac_s);
-	if (rv == 1) {
-		i->frac_ext = 0;
-		return 0;
-	} else if (rv != 2)
-		return EINVAL;
-
-	// right pading '00456' 
-	// -> rpad(URN_INUM_PRECISE) '00456000000000'
-	// -> to unsigned long
-	int padto = URN_INUM_PRECISE;
-	char frac_padded[padto+1];
-	int cp_ct = URN_MIN(padto, strlen(frac_s));
-	for (int p = 0; p < padto; p++)
-		frac_padded[p] = (p<cp_ct) ? frac_s[p] : '0';
-	frac_padded[padto] = '\0';
-	i->frac_ext = (size_t)(atol(frac_padded));
-
-	return 0;
-}
-
-int urn_inum_alloc(urn_inum **i, const char *s) {
-	URN_RET_ON_NULL(*i = malloc(sizeof(urn_inum)), "Not enough memory", ENOMEM);
-	return urn_inum_parse(*i, s);
-}
-
-bool urn_inum_iszero(urn_inum *i) {
-	if (i->intg == 0 && i->frac_ext == 0)
-		return true;
-	return false;
-}
-
-int urn_inum_cmp(urn_inum *i1, urn_inum *i2) {
-	if (i1 == NULL && i2 == NULL) return 0;
-	if (i1 != NULL && i2 == NULL) return INT_MAX;
-	if (i1 == NULL && i2 != NULL) return INT_MIN;
-//	URN_DEBUGF("Sorting inum %20s and %20s", urn_inum_str(i1), urn_inum_str(i2));
-	if (i1->pstv && i2->pstv) {
-		if (i1->intg != i2->intg)
-			return (i1->intg > i2->intg) ? 1 : -1;
-		if (i1->frac_ext != i2->frac_ext)
-			return (i1->frac_ext > i2->frac_ext) ? 1 : -1;
-		return 0;
-	} else if (i1->pstv && !(i2->pstv)) {
-		return 1;
-	} else if (!(i1->pstv) && i2->pstv) {
-		return -1;
-	} else if (!(i1->pstv) && !(i2->pstv)) {
-		if (i1->intg != i2->intg)
-			return (i1->intg > i2->intg) ? 1 : -1;
-		// when intg is same, fraction bigger means number smaller.
-		if (i1->frac_ext != i2->frac_ext)
-			return (i1->frac_ext < i2->frac_ext) ? 1 : -1;
-		return 0;
-	}
-	return 0;
-}
-
-//////////////////////////////////////////
-// Pair
+// Order Pair
 //////////////////////////////////////////
 
 typedef struct urn_pair {
@@ -194,22 +72,8 @@ error:
 }
 
 //////////////////////////////////////////
-// Public order from market data
+// Public order in orderbook
 //////////////////////////////////////////
-#define URN_ODBK_DEPTH 10
-/* whole orderbook in fixed size to be put in share memory */
-/* each urn_inum has a fixed size 8 bytes */
-typedef struct urn_odbk {
-	char desc[64-sizeof(_Bool)-2*sizeof(unsigned long)]; // 64bit padding
-	_Bool complete; // current data is ready to be use.
-	unsigned long mkt_ts_e6;
-	unsigned long w_ts_e6;
-	// size: 4*DEPTH x 64
-	urn_inum bidp[URN_ODBK_DEPTH];
-	urn_inum bids[URN_ODBK_DEPTH];
-	urn_inum askp[URN_ODBK_DEPTH];
-	urn_inum asks[URN_ODBK_DEPTH];
-} urn_odbk;
 
 typedef struct urn_porder {
 	urn_pair *pair;
@@ -278,7 +142,7 @@ static int sprintf_odbko_json(char *s, urn_porder *o) {
 }
 
 //////////////////////////////////////////
-// orderbook data in GList
+// orderbook data operation
 //////////////////////////////////////////
 
 // odbk orders are saved from bottom to top
@@ -318,75 +182,6 @@ static int sprintf_odbk_json(char *s, GList *l) {
 //////////////////////////////////////////
 // orderbook data read/write in share memory
 //////////////////////////////////////////
-
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <sys/types.h>
-
-// First data is a 512 pair index
-// For each pair, get a swap writing 2 odbk cache [full, dirty] -> [dirty, full]
-// on macos the sizeof(urn_odbk_mem) is 2695168, enough to fit in its SHMMAX 4MB
-// 	$sysctl kern.sysv.shmmax 
-// 	kern.sysv.shmmax: 4194304
-const int urn_odbk_mem_cap = 512;
-typedef struct urn_odbk_mem {
-	char pairs[512][16];
-	urn_odbk odbks[512][2];
-} urn_odbk_mem;
-
-int urn_odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, urn_odbk_mem **shmptr) {
-	int rv = 0;
-	if (strcasecmp(exchange, "Binance") == 0)
-		*shmkey = 0xA001;
-	else if (strcasecmp(exchange, "BNCM") == 0)
-		*shmkey = 0xA002;
-	else if (strcasecmp(exchange, "BNUM") == 0)
-		*shmkey = 0xA003;
-	else if (strcasecmp(exchange, "Bybit") == 0)
-		*shmkey = 0xA004;
-	else if (strcasecmp(exchange, "BybitU") == 0)
-		*shmkey = 0xA005;
-	else if (strcasecmp(exchange, "Coinbase") == 0)
-		*shmkey = 0xA006;
-	else if (strcasecmp(exchange, "FTX") == 0)
-		*shmkey = 0xA007;
-	else
-		URN_RET_ON_RV(EINVAL, "Unknown exchange in odbk_shm_init()");
-
-	URN_LOGF("odbk_shm_init() get  at key %#08x size %lu writer %d",
-		*shmkey, sizeof(urn_odbk_mem), writer);
-	*shmid = shmget(*shmkey, sizeof(urn_odbk_mem), (writer ? (0644|IPC_CREAT) : (0644)));
-	if (*shmid == -1)
-		URN_FATAL("Could not get shmid in odbk_shm_init()", errno);
-
-	*shmptr = shmat(*shmid, NULL, 0);
-	if (*shmptr == (void *) -1)
-		URN_FATAL("Unable to attach share memory in odbk_shm_init()", errno);
-	URN_INFOF("odbk_shm_init() done at key %#08x id %d size %lu ptr %p writer %d",
-		*shmkey, *shmid, sizeof(urn_odbk_mem), *shmptr, writer);
-	return rv;
-}
-
-int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
-	if (len > urn_odbk_mem_cap && len <= 1) {
-		// pair_arr[0] should always be pair name of NULL(no such pair)
-		URN_WARNF("odbk_shm_write_index() with illegal len %d", len);
-		return ERANGE;
-	}
-	// mark [0] as useless
-	strcpy(shmp->pairs[0], "USELESS");
-	for (int i = 1; i <= len; i++)
-		strcpy(shmp->pairs[i], pair_arr[i]);
-	// set unused pair name NULL
-	for (int i = len+1; i < urn_odbk_mem_cap; i++)
-		shmp->pairs[i][0] = '\0';
-	// Mark all odbk dirty.
-	for (int i = 0; i < urn_odbk_mem_cap; i++) {
-		shmp->odbks[i][0].complete = false;
-		shmp->odbks[i][1].complete = false;
-	}
-	return 0;
-}
 
 /* asks and bids are sorted desc, from bottom to top */
 int urn_odbk_shm_write(
@@ -471,49 +266,6 @@ int urn_odbk_shm_write(
 	// mark this side complete and another side dirty (place to write next)
 	shmp->odbks[pairid][mark_i_complete].complete = true;
 	shmp->odbks[pairid][mark_i_dirty].complete = false;
-	return 0;
-}
-
-int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
-	URN_RET_IF((pairid >= urn_odbk_mem_cap), "pairid too big", ERANGE);
-	printf("odbk_shm_init %d [%s] complete: [%d, %d]\n", pairid, shmp->pairs[pairid],
-		shmp->odbks[pairid][0].complete, shmp->odbks[pairid][1].complete);
-
-	urn_odbk *odbk = NULL;
-	if (shmp->odbks[pairid][0].complete) {
-		odbk = &(shmp->odbks[pairid][0]);
-	} else if (shmp->odbks[pairid][1].complete) {
-		odbk = &(shmp->odbks[pairid][1]);
-	}
-	if (odbk == NULL) {
-		printf("odbk_shm_init %d [%s] -- N/A --\n", pairid, shmp->pairs[pairid]);
-		return 0;
-	}
-
-	long mkt_ts_e6 = odbk->mkt_ts_e6;
-	long w_ts_e6 = odbk->w_ts_e6;
-	double latency_e3 = (w_ts_e6 - mkt_ts_e6)/1000.0;
-
-	printf("mkt_t %02lu:%02lu:%02lu.%06ld latency %5.3f ms \n", \
-			((mkt_ts_e6/1000000) % 86400)/3600, \
-			((mkt_ts_e6/1000000) % 3600)/60, \
-			((mkt_ts_e6/1000000) % 60), \
-			mkt_ts_e6 % 1000000, latency_e3);
-
-	for (int i = 0; i < urn_odbk_mem_cap; i++) {
-		if (urn_inum_iszero(&(odbk->bidp[i])) &&
-			urn_inum_iszero(&(odbk->bids[i])) &&
-			urn_inum_iszero(&(odbk->askp[i])) &&
-			urn_inum_iszero(&(odbk->asks[i]))) {
-			break;
-		}
-		printf("%d %24s %24s - %24s %24s\n", i,
-			urn_inum_str(&(odbk->bidp[i])),
-			urn_inum_str(&(odbk->bids[i])),
-			urn_inum_str(&(odbk->askp[i])),
-			urn_inum_str(&(odbk->asks[i])));
-	}
-	printf("odbk_shm_init %d [%s] -- end --\n", pairid, shmp->pairs[pairid]);
 	return 0;
 }
 

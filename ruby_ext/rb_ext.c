@@ -1,14 +1,35 @@
 #include "ruby.h"
 
-#include<sys/ipc.h>
-#include<sys/shm.h>
-#include<sys/types.h>
+#include "../urn.h"
+
+//////////////////////////////////////////
+// Ruby Methods below.
+//////////////////////////////////////////
 
 // Defining a space for information and references about the module to be stored internally
 VALUE URN_MKTDATA = Qnil;
 
+VALUE method_mkdata_shm_index(VALUE self);
+
+// The initialization method for this module
 // Prototype for the initialization method - Ruby calls this, not you
-void Init_urn_mktdata();
+void Init_urn_mktdata() {
+	URN_MKTDATA = rb_define_module("URN_MKTDATA");
+//	rb_define_method(URN_MKTDATA, "mktdata_shm", method_test1, 0);
+
+//	rb_define_method(URN_MKTDATA, "test1", method_test1, 0);
+//	rb_define_method(URN_MKTDATA, "add", method_add, 2);
+//	rb_define_method(URN_MKTDATA, "attach_shm", method_attach_shm, 0);
+//	rb_define_method(URN_MKTDATA, "detach_shm", method_detach_shm, 0);
+//	rb_define_method(URN_MKTDATA, "read_shm", method_read_shm, 0);
+}
+
+VALUE method_mkdata_shm_index(VALUE self) {
+	if (RB_TYPE_P(str, T_STRING) == 1) {
+		return rb_sprintf("String length: %ld", RSTRING_LEN(str));
+	}
+	return Qnil;
+}
 
 // Prototype for our method 'test1' - methods are prefixed by 'method_' here
 VALUE method_test1(VALUE self);
@@ -69,14 +90,4 @@ VALUE method_add(VALUE self, VALUE first, VALUE second) {
 	int a = NUM2INT(first);
 	int b = NUM2INT(second);
 	return INT2NUM(a + b);
-}
-
-// The initialization method for this module
-void Init_urn_mktdata() {
-	URN_MKTDATA = rb_define_module("URN_MKTDATA");
-	rb_define_method(URN_MKTDATA, "test1", method_test1, 0);
-	rb_define_method(URN_MKTDATA, "add", method_add, 2);
-	rb_define_method(URN_MKTDATA, "attach_shm", method_attach_shm, 0);
-	rb_define_method(URN_MKTDATA, "detach_shm", method_detach_shm, 0);
-	rb_define_method(URN_MKTDATA, "read_shm", method_read_shm, 0);
 }
