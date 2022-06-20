@@ -62,7 +62,10 @@ int urn_redis(redisContext **ctx, char *host, char *portc, char *pswd, urn_func_
 int urn_redis_chkfree_reply_str(redisReply *reply, char *expect_ans, urn_func_opt *opt) {
 	// str len 2: OK
 	// if (reply->len != 2 || reply->str[0] != 'O' || reply->str[1] != 'K') {
-	if (strcmp(reply->str, expect_ans) != 0) {
+	if (reply->str == NULL) {
+		URN_LOGF_C(RED, "Unexpected Redis reply, expected %s got: null, type %d, int %lld", expect_ans, reply->type, reply->integer);
+		return EINVAL;
+	} else if (strcmp(reply->str, expect_ans) != 0) {
 		if (opt == NULL || (opt && !(opt->silent)))
 			URN_LOGF_C(RED, "Unexpected Redis reply, expected %s got:%s", expect_ans, reply->str);
 		return EINVAL;

@@ -118,7 +118,7 @@ char         *pub_tick_chn_arr[MAX_PAIRS];
 char         *pub_tick_key_arr[MAX_PAIRS]; // kv snapshot
 redisContext *redis;
 
-///////////// broadcast to SHRMEM //////////////
+///////////// write to SHRMEM //////////////
 key_t  odbk_shmkey= 0;
 int    odbk_shmid = -1;
 struct urn_odbk_mem *odbk_shmptr = NULL;
@@ -326,6 +326,9 @@ int wss_connect() {
 // broadcast every few milliseconds.
 struct timeval brdcst_start_t;
 struct timeval brdcst_end_t;
+/* every time broadcast() only sends async req and collect replies from last time*/
+int    brdcst_last_data_ct=0;
+bool   brdcst_last_w_snapshot=false;
 // build broadcast json
 // [bids, asks, t, mkt_t]
 // for each order:
@@ -353,7 +356,34 @@ static int broadcast() {
 	bool do_stat = brdcst_t.tv_sec - brdcst_stat_t > 4;
 	// Every stat round, 1/8 chance to write full snapshot.
 	bool write_snapshot = false;
+	long long listener_ttl_ct = 0;
+
 #ifdef PUB_REDIS
+	URN_GO_FINAL_ON_RV(redis->err, "redis context err");
+	/* only collect replies from last time */
+	long long listener_ct = 0;
+	redisReply *reply = NULL;
+	URN_DEBUGF("Checking replies last time %d %d", brdcst_last_data_ct, brdcst_last_w_snapshot);
+	for (int i=0; i<brdcst_last_data_ct; i++) {
+		rv = redisGetReply(redis, (void**)&reply);
+		URN_GO_FINAL_ON_RV(rv, "Redis get reply code error");
+		int pairid = brdcst_pairs[i];
+		rv = urn_redis_chkfree_reply_long(reply, &listener_ct, NULL);
+		URN_GO_FINAL_ON_RV(rv, "error in checking listeners");
+		if (brdcst_last_w_snapshot) {
+			URN_LOG("get reply");
+			rv = redisGetReply(redis, (void**)&reply);
+			URN_GO_FINAL_ON_RV(rv, "Redis get reply code error");
+			URN_LOGF("get reply type %d str %s", reply->type, reply->str);
+			rv = urn_redis_chkfree_reply_str(reply, "OK", NULL);
+			URN_GO_FINAL_ON_RV(rv, "error in checking listeners");
+		}
+	#ifdef PUB_LESS_ON_ZERO_LISTENER
+		brdcst_listener_arr[pairid] = listener_ct;
+	#endif
+		listener_ttl_ct += listener_ct;
+	}
+
 	write_snapshot = do_stat && ((_tmp_clock.tv_nsec & 8) < 1);
 	if (write_snapshot)
 		URN_DEBUGF_C(YELLOW, "write_snapshot %ld %ld, %ld, %ld",
@@ -361,6 +391,7 @@ static int broadcast() {
 			_tmp_clock.tv_nsec, (_tmp_clock.tv_nsec & 65535));
 #endif
 
+	/* broadcast this time */
 	int data_ct = 0;
 	char *s = brdcst_str;
 	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
@@ -368,14 +399,14 @@ static int broadcast() {
 			continue;
 
 #ifdef PUB_REDIS
-#ifdef PUB_LESS_ON_ZERO_LISTENER
+	#ifdef PUB_LESS_ON_ZERO_LISTENER
 		if ((!write_snapshot) && (brdcst_listener_arr[pairid] == 0)) {
 			// Publish every 2s if no listener last time.
 			if (brdcst_t_arr[pairid].tv_sec + 2 > brdcst_t.tv_sec)
 				continue;
 			brdcst_t_arr[pairid].tv_sec = brdcst_t.tv_sec;
 		}
-#endif
+	#endif
 #endif
 
 		URN_DEBUGF("to broadcast %s %d/%d, updates %d bids %d asks %d",
@@ -415,30 +446,6 @@ static int broadcast() {
 
 	brdcst_stat_rd_ct ++;
 
-	long long listener_ttl_ct = 0;
-#ifdef PUB_REDIS
-	URN_GO_FINAL_ON_RV(redis->err, "redis context err");
-	long long listener_ct = 0;
-	redisReply *reply = NULL;
-	for (int i=0; i<data_ct; i++) {
-		rv = redisGetReply(redis, (void**)&reply);
-		URN_GO_FINAL_ON_RV(rv, "Redis get reply code error");
-		int pairid = brdcst_pairs[i];
-		rv = urn_redis_chkfree_reply_long(reply, &listener_ct, NULL);
-		URN_GO_FINAL_ON_RV(rv, "error in checking listeners");
-		if (write_snapshot) {
-			rv = redisGetReply(redis, (void**)&reply);
-			URN_GO_FINAL_ON_RV(rv, "Redis get reply code error");
-			rv = urn_redis_chkfree_reply_str(reply, "OK", NULL);
-			URN_GO_FINAL_ON_RV(rv, "error in checking listeners");
-		}
-#ifdef PUB_LESS_ON_ZERO_LISTENER
-		brdcst_listener_arr[pairid] = listener_ct;
-#endif
-		listener_ttl_ct += listener_ct;
-	}
-#endif
-
 	if (do_stat) {
 		// stat in few seconds, also print cost time this round.
 		gettimeofday(&brdcst_end_t, NULL);
@@ -473,7 +480,7 @@ static int broadcast() {
 		}
 
 #ifdef PUB_REDIS
-		URN_LOGF_C(GREEN, "--> %d/s %dr/s in %d, every %ldms, %4.2fms > %d chn > %lld ears %s",
+		URN_LOGF_C(GREEN, "--> %d/s %dr/s in %d, every %ldms, %4.2fms > %d chn, last: %lld ears %s",
 			speed, brdcst_stat_rd_ct/diff, diff, brdcst_interval_ms,
 			(float)cost_us/1000.f, data_ct, listener_ttl_ct,
 			(write_snapshot ? "FULL" : ""));
@@ -487,6 +494,8 @@ static int broadcast() {
 	}
 
 final:
+	brdcst_last_data_ct = data_ct;
+	brdcst_last_w_snapshot = write_snapshot;
 	return rv;
 }
 
