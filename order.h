@@ -334,7 +334,7 @@ typedef struct urn_odbk_mem {
 	urn_odbk odbks[512][2];
 } urn_odbk_mem;
 
-int odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, urn_odbk_mem **shmptr) {
+int urn_odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, urn_odbk_mem **shmptr) {
 	int rv = 0;
 	if (strcasecmp(exchange, "Binance") == 0)
 		*shmkey = 0xA001;
@@ -367,7 +367,7 @@ int odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, urn_od
 	return rv;
 }
 
-int odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
+int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
 	if (len > urn_odbk_mem_cap && len <= 1) {
 		// pair_arr[0] should always be pair name of NULL(no such pair)
 		URN_WARNF("odbk_shm_write_index() with illegal len %d", len);
@@ -389,7 +389,7 @@ int odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
 }
 
 /* asks and bids are sorted desc, from bottom to top */
-int odbk_shm_write(
+int urn_odbk_shm_write(
 		urn_odbk_mem *shmp,
 		int pairid,
 		GList *asks, int ask_ct,
@@ -474,7 +474,7 @@ int odbk_shm_write(
 	return 0;
 }
 
-int odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
+int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 	URN_RET_IF((pairid >= urn_odbk_mem_cap), "pairid too big", ERANGE);
 	printf("odbk_shm_init %d [%s] complete: [%d, %d]\n", pairid, shmp->pairs[pairid],
 		shmp->odbks[pairid][0].complete, shmp->odbks[pairid][1].complete);
@@ -489,6 +489,16 @@ int odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 		printf("odbk_shm_init %d [%s] -- N/A --\n", pairid, shmp->pairs[pairid]);
 		return 0;
 	}
+
+	long mkt_ts_e6 = odbk->mkt_ts_e6;
+	long w_ts_e6 = odbk->w_ts_e6;
+	double latency_e3 = (w_ts_e6 - mkt_ts_e6)/1000.0;
+
+	printf("mkt_t %02lu:%02lu:%02lu.%06ld latency %5.3f ms \n", \
+			((mkt_ts_e6/1000000) % 86400)/3600, \
+			((mkt_ts_e6/1000000) % 3600)/60, \
+			((mkt_ts_e6/1000000) % 60), \
+			mkt_ts_e6 % 1000000, latency_e3);
 
 	for (int i = 0; i < urn_odbk_mem_cap; i++) {
 		if (urn_inum_iszero(&(odbk->bidp[i])) &&

@@ -189,6 +189,7 @@ int on_wss_msg(char *msg, size_t len) {
 			char *depth_pair = pair_arr[pairid];
 			URN_DEBUGF("\t -> odbk pair snapshot %lu %s", pairid, depth_pair);
 			URN_GO_FINAL_ON_RV(on_odbk(pairid, NULL, jroot), "Err in odbk handling")
+			URN_GO_FINAL_ON_RV(odbk_updated(pairid), "Err in odbk_updated()")
 			goto final;
 		}
 	} else if (strcmp(type, "l2update") == 0) {
@@ -204,6 +205,7 @@ int on_wss_msg(char *msg, size_t len) {
 			char *depth_pair = pair_arr[pairid];
 			URN_DEBUGF("\t -> odbk pair delta    %lu %s %ld", pairid, depth_pair, ts_e6);
 			URN_GO_FINAL_ON_RV(on_odbk_update(pairid, NULL, jroot), "Err in odbk handling")
+			URN_GO_FINAL_ON_RV(odbk_updated(pairid), "Err in odbk_updated()")
 			goto final;
 		}
 	} else if (strcmp(type, "ticker") == 0) {
@@ -215,6 +217,7 @@ int on_wss_msg(char *msg, size_t len) {
 		if (pairid != 0) {
 			char *trade_pair = pair_arr[pairid];
 			URN_DEBUGF("\t -> odbk pair ticker   %lu %s", pairid, trade_pair, ts_e6);
+			URN_GO_FINAL_ON_RV(tick_updated(pairid), "Err in tick_updated()")
 			goto final;
 		}
 	} else if (strcmp(type, "subscriptions") == 0) {

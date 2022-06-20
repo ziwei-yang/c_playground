@@ -16,7 +16,7 @@ int main(int argc, char **argv) {
 	key_t shmkey = -1;
 	int shmid = -1;
 	urn_odbk_mem *shmptr = NULL;
-	rv = odbk_shm_init(false, exchange, &shmkey, &shmid, &shmptr);
+	rv = urn_odbk_shm_init(false, exchange, &shmkey, &shmid, &shmptr);
 	if (rv != 0)
 		URN_FATAL("Error in odbk_shm_init", rv);
 
@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
 	}
 
 	while(true) {
-		odbk_shm_print(shmptr, 1);
+		urn_odbk_shm_print(shmptr, 1);
 		usleep(50*1000);
 	}
 }

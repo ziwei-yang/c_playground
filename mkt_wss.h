@@ -119,9 +119,11 @@ char         *pub_tick_key_arr[MAX_PAIRS]; // kv snapshot
 redisContext *redis;
 
 ///////////// broadcast to SHRMEM //////////////
-key_t  urn_odbk_shmkey= 0;
-int    urn_odbk_shmid = -1;
-struct urn_odbk_mem *urn_odbk_shmptr = NULL;
+key_t  odbk_shmkey= 0;
+int    odbk_shmid = -1;
+struct urn_odbk_mem *odbk_shmptr = NULL;
+struct timeval odbk_shm_w_t;
+int odbk_shm_write(int pairid);
 
 #ifdef PUB_LESS_ON_ZERO_LISTENER
 struct timespec brdcst_t_arr[MAX_PAIRS]; // last time to publish pair
@@ -186,10 +188,10 @@ int main(int argc, char **argv) {
 		return URN_FATAL("Error in init redis", rv);
 #endif
 #ifdef WRITE_SHRMEM
-	rv = odbk_shm_init(true, exchange, &urn_odbk_shmkey, &urn_odbk_shmid, &urn_odbk_shmptr);
+	rv = urn_odbk_shm_init(true, exchange, &odbk_shmkey, &odbk_shmid, &odbk_shmptr);
 	if (rv != 0)
 		return URN_FATAL("Error in init share memory", rv);
-	rv = odbk_shm_write_index(urn_odbk_shmptr, pair_arr, max_pair_id);
+	rv = urn_odbk_shm_write_index(odbk_shmptr, pair_arr, max_pair_id);
 	if (rv != 0)
 		return URN_FATAL("Error in odbk_shm_write_index()", rv);
 #endif
@@ -276,7 +278,7 @@ int wss_connect() {
 	wss_stat_sz = 0;
 	wss_stat_ct = 0;
 	wss_req_wait_ct = 0;
-	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &wss_stat_t);
+	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &wss_stat_t); // TODO copy mem
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &brdcst_t);
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &wss_req_t);
 
@@ -364,19 +366,6 @@ static int broadcast() {
 	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
 		if ((!write_snapshot) && (newodbk_arr[pairid] <= 0))
 			continue;
-
-#ifdef WRITE_SHRMEM
-		if (newodbk_arr[pairid] > 0) {
-			// write odbk to share memory.
-			odbk_shm_write(urn_odbk_shmptr, pairid,
-				asks_arr[pairid], askct_arr[pairid],
-				bids_arr[pairid], bidct_arr[pairid],
-				odbk_t_arr[pairid]/1000,
-				brdcst_start_t.tv_sec + (long)(brdcst_start_t.tv_usec/1000),
-				exchange
-			      );
-		}
-#endif
 
 #ifdef PUB_REDIS
 #ifdef PUB_LESS_ON_ZERO_LISTENER
@@ -867,3 +856,32 @@ bool mkt_wss_odbk_update_or_delete(int pairid, urn_inum *p, urn_inum *s, bool bu
 	asks->prev = NULL;
 	return true;
 }
+
+// Post action after odbk updated.
+int odbk_updated(int pairid) {
+#ifdef WRITE_SHRMEM
+	return odbk_shm_write(pairid);
+#endif
+	return 0;
+}
+
+// Post action after tick updated.
+int tick_updated(int pairid) {
+	return 0;
+}
+
+#ifdef WRITE_SHRMEM
+int odbk_shm_write(int pairid) {
+	if (newodbk_arr[pairid] <= 0) return 0;
+	gettimeofday(&odbk_shm_w_t, NULL);
+	// write odbk to share memory.
+	urn_odbk_shm_write(odbk_shmptr, pairid,
+			asks_arr[pairid], askct_arr[pairid],
+			bids_arr[pairid], bidct_arr[pairid],
+			odbk_t_arr[pairid],
+			(long)(odbk_shm_w_t.tv_sec) * 1000000l + (long)(odbk_shm_w_t.tv_usec),
+			exchange
+		      );
+	return 0;
+}
+#endif

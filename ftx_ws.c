@@ -144,9 +144,11 @@ int on_wss_msg(char *msg, size_t len) {
 		if (strcmp(action, "partial") == 0) {
 			URN_DEBUGF("\t -> odbk pair snapshot %lu %s %ld", pairid, depth_pair, ts_e6);
 			URN_GO_FINAL_ON_RV(on_odbk(pairid, action, jcore_data), "Err in odbk handling")
+			URN_GO_FINAL_ON_RV(odbk_updated(pairid), "Err in odbk_updated()")
 		} else if (strcmp(action, "update") == 0) {
 			URN_DEBUGF("\t -> odbk pair delta    %lu %s %ld", pairid, depth_pair, ts_e6);
 			URN_GO_FINAL_ON_RV(on_odbk_update(pairid, action, jcore_data), "Err in odbk handling")
+			URN_GO_FINAL_ON_RV(odbk_updated(pairid), "Err in odbk_updated()")
 		} else
 			URN_GO_FINAL_ON_RV(EINVAL, action);
 		goto final;
