@@ -180,12 +180,6 @@ VALUE method_mktdata_new_odbk(VALUE self, VALUE v_idx, VALUE v_pairid, VALUE v_m
 	return _make_odbk_data_if_newer(v_idx, v_pairid, v_max_row, true);
 }
 
-// For pairid in array,
-// return shmem odbk only when data version > known_data_id
-VALUE method_mktdata_odbk_updates(VALUE self, VALUE v_idx, VALUE v_pairid_ary, VALUE v_max_row) {
-	return Qnil;
-}
-
 // The initialization method for this module
 // Prototype for the initialization method - Ruby calls this, not you
 void Init_urn_mktdata() {
