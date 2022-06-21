@@ -4,6 +4,7 @@
 
 VALUE URN_MKTDATA = Qnil;
 urn_odbk_mem *shmptr_arr[urn_shm_exch_num];
+long last_odbk_data_id[urn_shm_exch_num][urn_odbk_mem_cap];
 
 //////////////////////////////////////////
 // Ruby Methods below.
@@ -82,62 +83,107 @@ urn_odbk * _get_valid_urn_odbk(VALUE v_idx, VALUE v_pairid) {
 	return odbk;
 }
 
-VALUE method_mktdata_odbk(VALUE self, VALUE v_idx, VALUE v_pairid, VALUE v_max_row) {
-	if (RB_TYPE_P(v_max_row, T_FIXNUM) != 1)
-		return Qnil;
-	int max_row = NUM2INT(v_max_row);
-	if (max_row <= 0) return Qnil;
-	max_row = URN_MIN(max_row, URN_ODBK_DEPTH);
-
-	long data_ts_e6 = 0;
-
-read_shmem:
-	VALUE r_odbk = rb_ary_new_capa(4);
-	VALUE r_bids = rb_ary_new_capa(max_row);
-	VALUE r_asks = rb_ary_new_capa(max_row);
-
+VALUE _make_odbk_data_if_newer(VALUE v_idx, VALUE v_pairid, VALUE v_max_row, bool comp_ver) {
 	urn_odbk *odbk = _get_valid_urn_odbk(v_idx, v_pairid);
 	if (odbk == NULL) return Qnil;
 
+	int exch_idx = NUM2INT(v_idx);
+	int pairid = NUM2INT(v_pairid);
 	// writer changes timestamp first.
 	// For readers, check ts_e6 before and after reading all data.
 	// if ts_e6 changed, data should be dirty.
-	data_ts_e6 = odbk->w_ts_e6;
+	long data_ts_e6 = odbk->w_ts_e6;
+	long known_data_id = 0l;
+	if (comp_ver) {
+		known_data_id = last_odbk_data_id[exch_idx][pairid];
+		if (known_data_id >= data_ts_e6)
+			return Qnil;
+	}
 
-	// [bids, asks, t, t]
+	int max_row = 99;
+	if (RB_TYPE_P(v_idx, T_FIXNUM) != 1)
+		max_row = NUM2INT(v_max_row);
+	if (max_row <= 0) return Qnil;
+	max_row = URN_MIN(99, max_row);
+
+	long mkt_ts_e6;
+	double bids_l[max_row];
+	double bidp_l[max_row];
+	double asks_l[max_row];
+	double askp_l[max_row];
+	int bid_ct, ask_ct;
+
+read_shmem:
+	// data timestamp(writer changes it firstly) should be same at last.
+	data_ts_e6 = odbk->w_ts_e6;
+	mkt_ts_e6 = odbk->mkt_ts_e6;
+	bid_ct = 0; ask_ct = 0;
 	for (int i = 0; i < max_row; i++) {
 		if (urn_inum_iszero(&(odbk->bidp[i])) &&
 				urn_inum_iszero(&(odbk->askp[i]))) {
 			break;
 		}
-		odbk->bidp[i].s[0] = '\0';
-		odbk->bids[i].s[0] = '\0';
-		odbk->askp[i].s[0] = '\0';
-		odbk->asks[i].s[0] = '\0';
 		if (!urn_inum_iszero(&(odbk->bidp[i]))) {
-			VALUE r_bid = rb_ary_new_capa(2);
-			rb_ary_push(r_bid, DBL2NUM(urn_inum_to_db(&(odbk->bidp[i]))));
-			rb_ary_push(r_bid, DBL2NUM(urn_inum_to_db(&(odbk->bids[i]))));
-			rb_ary_push(r_bids, r_bid);
+			bids_l[bid_ct] = urn_inum_to_db(&(odbk->bids[i]));
+			bidp_l[bid_ct] = urn_inum_to_db(&(odbk->bidp[i]));
+			bid_ct++;
 		}
-		if(!urn_inum_iszero(&(odbk->askp[i]))) {
-			VALUE r_ask = rb_ary_new_capa(2);
-			rb_ary_push(r_ask, DBL2NUM(urn_inum_to_db(&(odbk->askp[i]))));
-			rb_ary_push(r_ask, DBL2NUM(urn_inum_to_db(&(odbk->asks[i]))));
-			rb_ary_push(r_asks, r_ask);
+		if (!urn_inum_iszero(&(odbk->askp[i]))) {
+			askp_l[ask_ct] = urn_inum_to_db(&(odbk->askp[i]));
+			asks_l[ask_ct] = urn_inum_to_db(&(odbk->asks[i]));
+			ask_ct++;
 		}
 	}
-	rb_ary_push(r_odbk, r_bids);
-	rb_ary_push(r_odbk, r_asks);
-	rb_ary_push(r_odbk, LONG2NUM(odbk->w_ts_e6/1000));
-	rb_ary_push(r_odbk, LONG2NUM(odbk->mkt_ts_e6/1000));
-
 	if (data_ts_e6 != odbk->w_ts_e6) {
-		URN_LOG("data_ts_e6 changed, data dirty, retry.");
+		URN_LOGF_C(YELLOW, "%s %s data_ts_e6 changed, data dirty, retry.",
+				urn_shm_exchanges[exch_idx],
+				shmptr_arr[exch_idx]->pairs[pairid]);
+		// choose odbk to read again.
+		odbk = _get_valid_urn_odbk(v_idx, v_pairid);
+		if (odbk == NULL) return Qnil;
+		data_ts_e6 = odbk->w_ts_e6;
+		if (known_data_id >= data_ts_e6) return Qnil;
 		goto read_shmem;
 	}
 
+	// make ruby array [bids, asks, writer_t, mkt_t]
+	VALUE r_odbk = rb_ary_new_capa(4);
+	VALUE r_bids = rb_ary_new_capa(max_row);
+	VALUE r_asks = rb_ary_new_capa(max_row);
+	for (int i=0; i<bid_ct; i++) {
+		VALUE r_bid = rb_ary_new_capa(2);
+		rb_ary_push(r_bid, DBL2NUM(bidp_l[i]));
+		rb_ary_push(r_bid, DBL2NUM(bids_l[i]));
+		rb_ary_push(r_bids, r_bid);
+	}
+	for (int i=0; i<ask_ct; i++) {
+		VALUE r_ask = rb_ary_new_capa(2);
+		rb_ary_push(r_ask, DBL2NUM(askp_l[i]));
+		rb_ary_push(r_ask, DBL2NUM(asks_l[i]));
+		rb_ary_push(r_asks, r_ask);
+	}
+	rb_ary_push(r_odbk, r_bids);
+	rb_ary_push(r_odbk, r_asks);
+	rb_ary_push(r_odbk, LONG2NUM(data_ts_e6/1000));
+	rb_ary_push(r_odbk, LONG2NUM(mkt_ts_e6/1000));
+	// save data time to local cache, next time compare this first.
+	last_odbk_data_id[exch_idx][pairid] = data_ts_e6;
 	return r_odbk;
+}
+
+// Always return shmem odbk without comparing known_data_id
+VALUE method_mktdata_odbk(VALUE self, VALUE v_idx, VALUE v_pairid, VALUE v_max_row) {
+	return _make_odbk_data_if_newer(v_idx, v_pairid, v_max_row, false);
+}
+
+VALUE method_mktdata_new_odbk(VALUE self, VALUE v_idx, VALUE v_pairid, VALUE v_max_row) {
+	return _make_odbk_data_if_newer(v_idx, v_pairid, v_max_row, true);
+}
+
+// For pairid in array,
+// return shmem odbk only when data version > known_data_id
+VALUE method_mktdata_odbk_updates(VALUE self, VALUE v_idx, VALUE v_pairid_ary, VALUE v_max_row) {
+	return Qnil;
 }
 
 // The initialization method for this module
@@ -148,7 +194,11 @@ void Init_urn_mktdata() {
 	rb_define_method(URN_MKTDATA, "mktdata_exch_by_shm_index", method_mktdata_exch, 1);
 	rb_define_method(URN_MKTDATA, "mktdata_pairs", method_mktdata_pairs, 1);
 	rb_define_method(URN_MKTDATA, "mktdata_odbk", method_mktdata_odbk, 3);
+	rb_define_method(URN_MKTDATA, "mktdata_new_odbk", method_mktdata_new_odbk, 3);
 
-	for (int i=0; i<urn_shm_exch_num; i++)
+	for (int i=0; i<urn_shm_exch_num; i++) {
 		shmptr_arr[i] = NULL;
+		for (int j=0; j<urn_odbk_mem_cap; j++)
+			last_odbk_data_id[i][j] = 0l;
+	}
 }
