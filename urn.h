@@ -310,10 +310,10 @@ int urn_inum_parse(urn_inum *i, const char *s) {
 	// right pading '00456'
 	// -> rpad(URN_INUM_PRECISE) '00456000000000'
 	// -> to unsigned long
-	int padto = URN_INUM_PRECISE;
+	unsigned int padto = URN_INUM_PRECISE;
 	char frac_padded[padto+1];
-	int cp_ct = URN_MIN(padto, strlen(frac_s));
-	for (int p = 0; p < padto; p++)
+	unsigned int cp_ct = URN_MIN(padto, strlen(frac_s));
+	for (unsigned int p = 0; p < padto; p++)
 		frac_padded[p] = (p<cp_ct) ? frac_s[p] : '0';
 	frac_padded[padto] = '\0';
 	i->frac_ext = (size_t)(atol(frac_padded));
@@ -386,14 +386,14 @@ typedef struct urn_odbk {
 // on macos the sizeof(urn_odbk_mem) is 2695168, enough to fit in its SHMMAX 4MB
 // 	$sysctl kern.sysv.shmmax
 // 	kern.sysv.shmmax: 4194304
-const int urn_odbk_mem_cap = 512;
+#define urn_odbk_mem_cap 512
 typedef struct urn_odbk_mem {
 	char pairs[512][16];
 	urn_odbk odbks[512][2];
 } urn_odbk_mem;
 
-const int   urn_shm_exch_num = 7;
-char *urn_shm_exchanges[] = { "Binance", "BNCM", "BNUM", "Bybit", "BybitU", "Coinbase", "FTX", "\0"};
+#define urn_shm_exch_num 7
+const char *urn_shm_exchanges[] = { "Binance", "BNCM", "BNUM", "Bybit", "BybitU", "Coinbase", "FTX", "\0"};
 
 int urn_odbk_shm_i(char *exchange) {
 	int i = 0;

@@ -31,7 +31,7 @@ int _prepare_shmptr(int i) {
 
 	key_t shmkey;
 	int shmid;
-	int rv = urn_odbk_shm_init(false, urn_shm_exchanges[i], &shmkey, &shmid, &(shmptr_arr[i]));
+	int rv = urn_odbk_shm_init(false, (char *)(urn_shm_exchanges[i]), &shmkey, &shmid, &(shmptr_arr[i]));
 	return rv;
 }
 
@@ -92,8 +92,8 @@ VALUE _make_odbk_data_if_newer(VALUE v_idx, VALUE v_pairid, VALUE v_max_row, boo
 	// writer changes timestamp first.
 	// For readers, check ts_e6 before and after reading all data.
 	// if ts_e6 changed, data should be dirty.
-	long data_ts_e6 = odbk->w_ts_e6;
-	long known_data_id = 0l;
+	unsigned long data_ts_e6 = odbk->w_ts_e6;
+	unsigned long known_data_id = 0l;
 	if (comp_ver) {
 		known_data_id = last_odbk_data_id[exch_idx][pairid];
 		if (known_data_id >= data_ts_e6)
@@ -103,8 +103,8 @@ VALUE _make_odbk_data_if_newer(VALUE v_idx, VALUE v_pairid, VALUE v_max_row, boo
 	int max_row = 99;
 	if (RB_TYPE_P(v_idx, T_FIXNUM) != 1)
 		max_row = NUM2INT(v_max_row);
+	max_row = URN_MIN(99, (int)max_row);
 	if (max_row <= 0) return Qnil;
-	max_row = URN_MIN(99, max_row);
 
 	long mkt_ts_e6;
 	double bids_l[max_row];

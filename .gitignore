@@ -12,4 +12,5 @@ yyjson.*
 ruby_ext/Makefile
 ruby_ext/*.bundle
 ruby_ext/*.o
+ruby_ext/*.so
 ruby_ext/.sitearchdir.time
