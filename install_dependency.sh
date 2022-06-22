@@ -14,19 +14,19 @@ cd $DIR
 source $DIR/install_nng_wolftls.sh
 
 # JSMN: get jsmn.h
-cd $DIR
-if [ ! -f $DIR/jsmn.h ]; then
-	rm -rf $DIR/jsmn
-	git clone https://github.com/zserge/jsmn.git
-	cp -v $DIR/jsmn/jsmn.h $DIR/
-	rm -rf $DIR/jsmn
-fi
-if [ ! -f $DIR/jsmn.h ]; then
-	echo "jsmn clone failed"
-	exit 1
-else
-	echo "jsmn.h checked"
-fi
+# cd $DIR
+# if [ ! -f $DIR/jsmn.h ]; then
+# 	rm -rf $DIR/jsmn
+# 	git clone https://github.com/zserge/jsmn.git
+# 	cp -v $DIR/jsmn/jsmn.h $DIR/
+# 	rm -rf $DIR/jsmn
+# fi
+# if [ ! -f $DIR/jsmn.h ]; then
+# 	echo "jsmn clone failed"
+# 	exit 1
+# else
+# 	echo "jsmn.h checked"
+# fi
 
 # YYJSON: get yyjson.h yyjson.c
 cd $DIR
