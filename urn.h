@@ -418,11 +418,11 @@ int urn_odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, ur
 		*shmkey, sizeof(urn_odbk_mem), writer ? 'W' : 'R');
 	*shmid = shmget(*shmkey, sizeof(urn_odbk_mem), (writer ? (0644|IPC_CREAT) : (0644)));
 	if (*shmid == -1)
-		URN_FATAL("Could not get shmid in odbk_shm_init()", errno);
+		URN_RET_ON_RV(errno, "Could not get shmid in odbk_shm_init()");
 
 	*shmptr = shmat(*shmid, NULL, 0);
 	if (*shmptr == (void *) -1)
-		URN_FATAL("Unable to attach share memory in odbk_shm_init()", errno);
+		URN_RET_ON_RV(errno, "Unable to attach share memory in odbk_shm_init()");
 	URN_INFOF("odbk_shm_init() done at key %#08x id %d size %lu ptr %p %c",
 		*shmkey, *shmid, sizeof(urn_odbk_mem), *shmptr, writer ? 'W' : 'R');
 	return rv;
