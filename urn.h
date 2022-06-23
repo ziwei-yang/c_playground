@@ -451,7 +451,8 @@ int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
 
 int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 	URN_RET_IF((pairid >= urn_odbk_mem_cap), "pairid too big", ERANGE);
-	printf("odbk_shm_init %d [%s] complete: [%d, %d]\n", pairid, shmp->pairs[pairid],
+	printf("urn_odbk_m m %p %d [%s] complete: [%d, %d]\n",
+		shmp, pairid, shmp->pairs[pairid],
 		shmp->odbks[pairid][0].complete, shmp->odbks[pairid][1].complete);
 
 	urn_odbk *odbk = NULL;
