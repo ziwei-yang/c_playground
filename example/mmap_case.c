@@ -24,6 +24,8 @@ int main_write(int argc, char *argv[]) {
    struct shmseg *shmp;
    char *bufptr;
    int spaceavailable;
+
+   printf("shmget %#08x %lu %d\n", SHM_KEY, sizeof(struct shmseg), 0644|IPC_CREAT);
    shmid = shmget(SHM_KEY, sizeof(struct shmseg), 0644|IPC_CREAT);
    if (shmid == -1) {
       perror("Shared memory");

@@ -386,6 +386,10 @@ typedef struct urn_odbk {
 // on macos the sizeof(urn_odbk_mem) is 2695168, enough to fit in its SHMMAX 4MB
 // 	$sysctl kern.sysv.shmmax
 // 	kern.sysv.shmmax: 4194304
+// 	OR
+// 	$sysctl -a | grep shm
+// To change SHMMAX on macos, see:
+// https://dansketcher.com/2021/03/30/shmmax-error-on-big-sur/
 #define urn_odbk_mem_cap 512
 typedef struct urn_odbk_mem {
 	char pairs[512][16];
@@ -414,11 +418,15 @@ int urn_odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, ur
 	// SHMKEY starts from 0xA001, return -1 if not found.
 	*shmkey += 0xA001;
 
+	int shmflg = 0644;
+	if (writer) shmflg = (shmflg | IPC_CREAT);
+	int desired_sz = sizeof(urn_odbk_mem);
+
 	URN_LOGF("odbk_shm_init() get  at key %#08x size %lu %c",
-		*shmkey, sizeof(urn_odbk_mem), writer ? 'W' : 'R');
-	*shmid = shmget(*shmkey, sizeof(urn_odbk_mem), (writer ? (0644|IPC_CREAT) : (0644)));
+		*shmkey, desired_sz, writer ? 'W' : 'R');
+	*shmid = shmget(*shmkey, desired_sz, shmflg);
 	if (*shmid == -1)
-		URN_RET_ON_RV(errno, "Could not get shmid in odbk_shm_init()");
+		URN_RET_ON_RV(errno, "shmget with shmid failed in odbk_shm_init()");
 
 	*shmptr = shmat(*shmid, NULL, 0);
 	if (*shmptr == (void *) -1)
@@ -451,8 +459,7 @@ int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
 
 int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 	URN_RET_IF((pairid >= urn_odbk_mem_cap), "pairid too big", ERANGE);
-	printf("urn_odbk_m m %p %d [%s] complete: [%d, %d]\n",
-		shmp, pairid, shmp->pairs[pairid],
+	printf("odbk_shm_init %d [%s] complete: [%d, %d]\n", pairid, shmp->pairs[pairid],
 		shmp->odbks[pairid][0].complete, shmp->odbks[pairid][1].complete);
 
 	urn_odbk *odbk = NULL;
