@@ -420,7 +420,7 @@ int urn_odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, ur
 
 	int shmflg = 0644;
 	if (writer) shmflg = (shmflg | IPC_CREAT);
-	int desired_sz = sizeof(urn_odbk_mem);
+	unsigned long desired_sz = sizeof(urn_odbk_mem);
 
 	URN_LOGF("odbk_shm_init() get  at key %#08x size %lu %c",
 		*shmkey, desired_sz, writer ? 'W' : 'R');

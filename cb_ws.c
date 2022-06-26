@@ -16,10 +16,15 @@ int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
 char *preprocess_pair(char *pair) {
 	// Dirty tricks to broadcast market data.
-	// USDC-CVC data broadcast to -> USDT-CVC
 	if (pair == NULL) URN_FATAL("pair is NULL", EINVAL);
 	if ((strcmp(pair, "USDC-CVC") == 0) || (strcmp(pair, "USDC-DNT") == 0)) {
+		// USDC-CVC data broadcast to -> USDT-CVC
 		pair[3] = 'T';
+	} else if (strncmp(pair, "USDC-", 4) == 0) {
+		// USDC-ETH data broadcast to -> USD-ETH
+		// move 1 forward at pos 3.
+		strcpy(pair+3, pair+4);
+		return pair;
 	}
 	return pair;
 }
@@ -36,6 +41,9 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 	} else if (strcmp(pair->asset, "CVC") == 0 && strcmp(pair->currency, "USDT") == 0) {
 		// see preprocess_pair()
 		strcpy(*str, "CVC-USDC");
+	} else if (strcmp(pair->asset, "USD") == 0) {
+		// see preprocess_pair()
+		sprintf(*str, "%s-USDC", pair->currency);
 	} else { // USDT-BTC   -> BTC-USDT
 		sprintf(*str, "%s-%s", pair->asset, pair->currency);
 	}
