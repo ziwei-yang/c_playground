@@ -6,6 +6,8 @@ VALUE URN_MKTDATA = Qnil;
 urn_odbk_mem *shmptr_arr[urn_shm_exch_num];
 long last_odbk_data_id[urn_shm_exch_num][urn_odbk_mem_cap];
 
+urn_odbk_clients *clients_shmptr_arr[urn_shm_exch_num];
+
 //////////////////////////////////////////
 // Ruby Methods below.
 //////////////////////////////////////////
@@ -29,9 +31,7 @@ int _prepare_shmptr(int i) {
 	if (shmptr_arr[i] != NULL) return 0;
 	URN_INFOF("Attach to urn_odbk_shm %d %s", i, urn_shm_exchanges[i]);
 
-	key_t shmkey;
-	int shmid;
-	int rv = urn_odbk_shm_init(false, (char *)(urn_shm_exchanges[i]), &shmkey, &shmid, &(shmptr_arr[i]));
+	int rv = urn_odbk_shm_init(false, (char *)(urn_shm_exchanges[i]), &(shmptr_arr[i]));
 	return rv;
 }
 
@@ -180,6 +180,39 @@ VALUE method_mktdata_new_odbk(VALUE self, VALUE v_idx, VALUE v_pairid, VALUE v_m
 	return _make_odbk_data_if_newer(v_idx, v_pairid, v_max_row, true);
 }
 
+int _prepare_clients_shmptr(int i) {
+	if (i < 0 || i >= urn_shm_exch_num) return ERANGE;
+	if (clients_shmptr_arr[i] != NULL) return 0;
+	URN_INFOF("Attach to urn_odbk_clients shm %d %s", i, urn_shm_exchanges[i]);
+
+	int rv = urn_odbk_clients_init((char *)(urn_shm_exchanges[i]), &(clients_shmptr_arr[i]));
+	return rv;
+}
+
+VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pairid) {
+	if (RB_TYPE_P(v_idx, T_FIXNUM) != 1)
+		return Qnil;
+	int idx = NUM2INT(v_idx);
+	if (idx < 0 || idx >= urn_shm_exch_num) return Qnil;
+
+	// Prepare share memory ptr, only do this once.
+	int rv = 0;
+	if (clients_shmptr_arr[idx] == NULL) {
+		if ((rv = _prepare_clients_shmptr(idx)) != 0) {
+			URN_WARNF("Error in _prepare_clients_shmptr %d", idx);
+			return Qnil;
+		}
+	}
+
+	if (RB_TYPE_P(v_pairid, T_FIXNUM) != 1)
+		return Qnil;
+	int pairid = NUM2INT(v_pairid);
+	if (pairid < 1 || pairid >= urn_odbk_mem_cap) return Qnil;
+
+	rv = urn_odbk_clients_reg(clients_shmptr_arr[idx], pairid);
+	return INT2NUM(rv);
+}
+
 // The initialization method for this module
 // Prototype for the initialization method - Ruby calls this, not you
 void Init_urn_mktdata() {
@@ -189,6 +222,7 @@ void Init_urn_mktdata() {
 	rb_define_method(URN_MKTDATA, "mktdata_pairs", method_mktdata_pairs, 1);
 	rb_define_method(URN_MKTDATA, "mktdata_odbk", method_mktdata_odbk, 3);
 	rb_define_method(URN_MKTDATA, "mktdata_new_odbk", method_mktdata_new_odbk, 3);
+	rb_define_method(URN_MKTDATA, "mktdata_reg_sigusr1", method_mktdata_reg_sigusr1, 2);
 
 	for (int i=0; i<urn_shm_exch_num; i++) {
 		shmptr_arr[i] = NULL;

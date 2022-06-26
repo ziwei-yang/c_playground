@@ -48,5 +48,13 @@ batch.times {
 }
 end_t = Time.now.to_f
 puts "Cost seconds #{end_t - start_t}, single op #{(end_t-start_t)*1000_000/batch} us"
+puts "--"
+
+trap("SIGUSR1") {
+  puts mktdata_new_odbk(5, 1, 9).inspect
+}
+rv = mktdata_reg_sigusr1(5, 1)
+puts "mktdata_reg_sigusr1() = #{rv}"
+sleep 1
 
 puts "--"
