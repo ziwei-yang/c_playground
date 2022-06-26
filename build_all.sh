@@ -11,3 +11,9 @@ for f in $DIR/* ; do
 	./build.sh $f -o tmp/$f
 	[[ $? != 0 ]] && echo "Failed" && exit 1
 done
+
+for f in shmutil.c mkt_viewer.c ; do
+	echo "./build.sh $f -o tmp/$f"
+	./build.sh $f -o tmp/$f
+	[[ $? != 0 ]] && echo "Failed" && exit 1
+done
