@@ -119,9 +119,8 @@ char         *pub_tick_key_arr[MAX_PAIRS]; // kv snapshot
 redisContext *redis;
 
 ///////////// write to SHRMEM //////////////
-key_t  odbk_shmkey= 0;
-int    odbk_shmid = -1;
-struct urn_odbk_mem *odbk_shmptr = NULL;
+urn_odbk_mem *odbk_shmptr = NULL;
+urn_odbk_clients *odbk_clients_shmptr = NULL;
 struct timeval odbk_shm_w_t;
 int odbk_shm_write(int pairid);
 
@@ -188,10 +187,13 @@ int main(int argc, char **argv) {
 		return URN_FATAL("Error in init redis", rv);
 #endif
 #ifdef WRITE_SHRMEM
-	rv = urn_odbk_shm_init(true, exchange, &odbk_shmkey, &odbk_shmid, &odbk_shmptr);
+	rv = urn_odbk_shm_init(true, exchange, &odbk_shmptr);
 	if (rv != 0)
 		return URN_FATAL("Error in init share memory", rv);
 	rv = urn_odbk_shm_write_index(odbk_shmptr, pair_arr, max_pair_id);
+	if (rv != 0)
+		return URN_FATAL("Error in odbk_shm_write_index()", rv);
+	rv = urn_odbk_clients_init(exchange, &odbk_clients_shmptr);
 	if (rv != 0)
 		return URN_FATAL("Error in odbk_shm_write_index()", rv);
 #endif
@@ -889,6 +891,8 @@ int odbk_shm_write(int pairid) {
 			(long)(odbk_shm_w_t.tv_sec) * 1000000l + (long)(odbk_shm_w_t.tv_usec),
 			exchange
 		      );
+	// notify share memory clients.
+	urn_odbk_clients_notify(odbk_clients_shmptr, pairid);
 	return 0;
 }
 #endif

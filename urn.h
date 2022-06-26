@@ -366,6 +366,8 @@ int urn_inum_alloc(urn_inum **i, const char *s) {
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/types.h>
+#include <signal.h>
+#include <unistd.h>
 
 /* whole orderbook in fixed size to be put in share memory */
 /* each urn_inum has a fixed size 8 bytes */
@@ -392,10 +394,14 @@ typedef struct urn_odbk {
 // https://dansketcher.com/2021/03/30/shmmax-error-on-big-sur/
 #define urn_odbk_mem_cap 512
 typedef struct urn_odbk_mem {
-	char pairs[512][16];
-	urn_odbk odbks[512][2];
+	char pairs[urn_odbk_mem_cap][16];
+	urn_odbk odbks[urn_odbk_mem_cap][2];
 } urn_odbk_mem;
-
+#define urn_odbk_pid_cap 8
+typedef struct urn_odbk_clients {
+	char pids_desc[urn_odbk_mem_cap][urn_odbk_pid_cap][64];
+	pid_t pids[urn_odbk_mem_cap][urn_odbk_pid_cap];
+} urn_odbk_clients;
 #define urn_shm_exch_num 7
 const char *urn_shm_exchanges[] = { "Binance", "BNCM", "BNUM", "Bybit", "BybitU", "Coinbase", "FTX", "\0"};
 
@@ -410,8 +416,13 @@ int urn_odbk_shm_i(char *exchange) {
 	return -1;
 }
 
-int urn_odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, urn_odbk_mem **shmptr) {
+int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr) {
 	int rv = 0;
+	key_t tmp_shmkey = 0;
+	key_t *shmkey = &tmp_shmkey;
+	int tmp_shmid = 0;
+	int *shmid = &tmp_shmid;
+
 	*shmkey = urn_odbk_shm_i(exchange);
 	if (*shmkey < 0)
 		URN_RET_ON_RV(EINVAL, "Unknown exchange in odbk_shm_init()");
@@ -419,20 +430,36 @@ int urn_odbk_shm_init(bool writer, char *exchange, key_t *shmkey, int *shmid, ur
 	*shmkey += 0xA001;
 
 	int shmflg = 0644;
-	if (writer) shmflg = (shmflg | IPC_CREAT);
+	bool created = false;
 	unsigned long desired_sz = sizeof(urn_odbk_mem);
 
 	URN_LOGF("odbk_shm_init() get  at key %#08x size %lu %c",
 		*shmkey, desired_sz, writer ? 'W' : 'R');
 	*shmid = shmget(*shmkey, desired_sz, shmflg);
+	if ((*shmid == -1) && (errno == ENOENT) && writer) {
+		URN_LOGF("odbk_shm_init() new  at key %#08x size %lu %c",
+			*shmkey, desired_sz, writer ? 'W' : 'R');
+		*shmid = shmget(*shmkey, desired_sz, shmflg | IPC_CREAT);
+		created = true;
+	}
 	if (*shmid == -1)
 		URN_RET_ON_RV(errno, "shmget with shmid failed in odbk_shm_init()");
 
 	*shmptr = shmat(*shmid, NULL, 0);
 	if (*shmptr == (void *) -1)
 		URN_RET_ON_RV(errno, "Unable to attach share memory in odbk_shm_init()");
+
+	if (created) {
+		URN_INFO("Cleaning new created urn_odbk_mem");
+		// set pair name NULL, mark all odbk dirty.
+		for (int i = 0; i < urn_odbk_mem_cap; i++) {
+			(*shmptr)->pairs[i][0] = '\0';
+			(*shmptr)->odbks[i][0].complete = false;
+			(*shmptr)->odbks[i][1].complete = false;
+		}
+	}
 	URN_INFOF("odbk_shm_init() done at key %#08x id %d size %lu ptr %p %c",
-		*shmkey, *shmid, sizeof(urn_odbk_mem), *shmptr, writer ? 'W' : 'R');
+		*shmkey, *shmid, desired_sz, *shmptr, writer ? 'W' : 'R');
 	return rv;
 }
 
@@ -477,11 +504,17 @@ int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 	long w_ts_e6 = odbk->w_ts_e6;
 	double latency_e3 = (w_ts_e6 - mkt_ts_e6)/1000.0;
 
-	printf("mkt_t %02lu:%02lu:%02lu.%06ld latency %5.3f ms \n", \
-			((mkt_ts_e6/1000000) % 86400)/3600, \
-			((mkt_ts_e6/1000000) % 3600)/60, \
-			((mkt_ts_e6/1000000) % 60), \
-			mkt_ts_e6 % 1000000, latency_e3);
+	struct timeval now_t;
+	gettimeofday(&now_t, NULL);
+
+	long shm_latency_e6 = now_t.tv_sec*1000000 + now_t.tv_usec - w_ts_e6;
+
+	printf("mkt %02lu:%02lu:%02lu.%06ld shm_w +%8.3f ms shm_r +%6.3f ms\n",
+			((mkt_ts_e6/1000000) % 86400)/3600,
+			((mkt_ts_e6/1000000) % 3600)/60,
+			((mkt_ts_e6/1000000) % 60),
+			mkt_ts_e6 % 1000000, latency_e3,
+			((float)shm_latency_e6)/1000);
 
 	for (int i = 0; i < urn_odbk_mem_cap; i++) {
 		if (urn_inum_iszero(&(odbk->bidp[i])) &&
@@ -497,6 +530,96 @@ int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 			urn_inum_str(&(odbk->asks[i])));
 	}
 	printf("odbk_shm_init %d [%s] -- end --\n", pairid, shmp->pairs[pairid]);
+	return 0;
+}
+
+int urn_odbk_clients_init(char *exchange, urn_odbk_clients **shmptr) {
+	int rv = 0;
+	key_t tmp_shmkey = 0;
+	key_t *shmkey = &tmp_shmkey;
+	int tmp_shmid = 0;
+	int *shmid = &tmp_shmid;
+	bool writer = true; // Always true in urn_odbk_clients operation.
+
+	*shmkey = urn_odbk_shm_i(exchange);
+	if (*shmkey < 0)
+		URN_RET_ON_RV(EINVAL, "Unknown exchange in odbk_shm_init()");
+	// clients SHMKEY starts from 0xA0A1, return -1 if not found.
+	*shmkey += 0xA0A1;
+
+	int shmflg = 0644;
+	bool created = false;
+	unsigned long desired_sz = sizeof(urn_odbk_clients);
+
+	URN_LOGF("odbk_shm_init() get  at key %#08x size %lu %c",
+		*shmkey, desired_sz, writer ? 'W' : 'R');
+	*shmid = shmget(*shmkey, desired_sz, shmflg);
+	if ((*shmid == -1) && (errno == ENOENT) && writer) {
+		URN_LOGF("odbk_shm_init() new  at key %#08x size %lu %c",
+			*shmkey, desired_sz, writer ? 'W' : 'R');
+		*shmid = shmget(*shmkey, desired_sz, shmflg | IPC_CREAT);
+		created = true;
+	}
+	if (*shmid == -1) {
+		URN_RET_ON_RV(errno, "shmget with shmid failed in odbk_shm_init()");
+	}
+
+	*shmptr = shmat(*shmid, NULL, 0);
+	if (*shmptr == (void *) -1)
+		URN_RET_ON_RV(errno, "Unable to attach share memory in odbk_shm_init()");
+
+	if (created) {
+		URN_INFO("Cleaning new created urn_odbk_clients");
+		// set pid as zero, desc NULL
+		for (int i = 0; i < urn_odbk_mem_cap; i++) {
+			for (int j = 0; j < urn_odbk_pid_cap; j++) {
+				(*shmptr)->pids[i][j] = 0;
+				(*shmptr)->pids_desc[i][j][0] = '\0';
+			}
+		}
+	}
+	URN_INFOF("odbk_shm_init() done at key %#08x id %d size %lu ptr %p %c",
+		*shmkey, *shmid, desired_sz, *shmptr, writer ? 'W' : 'R');
+	return rv;
+}
+
+int urn_odbk_clients_reg(urn_odbk_clients *shmp, int pairid) {
+	pid_t p = getpid();
+	int rv = 0;
+	for (int j = 0; j < urn_odbk_pid_cap; j++) {
+		if (shmp->pids[pairid][j] > 0)
+			continue;
+		URN_LOGF("Register urn odbk client pairid %d PID %d", pairid, p);
+		shmp->pids[pairid][j] = p;
+		return 0;
+	}
+	URN_WARNF("Failed to register urn odbk client pairid %d PID %d", pairid, p);
+	return ENOMEM;
+}
+
+int urn_odbk_clients_notify(urn_odbk_clients *shmp, int pairid) {
+	pid_t p = 0;
+	int rv = 0;
+	for (int j = 0; j < urn_odbk_pid_cap; j++) {
+		p = shmp->pids[pairid][j];
+		if (p <= 0) continue;
+		rv = kill(p, SIGUSR1);
+		if (rv == 0) continue;
+		perror("Error in kill SIGUSR1");
+		URN_WARNF("Delete urn odbk client pid %d", p);
+		shmp->pids[pairid][j] = 0;
+	}
+	return rv;
+}
+
+int urn_odbk_clients_print(urn_odbk_clients *shmp, int pairid) {
+	pid_t p = getpid();
+	printf("clients for pairid %d [", pairid);
+	for (int j = 0; j < urn_odbk_pid_cap; j++) {
+		p = shmp->pids[pairid][j];
+		if (p > 0) printf(" %d", p);
+	}
+	printf("]\n");
 	return 0;
 }
 #endif

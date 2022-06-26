@@ -23,8 +23,9 @@ int urn_redis(redisContext **ctx, char *host, char *portc, char *pswd, urn_func_
 		return URN_ERRRET("Could not allocate redis context", 1);
 	if ((*ctx)->err) {
 		rv = ((*ctx)->err);
+		if (rv == 0) rv = EINVAL;
 		redisFree(*ctx);
-		return URN_ERRRET("Redis context init error", (*ctx)->err);
+		return URN_ERRRET("Redis context init error", rv);
 	}
 	if (opt == NULL || (opt && !(opt->silent)))
 		URN_LOGF("connected %s %d", host, port);
