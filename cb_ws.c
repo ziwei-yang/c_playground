@@ -21,9 +21,11 @@ char *preprocess_pair(char *pair) {
 		// USDC-CVC data broadcast to -> USDT-CVC
 		pair[3] = 'T';
 	} else if (strncmp(pair, "USDC-", 4) == 0) {
+		int slen = strlen(pair);
 		// USDC-ETH data broadcast to -> USD-ETH
 		// move 1 forward at pos 3.
-		strcpy(pair+3, pair+4);
+		for (int i=3; i<slen; i++)
+			pair[i] = pair[i+1];
 		return pair;
 	}
 	return pair;

@@ -23,8 +23,9 @@ char *preprocess_pair(char *pair) {
 		// BUSD-ASSET -> USD-ASSET
 		if (slen > 5 && pair[0] == 'B' && pair[1] == 'U' &&
 				pair[2] == 'S' && pair[3] == 'D' && pair[4] == '-') {
-			// move 1 forward.
-			strcpy(pair, pair+1);
+			// move 1 forward, strcpy(n, n+1) crashes on macos
+			for (int i=0; i<slen; i++)
+				pair[i] = pair[i+1];
 			return pair;
 		}
 		return pair;

@@ -691,9 +691,13 @@ static int parse_args_build_idx(int argc, char **argv) {
 		sprintf(pub_tick_key_arr[pairid], "URANUS:%s:%s:trades", exchange, upcase_s);
 		URN_LOGF("\tpair_arr %p pair_arr[%d] %p %s", pair_arr, pairid, &(pair_arr[pairid]), upcase_s);
 
+		URN_DEBUGF("set depth_chn_to_pairid %s %d", depth_chn, pairid);
 		urn_hmap_set(depth_chn_to_pairid, depth_chn, (uintptr_t)pairid);
+		URN_DEBUGF("set depth_snpsht_chn_to_pairid %s %d", depth_snpsht_chn, pairid);
 		urn_hmap_set(depth_snpsht_chn_to_pairid, depth_snpsht_chn, (uintptr_t)pairid);
+		URN_DEBUGF("set trade_chn_to_pairid %s %d", trade_chn, pairid);
 		urn_hmap_set(trade_chn_to_pairid, trade_chn, (uintptr_t)pairid);
+		URN_DEBUGF("i %d max_pair_id %d", i, pairid);
 		max_pair_id = pairid;
 		chn_ct ++;
 	}
