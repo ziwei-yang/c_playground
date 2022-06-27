@@ -189,6 +189,8 @@ int _prepare_clients_shmptr(int i) {
 	return rv;
 }
 
+void sigusr1_handler(int sig) { return; }
+
 VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pairid) {
 	if (RB_TYPE_P(v_idx, T_FIXNUM) != 1)
 		return Qnil;
@@ -209,6 +211,7 @@ VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pairid) {
 	int pairid = NUM2INT(v_pairid);
 	if (pairid < 1 || pairid >= urn_odbk_mem_cap) return Qnil;
 
+	signal(SIGUSR1, sigusr1_handler);
 	rv = urn_odbk_clients_reg(clients_shmptr_arr[idx], pairid);
 	return INT2NUM(rv);
 }
