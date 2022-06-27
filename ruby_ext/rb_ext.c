@@ -191,6 +191,9 @@ int _prepare_clients_shmptr(int i) {
 
 void sigusr1_handler(int sig) { return; }
 
+/* macos has no sigtimedwait(); use sigwait() + alarm() to simulate */
+void macos_sigalrm_handler(int sig) { kill(getpid(), SIGUSR1); }
+
 VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pairid) {
 	if (RB_TYPE_P(v_idx, T_FIXNUM) != 1)
 		return Qnil;
@@ -212,6 +215,9 @@ VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pairid) {
 	if (pairid < 1 || pairid >= urn_odbk_mem_cap) return Qnil;
 
 	signal(SIGUSR1, sigusr1_handler);
+#if __APPLE__
+	signal(SIGALRM, macos_sigalrm_handler);
+#endif
 	rv = urn_odbk_clients_reg(clients_shmptr_arr[idx], pairid);
 	return INT2NUM(rv);
 }
@@ -237,7 +243,19 @@ VALUE method_sigusr1_timedwait(VALUE self, VALUE v_waits) {
 	} else
 		return Qnil;
 	// URN_INFOF("sigtimedwait %lds, %ldns", timeout.tv_sec, timeout.tv_nsec);
+#if __APPLE__
+	// macos has no sigtimedwait(); timeout makes no different.
+	// setup a alarm to send self a SIGUSR1
+	unsigned secs = (unsigned)(timeout.tv_sec);
+	alarm(URN_MAX(secs, 1));
+	int sig = 0;
+	while(true) {
+		sigwait(&sigusr1_set, &sig);
+		if (sig == SIGUSR1) break;
+	}
+#else
 	int sig = sigtimedwait(&sigusr1_set, NULL, &timeout);
+#endif
 	return INT2NUM(sig);
 }
 

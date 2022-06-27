@@ -17,3 +17,7 @@ for f in shmutil.c mkt_viewer.c ; do
 	./build.sh $f -o tmp/$f
 	[[ $? != 0 ]] && echo "Failed" && exit 1
 done
+
+cd $DIR/ruby_ext
+echo "rvm use 3.0 ; ruby extconf.rb ; make"
+rvm use 3.0 && ruby extconf.rb && make
