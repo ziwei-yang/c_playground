@@ -585,7 +585,6 @@ int urn_odbk_clients_init(char *exchange, urn_odbk_clients **shmptr) {
 
 int urn_odbk_clients_reg(urn_odbk_clients *shmp, int pairid) {
 	pid_t p = getpid();
-	int rv = 0;
 	for (int j = 0; j < urn_odbk_pid_cap; j++) {
 		if (shmp->pids[pairid][j] > 0)
 			continue;

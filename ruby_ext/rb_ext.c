@@ -213,6 +213,31 @@ VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pairid) {
 	return INT2NUM(rv);
 }
 
+sigset_t sigusr1_set;
+VALUE method_sigusr1_timedwait(VALUE self, VALUE v_waits) {
+	struct timespec timeout;
+	if (RB_TYPE_P(v_waits, T_FIXNUM) == 1) {
+		timeout.tv_sec = NUM2INT(v_waits);
+		timeout.tv_nsec = 0;
+	} else if (RB_TYPE_P(v_waits, T_FLOAT) == 1) {
+		double f = NUM2DBL(v_waits);
+		timeout.tv_sec = (long)f;
+		timeout.tv_nsec = (long)((f - (long)f) * 1000000000l);
+	} else if (RB_TYPE_P(v_waits, T_NIL) == 1) {
+		// wait without timer
+		int sig = 0;
+		while(true) {
+			sigwait(&sigusr1_set, &sig);
+			if (sig == SIGUSR1) break;
+		}
+		return INT2NUM(sig);
+	} else
+		return Qnil;
+	// URN_INFOF("sigtimedwait %lds, %ldns", timeout.tv_sec, timeout.tv_nsec);
+	int sig = sigtimedwait(&sigusr1_set, NULL, &timeout);
+	return INT2NUM(sig);
+}
+
 // The initialization method for this module
 // Prototype for the initialization method - Ruby calls this, not you
 void Init_urn_mktdata() {
@@ -223,10 +248,13 @@ void Init_urn_mktdata() {
 	rb_define_method(URN_MKTDATA, "mktdata_odbk", method_mktdata_odbk, 3);
 	rb_define_method(URN_MKTDATA, "mktdata_new_odbk", method_mktdata_new_odbk, 3);
 	rb_define_method(URN_MKTDATA, "mktdata_reg_sigusr1", method_mktdata_reg_sigusr1, 2);
+	rb_define_method(URN_MKTDATA, "mktdata_sigusr1_timedwait", method_sigusr1_timedwait, 1);
 
 	for (int i=0; i<urn_shm_exch_num; i++) {
 		shmptr_arr[i] = NULL;
 		for (int j=0; j<urn_odbk_mem_cap; j++)
 			last_odbk_data_id[i][j] = 0l;
 	}
+	sigemptyset(&sigusr1_set);
+	sigaddset(&sigusr1_set, SIGUSR1);
 }
