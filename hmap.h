@@ -6,11 +6,11 @@
 
 #define urn_hmap_init(size)                hashmap_create(size);
 #define urn_hmap_free(hmap)                hashmap_free(hmap);
-#define urn_hmap_set(hmap, str, ptr) hashmap_set(hmap, str, strlen(str), (uintptr_t)(ptr));
+#define urn_hmap_set(hmap, str, ptr)       hashmap_set(hmap, str, strlen(str), (uintptr_t)(ptr));
 #define urn_hmap_setstr(hmap, str, ptr)    hashmap_set(hmap, str, strlen(str), (uintptr_t)(ptr));
 #define urn_hmap_del(hmap, str, slen)      hashmap_remove(hmap, str, slen);
 #define urn_hmap_delstr(hmap, str)         hashmap_remove(hmap, str, strlen(str));
-#define urn_hmap_get(hmap, str, ptr) hashmap_get(hmap, (void *)str, strlen(str), (uintptr_t *)(ptr));
+#define urn_hmap_getptr(hmap, str, ptr)    hashmap_get(hmap, (void *)str, strlen(str), (ptr));
 #define urn_hmap_getstr(hmap, str, ptr)    hashmap_get(hmap, (void *)str, strlen(str), (uintptr_t *)(ptr));
 
 /**

@@ -215,12 +215,12 @@ int on_wss_msg(char *msg, size_t len) {
 		URN_RET_ON_NULL(jcore_data = yyjson_obj_get(jroot, "data"), "No data", EINVAL);
 
 		uintptr_t pairid = 0;
-		urn_hmap_get(depth_chn_to_pairid, channel, &pairid);
+		urn_hmap_getptr(depth_chn_to_pairid, channel, &pairid);
 		if (pairid != 0) {
 			URN_RET_ON_NULL(jval = yyjson_obj_get(jcore_data, "E"), "No data/E", EINVAL);
 			long ts_e6 = yyjson_get_uint(jval) * 1000l;
 			odbk_t_arr[pairid] = ts_e6;
-			wss_stat_mkt_ts = ts_e6;
+			wss_mkt_ts = ts_e6;
 			newodbk_arr[pairid] ++;
 
 			char *depth_pair = pair_arr[pairid];
@@ -230,7 +230,7 @@ int on_wss_msg(char *msg, size_t len) {
 			goto final;
 		}
 
-		urn_hmap_get(depth_snpsht_chn_to_pairid, channel, &pairid);
+		urn_hmap_getptr(depth_snpsht_chn_to_pairid, channel, &pairid);
 		if (pairid != 0) {
 			// No E in snapshot data.
 			char *depth_pair = pair_arr[pairid];
@@ -240,7 +240,7 @@ int on_wss_msg(char *msg, size_t len) {
 			goto final;
 		}
 
-		urn_hmap_get(trade_chn_to_pairid, channel, &pairid);
+		urn_hmap_getptr(trade_chn_to_pairid, channel, &pairid);
 		if (pairid != 0) {
 			URN_RET_ON_NULL(jval = yyjson_obj_get(jcore_data, "E"), "No data/E", EINVAL);
 			long ts_e6 = yyjson_get_int(jval) * 1000l;

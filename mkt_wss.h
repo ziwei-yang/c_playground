@@ -103,7 +103,7 @@ unsigned int wss_stat_sz;
 unsigned int wss_stat_ct;
 struct timespec wss_stat_t;
 int wss_stat_per_e = 8;
-long wss_stat_mkt_ts = 0;
+long wss_mkt_ts = 0;
 long mkt_latency_ms = 0;
 
 struct timespec _tmp_clock;
@@ -246,6 +246,14 @@ char wss_uri[256];
 int wss_connect() {
 	int rv = 0;
 	mkt_data_set_wss_url(wss_uri);
+	// wss_url must ends with / if no path given.
+	int url_slen = strlen(wss_uri);
+	int slash_ct = 0;
+	for (int i=0; i<url_slen; i++)
+		if (wss_uri[i] == '/')
+			slash_ct ++;
+	if (slash_ct < 3)
+		return URN_FATAL("Make sure wss_url has a path", EINVAL);
 	nng_aio *dialer_aio = NULL;
 	nng_stream_dialer *dialer = NULL;
 	nng_stream *stream = NULL;
@@ -284,10 +292,11 @@ int wss_connect() {
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &brdcst_t);
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &wss_req_t);
 
-	while(true) {
 #ifdef URN_WSS_DEBUG
+	while(wss_stat_ct < 100) {
 		if ((rv = nngaio_recv_wait_res(stream, recv_aio, recv_iov, &recv_bytes, "<-- recv wait", "<-- recv poll")) != 0)
 #else
+	while(true) {
 		if ((rv = nngaio_recv_wait_res(stream, recv_aio, recv_iov, &recv_bytes, NULL, NULL)) != 0)
 #endif
 		{
@@ -500,10 +509,10 @@ final:
 }
 
 static void wss_stat() {
-	if (wss_stat_mkt_ts != 0) {
+	if (wss_mkt_ts != 0) {
 		clock_gettime(CLOCK_REALTIME, &_tmp_clock);
 		mkt_latency_ms = _tmp_clock.tv_sec * 1000l + 
-			_tmp_clock.tv_nsec/1000000l - wss_stat_mkt_ts/1000l;
+			_tmp_clock.tv_nsec/1000000l - wss_mkt_ts/1000l;
 	}
 
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);

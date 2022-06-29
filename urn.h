@@ -402,8 +402,11 @@ typedef struct urn_odbk_clients {
 	char pids_desc[urn_odbk_mem_cap][urn_odbk_pid_cap][64];
 	pid_t pids[urn_odbk_mem_cap][urn_odbk_pid_cap];
 } urn_odbk_clients;
-#define urn_shm_exch_num 7
-const char *urn_shm_exchanges[] = { "Binance", "BNCM", "BNUM", "Bybit", "BybitU", "Coinbase", "FTX", "\0"};
+#define urn_shm_exch_num 8
+const char *urn_shm_exchanges[] = {
+	"Binance", "BNCM", "BNUM", "Bybit",
+	"BybitU", "Coinbase", "FTX", "Kraken",
+	"\0"};
 
 int urn_odbk_shm_i(char *exchange) {
 	int i = 0;

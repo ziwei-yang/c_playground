@@ -113,7 +113,7 @@ int on_wss_msg(char *msg, size_t len) {
 
 	uintptr_t pairid = 0;
 	if (strcmp(channel, "orderbook") == 0) {
-		urn_hmap_get(depth_chn_to_pairid, market, &pairid);
+		urn_hmap_getptr(depth_chn_to_pairid, market, &pairid);
 		if (pairid == 0) {
 			URN_WARNF("on_wss_msg pairid could not located %s\n%.*s", market, (int)len, msg);
 			goto final;
@@ -139,7 +139,7 @@ int on_wss_msg(char *msg, size_t len) {
 		odbk_t_arr[pairid] = ts_e6;
 
 		newodbk_arr[pairid] ++;
-		wss_stat_mkt_ts = odbk_t_arr[pairid];
+		wss_mkt_ts = odbk_t_arr[pairid];
 
 		if (strcmp(action, "partial") == 0) {
 			URN_DEBUGF("\t -> odbk pair snapshot %lu %s %ld", pairid, depth_pair, ts_e6);

@@ -19,6 +19,8 @@ elif [[ $1 == 'bncm' ]]; then
 	$DIR/run.sh bnn_ws.c usd-ada@p usd-bnb@p usd-doge@p usd-eos@p usd-sol@p usd-xrp@p
 elif [[ $1 == 'coinbase' ]]; then
 	$DIR/run.sh cb_ws.c 1inch aave ada atom bal bat comp dash doge eos eth link ltc storj uni zec zrx eth-ada eth-bat eth-link usdc-ada usdc-ada usdc-bat usdc-btc usdc-btc usdc-cvc usdc-cvc usdc-dnt usdc-dnt usdc-eth usdc-eth usdc-usdt usdc-usdt usdc-zec usdc-zec usdt-ada usdt-alcx usdt-ape usdt-atom usdt-avax usdt-axs usdt-badger usdt-btc usdt-cro usdt-doge usdt-eth usdt-gala usdt-icp usdt-link usdt-mina usdt-tru
+elif [[ $1 == 'kraken' ]]; then
+	$DIR/run.sh krk_ws.c aave ada atom bal bat comp dash doge eos eth link lsk ltc sc storj trx uni xmr xrp zec zrx eth-aave eth-ada eth-atom eth-bal eth-bat eth-comp eth-eos eth-link eth-lsk eth-ltc eth-sc eth-storj eth-trx eth-uni eth-xrp usd-aave usd-ada usd-ape usd-astr usd-atom usd-bal usd-bat usd-btc usd-comp usd-dash usd-doge usd-dot usd-eos usd-eth usd-fil usd-fxs usd-imx usd-jasmy usd-link usd-lsk usd-ltc usd-mina usd-sc usd-storj usd-trx usd-uni usd-usdc usd-usdt usd-xrp usd-zec usd-zrx usdc-btc usdc-eth usdt-ada usdt-btc usdt-doge usdt-dot usdt-eos usdt-eth usdt-link usdt-ltc usdt-usdc usdt-xrp
 else
 	echo "Not supported $@"
 	exit 1

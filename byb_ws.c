@@ -129,7 +129,7 @@ int on_wss_msg(char *msg, size_t len) {
 
 	// Most cases: depth channel
 	uintptr_t pairid = 0;
-	urn_hmap_get(depth_chn_to_pairid, topic, &pairid);
+	urn_hmap_getptr(depth_chn_to_pairid, topic, &pairid);
 	if (pairid != 0) {
 		char *depth_pair = pair_arr[pairid];
 		URN_DEBUGF("depth_pair id %lu %s for topic %s", pairid, depth_pair, topic);
@@ -154,7 +154,7 @@ int on_wss_msg(char *msg, size_t len) {
 			}
 		}
 		newodbk_arr[pairid] ++;
-		wss_stat_mkt_ts = odbk_t_arr[pairid];
+		wss_mkt_ts = odbk_t_arr[pairid];
 
 		if (depth_pair == NULL) {
 			URN_WARNF("NO depth_pair id %lu for topic %s", pairid, topic);
@@ -173,7 +173,7 @@ int on_wss_msg(char *msg, size_t len) {
 	}
 
 	// If not depth chn, might be trade chn.
-	urn_hmap_get(trade_chn_to_pairid, topic, &pairid);
+	urn_hmap_getptr(trade_chn_to_pairid, topic, &pairid);
 	if (pairid != 0) {
 		char *trade_pair = pair_arr[pairid];
 		URN_DEBUGF("trade_pair id %lu %s for topic %s", pairid, trade_pair, topic);

@@ -181,6 +181,7 @@ int on_wss_msg(char *msg, size_t len) {
 			rv = EINVAL;
 			goto final;
 		}
+		wss_mkt_ts = ts_e6;
 	}
 
 	const char *product_id = NULL;
@@ -192,7 +193,7 @@ int on_wss_msg(char *msg, size_t len) {
 		URN_RET_ON_NULL(product_id, "No product_id", EINVAL);
 
 		uintptr_t pairid = 0;
-		urn_hmap_get(depth_snpsht_chn_to_pairid, product_id, &pairid);
+		urn_hmap_getptr(depth_snpsht_chn_to_pairid, product_id, &pairid);
 		if (pairid != 0) {
 			// No E in snapshot data.
 			newodbk_arr[pairid] ++;
@@ -207,7 +208,7 @@ int on_wss_msg(char *msg, size_t len) {
 		URN_RET_ON_NULL(timestr, "No time", EINVAL);
 
 		uintptr_t pairid = 0;
-		urn_hmap_get(depth_chn_to_pairid, product_id, &pairid);
+		urn_hmap_getptr(depth_chn_to_pairid, product_id, &pairid);
 		if (pairid != 0) {
 			newodbk_arr[pairid] ++;
 			odbk_t_arr[pairid] = ts_e6;
@@ -223,7 +224,7 @@ int on_wss_msg(char *msg, size_t len) {
 		URN_RET_ON_NULL(timestr, "No time", EINVAL);
 
 		uintptr_t pairid = 0;
-		urn_hmap_get(trade_chn_to_pairid, product_id, &pairid);
+		urn_hmap_getptr(trade_chn_to_pairid, product_id, &pairid);
 		if (pairid != 0) {
 			char *trade_pair = pair_arr[pairid];
 			URN_DEBUGF("\t -> odbk pair ticker   %lu %s", pairid, trade_pair, ts_e6);
