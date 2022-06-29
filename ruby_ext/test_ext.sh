@@ -6,5 +6,5 @@ cd $DIR
 
 rvm use 3.0
 ruby $DIR/extconf.rb && \
-	make install && \
+	make clean && make install && \
 	ruby ./test.rb
