@@ -18,7 +18,7 @@ int main(int argc, char **argv) {
 	if (argc < 1)
 		return URN_FATAL("No URL given.", EINVAL);
 
-	char wss_uri[256];
+	char wss_uri[1024];
 	int rv = 0;
 	strcpy(wss_uri, argv[1]);
 	// wss_url must ends with / if no path given.
