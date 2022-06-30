@@ -242,7 +242,7 @@ int wss_req_next(nng_stream *stream) {
 	return 0;
 }
 
-char wss_uri[256];
+char wss_uri[1024];
 int wss_connect() {
 	int rv = 0;
 	mkt_data_set_wss_url(wss_uri);
@@ -293,7 +293,7 @@ int wss_connect() {
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &wss_req_t);
 
 #ifdef URN_WSS_DEBUG
-	while(wss_stat_ct < 100) {
+	while(wss_stat_ct < 10) {
 		if ((rv = nngaio_recv_wait_res(stream, recv_aio, recv_iov, &recv_bytes, "<-- recv wait", "<-- recv poll")) != 0)
 #else
 	while(true) {

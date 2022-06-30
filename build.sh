@@ -65,4 +65,4 @@ gcc -D_GNU_SOURCE=1 $@ \
 	-L $hiredis_home/lib \
 	\
 	$nng_wolfssl_o \
-	-lnng -lpthread -lwolfssl -lmbedx509 -lmbedcrypto -lglib-2.0 -lhiredis $ld_nng_wolfssl \
+	-lnng -lpthread -lwolfssl -lmbedx509 -lmbedcrypto -lglib-2.0 -lhiredis -lz $ld_nng_wolfssl \
