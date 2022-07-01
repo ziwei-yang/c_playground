@@ -79,13 +79,16 @@ int     max_pair_id = -1;
 hashmap *trade_chn_to_pairid;
 hashmap *depth_chn_to_pairid;
 hashmap *depth_snpsht_chn_to_pairid;
+hashmap *symb_to_pairid;
 
 char  *pair_arr[MAX_PAIRS]; // pair = pair_arr[pairid]
+char  *symb_arr[MAX_PAIRS]; // symb = symb_arr[pairid]
 GList *bids_arr[MAX_PAIRS]; // bids = bids_arr[pairid]
 GList *asks_arr[MAX_PAIRS]; // asks = asks_arr[pairid]
 int    askct_arr[MAX_PAIRS];
 int    bidct_arr[MAX_PAIRS];
 long   odbk_t_arr[MAX_PAIRS];
+bool   snapshot_init[MAX_PAIRS]; // used in exchanges that must init snapshot manually
 
 ///////////// wss_req //////////////
 // Maybe two command per pair, 1 more for NULL
@@ -152,12 +155,14 @@ int main(int argc, char **argv) {
 		return URN_FATAL("Raise MAX_PAIRS please", ENOMEM);
 	for (int i=0; i<MAX_PAIRS; i++) {
 		pair_arr[i] = NULL;
+		symb_arr[i] = NULL;
 		bids_arr[i] = NULL;
 		asks_arr[i] = NULL;
 		odbk_t_arr[i] = 0;
 		askct_arr[i] = 0;
 		bidct_arr[i] = 0;
 		newodbk_arr[i] = 0;
+		snapshot_init[i] = false;
 		pub_odbk_chn_arr[i] = NULL;
 		pub_odbk_key_arr[i] = NULL;
 		pub_tick_chn_arr[i] = NULL;
@@ -210,6 +215,7 @@ int main(int argc, char **argv) {
 	urn_hmap_free(pair_to_sym);
 	urn_hmap_free(depth_chn_to_pairid);
 	urn_hmap_free(depth_snpsht_chn_to_pairid);
+	urn_hmap_free(symb_to_pairid);
 	urn_hmap_free(trade_chn_to_pairid);
 	return 0;
 }
@@ -619,6 +625,7 @@ static int parse_args_build_idx(int argc, char **argv) {
 	depth_chn_to_pairid = urn_hmap_init(max_pairn*5);
 	depth_snpsht_chn_to_pairid = urn_hmap_init(max_pairn*5);
 	trade_chn_to_pairid = urn_hmap_init(max_pairn*5);
+	symb_to_pairid = urn_hmap_init(max_pairn*5);
 
 	int chn_ct = 0;
 	const char *odbk_chns[max_pairn];
@@ -689,6 +696,7 @@ static int parse_args_build_idx(int argc, char **argv) {
 		urn_hmap_setstr(trade_chn_to_pair, trade_chn, upcase_s);
 
 		int pairid = chn_ct + 1; // 0==NULL
+		symb_arr[pairid] = exch_sym;
 		pair_arr[pairid] = upcase_s;
 		pub_odbk_chn_arr[pairid] = malloc(128);
 		sprintf(pub_odbk_chn_arr[pairid], "URANUS:%s:%s:full_odbk_channel", exchange, upcase_s);
@@ -706,6 +714,8 @@ static int parse_args_build_idx(int argc, char **argv) {
 		urn_hmap_set(depth_snpsht_chn_to_pairid, depth_snpsht_chn, (uintptr_t)pairid);
 		URN_DEBUGF("set trade_chn_to_pairid %s %d", trade_chn, pairid);
 		urn_hmap_set(trade_chn_to_pairid, trade_chn, (uintptr_t)pairid);
+		URN_DEBUGF("set symb_to_pairid %s %d", exch_sym, pairid);
+		urn_hmap_set(symb_to_pairid, exch_sym, (uintptr_t)pairid);
 		URN_DEBUGF("i %d max_pair_id %d", i, pairid);
 		max_pair_id = pairid;
 		chn_ct ++;
@@ -726,6 +736,7 @@ static int parse_args_build_idx(int argc, char **argv) {
 	urn_hmap_print(trade_chn_to_pair, "trade_to_pair");
 	urn_hmap_printi(depth_chn_to_pairid, "depth_to_pairid");
 	urn_hmap_printi(depth_snpsht_chn_to_pairid, "depth_snpsht_to_pairid");
+	urn_hmap_printi(symb_to_pairid, "symb_to_pairid");
 	urn_hmap_printi(trade_chn_to_pairid, "trade_to_pairid");
 
 	URN_LOGF("Generate req json with %d odbk and tick channels", chn_ct);
@@ -882,6 +893,7 @@ bool mkt_wss_odbk_update_or_delete(int pairid, urn_inum *p, urn_inum *s, bool bu
 // Post action after odbk updated.
 int odbk_updated(int pairid) {
 #ifdef WRITE_SHRMEM
+	URN_DEBUGF("Write share mem %d", pairid);
 	return odbk_shm_write(pairid);
 #endif
 	return 0;
