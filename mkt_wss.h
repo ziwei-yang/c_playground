@@ -105,7 +105,7 @@ unsigned int wss_req_wait_ct;
 unsigned int wss_stat_sz;
 unsigned int wss_stat_ct;
 struct timespec wss_stat_t;
-int wss_stat_per_e = 8;
+int wss_stat_per_e = 3; // wss_stat() freq control.
 long wss_mkt_ts = 0;
 long mkt_latency_ms = 0;
 
@@ -140,7 +140,16 @@ unsigned int  brdcst_stat_t;
 // BybitU or Bybit
 char         exchange[32];
 
+// Every wss_stat triggers new timeout setting.
+void timeout_sigalrm_handler(int sig) {
+	URN_WARNF("Long time have no new message, KILL");
+	kill(getpid(), SIGKILL);
+}
+
 int main(int argc, char **argv) {
+	alarm(60); // set new 60s timeout
+	signal(SIGALRM, timeout_sigalrm_handler);
+
 	if (argc <= 1)
 		return URN_FATAL("Args: usdt-btc@p", ENOMEM);
 	if (argc > 1 && (strcasecmp(argv[1], "-v") == 0)) {
@@ -515,6 +524,7 @@ final:
 }
 
 static void wss_stat() {
+	alarm(60); // set new 60s timeout
 	if (wss_mkt_ts != 0) {
 		clock_gettime(CLOCK_REALTIME, &_tmp_clock);
 		mkt_latency_ms = _tmp_clock.tv_sec * 1000l + 
@@ -528,6 +538,8 @@ static void wss_stat() {
 	URN_INFOF("<-- %s in %6lu s %8.f msg/s %8.f KB/s + %ld ms", exchange, passed_s, ct_per_s, kb_per_s, mkt_latency_ms);
 	if (passed_s < 2)
 		wss_stat_per_e ++; // double stat interval
+	if (passed_s > 20 && wss_stat_per_e > 1)
+		wss_stat_per_e --; // half stat interval
 	// Reset stat
 	wss_stat_ct = 0;
 	wss_stat_sz = 0;
