@@ -9,7 +9,7 @@
 #include <time.h>
 #include <sys/time.h>
 
-//#define URN_MAIN_DEBUG // debug log
+#define URN_MAIN_DEBUG // debug log
 #include "wss.h"
 
 int main(int argc, char **argv) {

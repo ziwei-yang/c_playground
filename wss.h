@@ -213,6 +213,10 @@ int nng_https_get(char *uri, uint16_t *code, char **response, size_t *reslen) {
 	if ((rv = nng_aio_result(aio)) != 0)
 		goto final;
 
+	// add custom headers
+	nng_http_req_add_header(req, "User-Agent", "curl/7.79.1");
+	nng_http_req_add_header(req, "Accept", "*/*");
+
 	// request then wait it done.
 	nng_http_conn *conn = nng_aio_get_output(aio, 0);
 	nng_http_conn_write_req(conn, req, aio);
@@ -230,11 +234,12 @@ int nng_https_get(char *uri, uint16_t *code, char **response, size_t *reslen) {
 	*code = nng_http_res_get_status(res);
 	hdr = nng_http_res_get_header(res, "Content-Length");
 	if (hdr == NULL) {
-		// Missing Content-Length header. Use first 10 bytes to get chunk length
+		URN_DEBUG("Missing Content-Length header. Use 10 bytes to get 1st chunk");
 		len = 10;
 		chunk_state = 0; // read len; calculate left size; read left and little bit more; repeat.
 	} else {
 		len = atoi(hdr); // read once
+		URN_DEBUGF("Content-Length %d", len);
 		if (len == 0) {
 			// Content-Length zero, return
 			char *r = malloc(1);
@@ -268,14 +273,17 @@ int nng_https_get(char *uri, uint16_t *code, char **response, size_t *reslen) {
 		URN_DEBUG("nng_https wait for data read to complete.");
 		nng_aio_wait(aio);
 
-		if ((rv = nng_aio_result(aio)) != 0)
+		rv = nng_aio_result(aio);
+		URN_DEBUGF("nng_aio_result(aio)=%d", rv);
+		if (rv != 0)
 			break;
 
 		if (chunk_state < 0) { // Not chunk mode.
-			chunk_idx = 0; // only one chunk.
 			need_free_data = false;
 			*response = iov.iov_buf;
 			*reslen = iov.iov_len;
+			URN_DEBUGF("Not chunk mode, all data got %lu", *reslen);
+			chunk_idx = 0; // dont copy data, return response directly.
 			rv = 0;
 			break;
 		}
@@ -382,6 +390,11 @@ final:
 	if (need_free_data && (data != NULL)) free(data);
 	if (rv != 0)
 		return URN_FATAL("Error in nng_https", rv);
+
+	if (chunk_state < 0) { // Not chunk mode.
+		// dont copy data, return response directly.
+		return rv;
+	}
 
 	// merge and print every chunk.
 	char *res_s = malloc(chunk_len_sum);
