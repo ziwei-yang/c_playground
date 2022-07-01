@@ -108,6 +108,7 @@ struct timespec wss_stat_t;
 int wss_stat_per_e = 3; // wss_stat() freq control.
 long wss_mkt_ts = 0;
 long mkt_latency_ms = 0;
+long wss_stat_max_msg_t = 120; // odbk_t_arr[] > 120 then KILL
 
 struct timespec _tmp_clock;
 
@@ -569,7 +570,7 @@ static void wss_stat() {
 		wss_stat_per_e ++; // double stat interval
 	if (passed_s > 20 && wss_stat_per_e > 2)
 		wss_stat_per_e -= 2; // half stat interval
-	if (max_msg_age_e6 >= 120*1000000l) {
+	if (max_msg_age_e6 >= wss_stat_max_msg_t*1000000l) {
 		URN_WARNF("%s Max msg age us %ld, KILL",
 			pair_arr[max_msg_pairid], max_msg_age_e6);
 		kill(getpid(), SIGKILL);
