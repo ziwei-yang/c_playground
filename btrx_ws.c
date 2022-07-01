@@ -7,7 +7,7 @@
 #define PUB_LESS_ON_ZERO_LISTENER
 //#undef  PUB_LESS_ON_ZERO_LISTENER
 
-#define PUB_NO_REDIS
+//#define PUB_NO_REDIS
 //#define WRITE_NO_SHRMEM
 
 #include "mkt_wss.h"
