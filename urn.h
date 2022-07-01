@@ -600,7 +600,7 @@ int urn_odbk_clients_reg(urn_odbk_clients *shmp, int pairid) {
 	return ENOMEM;
 }
 
-int urn_odbk_clients_notify(urn_odbk_clients *shmp, int pairid) {
+int urn_odbk_clients_notify(urn_odbk_mem *odbk_shmp, urn_odbk_clients *shmp, int pairid) {
 	pid_t p = 0;
 	int rv = 0;
 	for (int j = 0; j < urn_odbk_pid_cap; j++) {
@@ -609,7 +609,8 @@ int urn_odbk_clients_notify(urn_odbk_clients *shmp, int pairid) {
 		rv = kill(p, SIGUSR1);
 		if (rv == 0) continue;
 		perror("Error in kill SIGUSR1");
-		URN_WARNF("Delete urn odbk client pid %d", p);
+		URN_WARNF("rm shm odbk client %d in pair %d %s",
+			p, pairid, odbk_shmp->pairs[pairid]);
 		shmp->pids[pairid][j] = 0;
 	}
 	return rv;

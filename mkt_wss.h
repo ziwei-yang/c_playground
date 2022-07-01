@@ -929,7 +929,7 @@ int odbk_shm_write(int pairid) {
 			exchange
 		      );
 	// notify share memory clients.
-	urn_odbk_clients_notify(odbk_clients_shmptr, pairid);
+	urn_odbk_clients_notify(odbk_shmptr, odbk_clients_shmptr, pairid);
 	return 0;
 }
 #endif
