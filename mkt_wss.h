@@ -558,9 +558,10 @@ static void wss_stat() {
 	float ct_per_s = (float)(wss_stat_ct) / (float)passed_s;
 	float kb_per_s = (float)(wss_stat_sz) / (float)passed_s / 1000.f;
 	if (max_msg_age_e6/1000000 > 0) {
-		URN_INFOF("<-- %s %2lus, %4dmsg/s %4dKB/s +%3ldms, %s %lds old",
+		URN_INFOF("<-- %s %2lus, %4dmsg/s %4dKB/s +%3ldms, %s %ld/%lds old",
 			exchange, passed_s, (int)ct_per_s, (int)kb_per_s,
-			mkt_latency_ms, pair_arr[max_msg_pairid], max_msg_age_e6/1000000);
+			mkt_latency_ms, pair_arr[max_msg_pairid],
+			max_msg_age_e6/1000000, wss_stat_max_msg_t);
 	} else {
 		URN_INFOF("<-- %s %2lus, %4dmsg/s %4dKB/s +%3ldms",
 			exchange, passed_s, (int)ct_per_s, (int)kb_per_s,
