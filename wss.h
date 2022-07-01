@@ -109,7 +109,7 @@ int urn_ws_init_with_headers(char *uri, char **headers,  nng_stream_dialer **d, 
 	}
 
 	// customized headers.
-	while (*headers != NULL) {
+	while (headers != NULL && *headers != NULL) {
 		char *key = *(headers++);
 		char *val = *(headers++);
 		char setkey[64+strlen(key)]; // concat NNG_OPT_WS_REQUEST_HEADER+key

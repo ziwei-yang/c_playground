@@ -283,7 +283,7 @@ int parse_n_mod_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_
 		return URN_FATAL("Unexpected order type", EINVAL);
 
 	if (op_type != 4)
-		return URN_FATAL("Unexpected op_type, FTX only has guess type", EINVAL);
+		return URN_FATAL("Unexpected op_type, Binance only has guess type", EINVAL);
 
 	GList *bids = bids_arr[pairid];
 	GList *asks = asks_arr[pairid];
@@ -355,4 +355,3 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *jdata) {
 	}
 	return 0;
 }
-

@@ -1,9 +1,11 @@
 tcp/
 stable/
 tmp/
+node_modules/
+3rd/
+
 env.sh
 a.out
-3rd
 jsmn.h
 .DS_Store
 yyjson.*
@@ -14,3 +16,4 @@ ruby_ext/*.bundle
 ruby_ext/*.o
 ruby_ext/*.so
 ruby_ext/.sitearchdir.time
+

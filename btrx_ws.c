@@ -22,6 +22,8 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 	int slen = strlen(pair->name);
 	*str = malloc(slen+1);
 	if ((*str) == NULL) return ENOMEM;
+	if (pair->expiry != NULL)
+		return URN_FATAL("Pair with expiry in Gemini", EINVAL);
 	// USDT-BTC   -> BTC-USDT
 	sprintf(*str, "%s-%s", pair->asset, pair->currency);
 	urn_s_upcase(*str, slen);
