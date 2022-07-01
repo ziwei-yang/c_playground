@@ -84,7 +84,7 @@ int nngaio_init(char *s, int slen, nng_aio **aiop, nng_iov **iovp) {
 
 // Init dialer and its aio, setup TLS automatically
 // open stream asynchronously
-int urn_ws_init(char *uri, nng_stream_dialer **d, nng_aio **daio) {
+int urn_ws_init_with_headers(char *uri, char **headers,  nng_stream_dialer **d, nng_aio **daio) {
 	int rv = 0;
 
 	nng_url *url;
@@ -107,9 +107,29 @@ int urn_ws_init(char *uri, nng_stream_dialer **d, nng_aio **daio) {
 		// Need for Bybit and FTX
 		nng_tls_config_server_name(tls_cfg, url->u_hostname);
 	}
+
+	// customized headers.
+	while (*headers != NULL) {
+		char *key = *(headers++);
+		char *val = *(headers++);
+		char setkey[64+strlen(key)]; // concat NNG_OPT_WS_REQUEST_HEADER+key
+		strcpy(setkey, NNG_OPT_WS_REQUEST_HEADER);
+		strcpy(setkey + strlen(NNG_OPT_WS_REQUEST_HEADER), key);
+		URN_DEBUGF("wss headers setkey %s", setkey);
+		URN_DEBUGF("wss headers val    %s", val);
+		rv = nng_stream_dialer_set_string(*d, setkey, val);
+		if (rv != 0) {
+			URN_WARN("failed in nng_stream_dialer_set_ptr");
+			return rv;
+		}
+	}
+
 	// asynchronously establish conn
 	nng_stream_dialer_dial(*d, *daio);
 	return 0;
+}
+int urn_ws_init(char *uri, nng_stream_dialer **d, nng_aio **daio) {
+	return urn_ws_init_with_headers(uri, NULL, d, daio);
 }
 
 // Wait ws dialer operation finished, get ws stream to send/recv
@@ -193,11 +213,11 @@ int nng_https_get(char *uri, uint16_t *code, char **response, size_t *reslen) {
 
 	URN_DEBUGF("nng_https %s", uri);
 	if (((rv = nng_url_parse(&url, uri)) != 0) ||
-		((rv = nng_http_client_alloc(&client, url)) != 0) ||
-		((rv = nng_http_req_alloc(&req, url)) != 0) ||
-		((rv = nng_http_res_alloc(&res)) != 0) ||
-		((rv = nng_aio_alloc(&aio, NULL, NULL)) != 0)) {
-			goto final;
+			((rv = nng_http_client_alloc(&client, url)) != 0) ||
+			((rv = nng_http_req_alloc(&req, url)) != 0) ||
+			((rv = nng_http_res_alloc(&res)) != 0) ||
+			((rv = nng_aio_alloc(&aio, NULL, NULL)) != 0)) {
+		goto final;
 	}
 	// additional TLS conf.
 	if (strncmp("https", url->u_scheme, 5) == 0) {
@@ -206,7 +226,7 @@ int nng_https_get(char *uri, uint16_t *code, char **response, size_t *reslen) {
 		nng_tls_config_auth_mode(tls_cfg, NNG_TLS_AUTH_MODE_NONE);
 		nng_tls_config_free(tls_cfg);
 	}
-	
+
 	// connect then wait it done.
 	nng_http_client_connect(client, aio);
 	nng_aio_wait(aio);
@@ -391,8 +411,8 @@ final:
 	if (rv != 0)
 		return URN_FATAL("Error in nng_https", rv);
 
-	if (chunk_state < 0) { // Not chunk mode.
-		// dont copy data, return response directly.
+	if (chunk_state < 0) {
+		// Not chunk mode. Don't copy data, return response directly.
 		return rv;
 	}
 

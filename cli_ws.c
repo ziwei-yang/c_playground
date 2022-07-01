@@ -7,6 +7,8 @@
 #include <nng/nng.h>
 #include <nng/supplemental/tls/tls.h>
 
+#define URN_MAIN_DEBUG // debug log
+
 #include "urn.h"
 #include "wss.h"
 #include "hmap.h"
@@ -44,7 +46,8 @@ int main(int argc, char **argv) {
 	size_t recv_bytes = 0;
 
 	URN_INFOF("Init wss conn %s", wss_uri);
-	if ((rv = urn_ws_init(wss_uri, &dialer, &dialer_aio)) != 0)
+	char *header_arr[5] = { "key1", "val1", "key2", "val2", NULL };
+	if ((rv = urn_ws_init_with_headers(wss_uri, header_arr, &dialer, &dialer_aio)) != 0)
 		return URN_FATAL_NNG(rv);
 
 	URN_INFO("Wait conn stream");
