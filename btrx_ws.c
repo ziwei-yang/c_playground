@@ -32,7 +32,7 @@ void mkt_data_set_exchange(char *s) { sprintf(s, "Bittrex"); }
 
 void mkt_data_set_wss_url(char *s) {
 	// Bittrex is not so active, wait longer.
-	wss_stat_max_msg_t = 240;
+	wss_stat_max_msg_t = 600;
 
 	// signalR via wss: negotiate a WSS token first
 	char *signalr = "https://socket-v3.bittrex.com/signalr/negotiate?connectionData=[{\"name\":\"c3\"}]&clientProtocol=1.5";
