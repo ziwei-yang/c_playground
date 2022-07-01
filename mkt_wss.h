@@ -109,6 +109,7 @@ int wss_stat_per_e = 3; // wss_stat() freq control.
 long wss_mkt_ts = 0;
 long mkt_latency_ms = 0;
 long wss_stat_max_msg_t = 120; // odbk_t_arr[] > 120 then KILL
+const int max_msg_interval = 60; // any msg interval > 60 then kill
 
 struct timespec _tmp_clock;
 
@@ -148,7 +149,7 @@ void timeout_sigalrm_handler(int sig) {
 }
 
 int main(int argc, char **argv) {
-	alarm(60); // set new 60s timeout
+	alarm(max_msg_interval); // set new timeout
 	signal(SIGALRM, timeout_sigalrm_handler);
 
 	if (argc <= 1)
@@ -525,7 +526,7 @@ final:
 }
 
 static void wss_stat() {
-	alarm(60); // set new 60s timeout
+	alarm(max_msg_interval); // set new timeout
 	if (wss_mkt_ts != 0) {
 		clock_gettime(CLOCK_REALTIME, &_tmp_clock);
 		mkt_latency_ms = _tmp_clock.tv_sec * 1000l + 
