@@ -533,13 +533,41 @@ static void wss_stat() {
 
 	clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &_tmp_clock);
 	time_t passed_s = _tmp_clock.tv_sec - wss_stat_t.tv_sec;
+	if (passed_s == 0) {
+		URN_INFOF("Too soon to wss_stat() wss_stat_per_e %d", wss_stat_per_e);
+		wss_stat_per_e ++;
+		return; // too soon
+	}
+
+	// check every odbk_t_arr[pairid], found channel has no updates.
+	struct timeval _tmp_t_val;
+	gettimeofday(&_tmp_t_val, NULL);
+	long ts_e6 = (long)(_tmp_t_val.tv_sec) * 1000000l + (long)(_tmp_t_val.tv_usec);
+	long max_msg_age_e6 = -9999999999;
+	int max_msg_pairid = 0;
+	for (int i=1; i<MAX_PAIRS; i++) {
+		if (odbk_t_arr[i] == 0) continue;
+		long msg_age_e6 = ts_e6 - odbk_t_arr[i];
+		if (msg_age_e6 > max_msg_age_e6) {
+			max_msg_pairid = i;
+			max_msg_age_e6 = msg_age_e6;
+		}
+	}
+
 	float ct_per_s = (float)(wss_stat_ct) / (float)passed_s;
 	float kb_per_s = (float)(wss_stat_sz) / (float)passed_s / 1000.f;
-	URN_INFOF("<-- %s in %6lu s %8.f msg/s %8.f KB/s + %ld ms", exchange, passed_s, ct_per_s, kb_per_s, mkt_latency_ms);
+	URN_INFOF("<-- %s %2lus, %4dmsg/s %4dKB/s +%ldms, %s %lds old",
+		exchange, passed_s, (int)ct_per_s, (int)kb_per_s,
+		mkt_latency_ms, pair_arr[max_msg_pairid], max_msg_age_e6/1000000);
 	if (passed_s < 2)
 		wss_stat_per_e ++; // double stat interval
-	if (passed_s > 20 && wss_stat_per_e > 1)
-		wss_stat_per_e --; // half stat interval
+	if (passed_s > 20 && wss_stat_per_e > 2)
+		wss_stat_per_e -= 2; // half stat interval
+	if (max_msg_age_e6 >= 120*1000000l) {
+		URN_WARNF("%s Max msg age us %ld, KILL",
+			pair_arr[max_msg_pairid], max_msg_age_e6);
+		kill(getpid(), SIGKILL);
+	}
 	// Reset stat
 	wss_stat_ct = 0;
 	wss_stat_sz = 0;
