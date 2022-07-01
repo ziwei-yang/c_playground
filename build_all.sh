@@ -19,5 +19,5 @@ for f in shmutil.c mkt_viewer.c ; do
 done
 
 cd $DIR/ruby_ext
-echo "rvm use 3.0 ; ruby extconf.rb ; make"
-rvm use 3.0 && ruby extconf.rb && make
+echo "rvm use 3.0 ; ruby extconf.rb ; make clean; make"
+rvm use 3.0 && ruby extconf.rb && make clean && make
