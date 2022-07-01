@@ -138,7 +138,7 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 }
 
 // A -> decodeA -> decompressA
-const size_t tmp_A_sz = 65536;
+#define tmp_A_sz 65536
 unsigned char decodeA[tmp_A_sz];
 unsigned char decompressA[tmp_A_sz];
 
