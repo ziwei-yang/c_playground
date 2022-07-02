@@ -1,9 +1,15 @@
 require "urn_mktdata"
 include URN_MKTDATA
 
+exch_arr = [
+  "Binance", "BNCM", "BNUM", "Bybit", "BybitU",
+  "Coinbase", "FTX", "Kraken", "Bittrex", "Gemini"
+]
+
+########################################################
+
 puts "--"
-print "Test mktdata_shm_index() and mktdata_exch_by_shm_index()"
-exch_arr = ["Binance", "BNCM", "BNUM", "Bybit", "BybitU", "Coinbase", "FTX"]
+print "Test mktdata_shm_index() mktdata_exch_by_shm_index()"
 exch_arr.each_with_index { |ex, i|
   idx = mktdata_shm_index(ex)
   raise "#{ex} mktdata_shm_index #{idx} != #{i}" if idx != i
@@ -20,59 +26,76 @@ ex_name = mktdata_exch_by_shm_index(exch_arr.size)
 raise "mktdata_exch_by_shm_index #{exch_arr.size} = #{ex_name} != nil" if ex_name != nil
 print " √\n"
 
+########################################################
+
 puts "--"
 exch_id = 0
-puts "Make sure did: bnn_ws.c usd-btc before below test"
-puts "mktdata_pairs(#{exch_id}):"
-puts mktdata_pairs(exch_id).inspect
+puts "Make sure run: bnn_ws.c busd-btc before test"
+puts "mktdata_pairs(#{exch_id}) #{mktdata_pairs(exch_id).join(', ')[0..79]}..."
+pair = "USD-BTC"
 
 puts "--"
-puts "mktdata_odbk(#{exch_id}, 1, 9):"
-puts mktdata_odbk(exch_id, 1, 9).inspect
-puts "mktdata_odbk(#{exch_id}, 1, 9) for 100K times"
+puts "Test mktdata_odbk(#{exch_id}, #{pair}, 9)"
+odbk = mktdata_odbk(exch_id, pair, 9)
+raise "ODBK should not be null" if odbk.nil?
+puts "#{mktdata_odbk(exch_id, pair, 9).inspect[0..79]}..."
+print "Test mktdata_odbk(#{exch_id}, #{pair}, 9)"
+print " √\n"
+
+
+print "Test mktdata_odbk(#{exch_id}, #{pair}, 9) for 1M times"
 start_t = Time.now.to_f
-batch = 100_000
+batch = 1000_000
 batch.times {
-  mktdata_odbk(exch_id, 1, 9).inspect
+  odbk = mktdata_odbk(exch_id, pair, 9)
+  raise "ODBK should not be null" if odbk.nil?
 }
 end_t = Time.now.to_f
+print " √\n"
 puts "Cost seconds #{end_t - start_t}, single op #{(end_t-start_t)*1000_000/batch} us"
 
 puts "--"
-puts "mktdata_new_odbk(#{exch_id}, 1, 9):"
-puts mktdata_new_odbk(exch_id, 1, 9).inspect
-puts "mktdata_new_odbk(#{exch_id}, 1, 9) for 100K times"
+puts "Test mktdata_new_odbk(#{exch_id}, #{pair}, 9):"
+puts mktdata_new_odbk(exch_id, pair, 9).inspect
+print "Test mktdata_new_odbk(#{exch_id}, #{pair}, 9) for 1M times"
 start_t = Time.now.to_f
-batch = 100_000
-batch.times {
-  mktdata_new_odbk(exch_id, 1, 9).inspect
-}
+batch = 1000_000
+batch.times { mktdata_new_odbk(exch_id, 1, 9).inspect }
 end_t = Time.now.to_f
+print " √\n"
 puts "Cost seconds #{end_t - start_t}, single op #{(end_t-start_t)*1000_000/batch} us"
-puts "--"
 
+puts "--"
+print "Test mktdata_reg_sigusr1(#{exch_id}, #{pair})"
 trap("SIGUSR1") {
-  puts mktdata_new_odbk(exch_id, 1, 9).inspect
+  odbk = mktdata_new_odbk(exch_id, pair, 9)
+  raise "ODBK from mktdata_new_odbk() should not be null" if odbk.nil?
+  puts "SIGUSR1 #{pair} #{odbk.inspect[0..79]}..."
 }
-rv = mktdata_reg_sigusr1(exch_id, 1)
-puts "mktdata_reg_sigusr1() = #{rv}"
-sleep 1
+rv = mktdata_reg_sigusr1(exch_id, pair)
+raise "mktdata_reg_sigusr1() = #{rv}" if rv != 0
+print " √\n"
 
 puts "--"
 
-puts "Test mktdata_sigusr1_timedwait()"
-10.times {
+puts "Test mktdata_sigusr1_timedwait(), could change tasks of bnn_ws.c now"
+100.times {
 	t = Time.now.to_f
 	sig = mktdata_sigusr1_timedwait(0.1)
 	t = Time.now.to_f - t
-	puts "Sig timed wait got #{sig}, #{t}s"
+  puts "Sig   timed wait got SIGNAL #{sig} in #{t.round(9)}s"
+  odbk = mktdata_new_odbk(exch_id, pair, 9)
+  puts "\t #{pair} #{odbk.inspect[0..79]}..."
 }
-10.times {
+100.times {
 	t = Time.now.to_f
 	sig = mktdata_sigusr1_timedwait(nil)
 	t = Time.now.to_f - t
-	puts "Sig wait got #{sig}, #{t}s"
+  puts "Sig endless wait got SIGNAL #{sig} in #{t.round(9)}s"
+  odbk = mktdata_new_odbk(exch_id, pair, 9)
+  puts "\t #{pair} #{odbk.inspect[0..79]}..."
 }
+print " √\n"
 
 puts "--"
 puts "--"

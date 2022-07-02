@@ -1,12 +1,163 @@
 #include "ruby.h"
 
 #include "../urn.h"
+#include "../hmap.h"
 
-VALUE URN_MKTDATA = Qnil;
-urn_odbk_mem *shmptr_arr[urn_shm_exch_num];
-long last_odbk_data_id[urn_shm_exch_num][urn_odbk_mem_cap];
-
+VALUE             URN_MKTDATA = Qnil;
+urn_odbk_mem     *shmptr_arr[urn_shm_exch_num];
+long              last_odbk_data_id[urn_shm_exch_num][urn_odbk_mem_cap];
 urn_odbk_clients *clients_shmptr_arr[urn_shm_exch_num];
+hashmap          *pair_to_id[urn_shm_exch_num];
+hashmap          *pair_sigusr1[urn_shm_exch_num]; // pairs listening SIGUSR1
+
+//////////////////////////////////////////
+// Internal Methods below.
+//////////////////////////////////////////
+
+static int _prepare_shmptr(int i) {
+	if (i < 0 || i >= urn_shm_exch_num) return ERANGE;
+	if (shmptr_arr[i] != NULL) return 0;
+	URN_INFOF("Attach to urn_odbk_shm %d %s", i, urn_shm_exchanges[i]);
+
+	int rv = urn_odbk_shm_init(false, (char *)(urn_shm_exchanges[i]), &(shmptr_arr[i]));
+	return rv;
+}
+
+static int _reset_pairmap(int i) {
+	if (i < 0 || i >= urn_shm_exch_num) return ERANGE;
+	// reset pointer, free old ptr if needed
+	hashmap *pair_map = pair_to_id[i];
+	pair_to_id[i] = NULL;
+	if (pair_map != NULL) {
+		URN_LOGF("Reset %s pair_to_id[%d]", urn_shm_exchanges[i], i);
+		urn_hmap_free_with_keys(pair_map);
+	}
+
+	int rv = _prepare_shmptr(i);
+	if (rv != 0) {
+		URN_WARNF("Attach shmptr %d failed", i);
+		return rv;
+	}
+	urn_odbk_mem *shmp = shmptr_arr[i];
+
+	// build hashmap
+	URN_LOGF("Reset %s pair_to_id[%d] with shmp->pairs", urn_shm_exchanges[i], i);
+	pair_map = urn_hmap_init(urn_odbk_mem_cap*5);
+	for (int pairid=0; pairid<urn_odbk_mem_cap; pairid++) {
+		if (shmp->pairs[pairid][0] == '\0') break;
+		char *key = malloc(strlen(shmp->pairs[pairid])+1);
+		strcpy(key, shmp->pairs[pairid]);
+		urn_hmap_set(pair_map, key, (uintptr_t)pairid);
+	}
+	pair_to_id[i] = pair_map;
+
+	if (clients_shmptr_arr[i] == NULL)
+		return 0;
+	// If did method_mktdata_reg_sigusr1(), re-register PID in related SHMEM/pairs again.
+	urn_odbk_clients_clear(clients_shmptr_arr[i]);
+	size_t kidx, klen;
+	char *key;
+	void *val;
+	urn_hmap_foreach(pair_sigusr1[i], kidx, key, klen, val) {
+		uintptr_t pairid = 0;
+		urn_hmap_getptr(pair_map, key, &pairid);
+		if (pairid < 1 || pairid > urn_odbk_mem_cap) {
+			URN_WARNF("\tre-register SIGUSR1 for %s failed, not found", key);
+			continue;
+		}
+		URN_LOGF("\tre-register SIGUSR1 for %s %lu", key, pairid);
+		urn_odbk_clients_reg(clients_shmptr_arr[i], pairid);
+	}
+	return 0;
+}
+
+/* get pairid from pair_to_id, verify with shm->pairs[pairid]
+ * reset pair_to_id if pairid does not match
+ */
+static int _get_pairid(int exch_i, char *pair, uintptr_t *pairidp) {
+	if (pair == NULL) {
+		URN_WARNF("_get_pairmap %d pair is NULL", exch_i);
+		return ERANGE;
+	}
+
+	int rv = 0;
+	if (exch_i < 0 || exch_i >= urn_shm_exch_num) return ERANGE;
+	hashmap *pair_map = pair_to_id[exch_i];
+	if (pair_map == NULL) {
+		rv = _reset_pairmap(exch_i);
+		pair_map = pair_to_id[exch_i];
+		if ((rv != 0) || (pair_map == NULL)) {
+			URN_WARNF("_reset_pairmap %d failed", exch_i);
+			return EINVAL;
+		}
+	}
+	urn_hmap_getptr(pair_map, pair, pairidp);
+	if ((*pairidp) >= urn_odbk_mem_cap) {
+		URN_WARNF("_get_pairmap %d %s out of range: %lu", exch_i, pair, *pairidp);
+		return ERANGE;
+	}
+
+	urn_odbk_mem *shmp = shmptr_arr[exch_i];
+	bool must_rebuild = false;
+	// Found in pair_to_id, but still need to verify pair name.
+	if ((*pairidp) == 0) { // NULL means not found.
+		URN_WARNF("_get_pairmap %d %s not found: %lu, search again",
+			exch_i, pair, *pairidp);
+	} else if (strcmp(shmp->pairs[*pairidp], pair) == 0)
+		return 0; // verified
+	else {
+		URN_LOGF("_get_pairmap %d %s=%lu found but does not match SHMEM %s, search again",
+			exch_i, pair, *pairidp, shmp->pairs[*pairidp]);
+		must_rebuild = true;
+	}
+
+	// Linear search in shmp, if found then reset pair_to_id
+	bool found = false;
+	for (int i=0; i<urn_odbk_mem_cap; i++) {
+		if (shmp->pairs[i][0] == '\0') break;
+		if (strcmp(shmp->pairs[i], pair) == 0) {
+			*pairidp = (uintptr_t) i;
+			found = true;
+			break;
+		}
+	}
+	URN_LOGF("SHMEM %d %s=%lu %s found", exch_i, pair, *pairidp, (found ? "":"not"));
+	if (!found && !must_rebuild) return ENOENT;
+	return _reset_pairmap(exch_i);
+}
+
+static urn_odbk_mem * _get_valid_urn_odbk_mem(VALUE v_idx) {
+	if (RB_TYPE_P(v_idx, T_FIXNUM) != 1)
+		return NULL;
+	int idx = NUM2INT(v_idx);
+	if (idx < 0 || idx >= urn_shm_exch_num) return NULL;
+
+	// Prepare share memory ptr, only do this once.
+	int rv = 0;
+	if (shmptr_arr[idx] == NULL) {
+		if ((rv = _prepare_shmptr(idx)) != 0) {
+			URN_WARNF("Error in _prepare_shmptr %d", idx);
+			return NULL;
+		}
+	}
+
+	return shmptr_arr[idx];
+}
+
+static int _prepare_clients_shmptr(int i) {
+	if (i < 0 || i >= urn_shm_exch_num) return ERANGE;
+	if (clients_shmptr_arr[i] != NULL) return 0;
+	URN_INFOF("Attach to urn_odbk_clients shm %d %s", i, urn_shm_exchanges[i]);
+
+	int rv = urn_odbk_clients_init((char *)(urn_shm_exchanges[i]), &(clients_shmptr_arr[i]));
+	_reset_pairmap(i);
+	return rv;
+}
+
+void sigusr1_handler(int sig) { return; }
+
+/* macos has no sigtimedwait(); use sigwait() + alarm() to simulate */
+void macos_sigalrm_handler(int sig) { kill(getpid(), SIGUSR1); }
 
 //////////////////////////////////////////
 // Ruby Methods below.
@@ -26,33 +177,6 @@ VALUE method_mktdata_exch(VALUE self, VALUE idx) {
 	return rb_str_new_cstr(urn_shm_exchanges[i]);
 }
 
-int _prepare_shmptr(int i) {
-	if (i < 0 || i >= urn_shm_exch_num) return ERANGE;
-	if (shmptr_arr[i] != NULL) return 0;
-	URN_INFOF("Attach to urn_odbk_shm %d %s", i, urn_shm_exchanges[i]);
-
-	int rv = urn_odbk_shm_init(false, (char *)(urn_shm_exchanges[i]), &(shmptr_arr[i]));
-	return rv;
-}
-
-urn_odbk_mem * _get_valid_urn_odbk_mem(VALUE v_idx) {
-	if (RB_TYPE_P(v_idx, T_FIXNUM) != 1)
-		return NULL;
-	int idx = NUM2INT(v_idx);
-	if (idx < 0 || idx >= urn_shm_exch_num) return NULL;
-
-	// Prepare share memory ptr, only do this once.
-	int rv = 0;
-	if (shmptr_arr[idx] == NULL) {
-		if ((rv = _prepare_shmptr(idx)) != 0) {
-			URN_WARNF("Error in _prepare_shmptr %d", idx);
-			return NULL;
-		}
-	}
-
-	return shmptr_arr[idx];
-}
-
 VALUE method_mktdata_pairs(VALUE self, VALUE v_idx) {
 	urn_odbk_mem *shmp = _get_valid_urn_odbk_mem(v_idx);
 	if (shmp == NULL) return Qnil;
@@ -65,13 +189,17 @@ VALUE method_mktdata_pairs(VALUE self, VALUE v_idx) {
 	return pairs;
 }
 
-urn_odbk * _get_valid_urn_odbk(VALUE v_idx, VALUE v_pairid) {
+urn_odbk * _get_valid_urn_odbk(VALUE v_idx, VALUE v_pair, uintptr_t *pairidp) {
 	urn_odbk_mem *shmp = _get_valid_urn_odbk_mem(v_idx);
 	if (shmp == NULL) return NULL;
 
-	if (RB_TYPE_P(v_pairid, T_FIXNUM) != 1)
+	if (RB_TYPE_P(v_pair, T_STRING) != 1)
 		return NULL;
-	int pairid = NUM2INT(v_pairid);
+
+	int rv = _get_pairid(NUM2INT(v_idx), RSTRING_PTR(v_pair), pairidp);
+	if (rv != 0) return NULL;
+	uintptr_t pairid = *pairidp;
+
 	if (pairid < 1 || pairid >= urn_odbk_mem_cap) return NULL;
 
 	urn_odbk *odbk = NULL;
@@ -83,12 +211,12 @@ urn_odbk * _get_valid_urn_odbk(VALUE v_idx, VALUE v_pairid) {
 	return odbk;
 }
 
-VALUE _make_odbk_data_if_newer(VALUE v_idx, VALUE v_pairid, VALUE v_max_row, bool comp_ver) {
-	urn_odbk *odbk = _get_valid_urn_odbk(v_idx, v_pairid);
+VALUE _make_odbk_data_if_newer(VALUE v_idx, VALUE v_pair, VALUE v_max_row, bool comp_ver) {
+	uintptr_t pairid = 0;
+	urn_odbk *odbk = _get_valid_urn_odbk(v_idx, v_pair, &pairid);
 	if (odbk == NULL) return Qnil;
 
 	int exch_idx = NUM2INT(v_idx);
-	int pairid = NUM2INT(v_pairid);
 	// writer changes timestamp first.
 	// For readers, check ts_e6 before and after reading all data.
 	// if ts_e6 changed, data should be dirty.
@@ -139,7 +267,10 @@ read_shmem:
 				urn_shm_exchanges[exch_idx],
 				shmptr_arr[exch_idx]->pairs[pairid]);
 		// choose odbk to read again.
-		odbk = _get_valid_urn_odbk(v_idx, v_pairid);
+		uintptr_t new_pairid;
+		odbk = _get_valid_urn_odbk(v_idx, v_pair, &new_pairid);
+		// If pairid changed, abort and return empty data.
+		if (new_pairid != pairid) return Qnil;
 		if (odbk == NULL) return Qnil;
 		data_ts_e6 = odbk->w_ts_e6;
 		if (known_data_id >= data_ts_e6) return Qnil;
@@ -172,29 +303,15 @@ read_shmem:
 }
 
 // Always return shmem odbk without comparing known_data_id
-VALUE method_mktdata_odbk(VALUE self, VALUE v_idx, VALUE v_pairid, VALUE v_max_row) {
-	return _make_odbk_data_if_newer(v_idx, v_pairid, v_max_row, false);
+VALUE method_mktdata_odbk(VALUE self, VALUE v_idx, VALUE v_pair, VALUE v_max_row) {
+	return _make_odbk_data_if_newer(v_idx, v_pair, v_max_row, false);
 }
 
-VALUE method_mktdata_new_odbk(VALUE self, VALUE v_idx, VALUE v_pairid, VALUE v_max_row) {
-	return _make_odbk_data_if_newer(v_idx, v_pairid, v_max_row, true);
+VALUE method_mktdata_new_odbk(VALUE self, VALUE v_idx, VALUE v_pair, VALUE v_max_row) {
+	return _make_odbk_data_if_newer(v_idx, v_pair, v_max_row, true);
 }
 
-int _prepare_clients_shmptr(int i) {
-	if (i < 0 || i >= urn_shm_exch_num) return ERANGE;
-	if (clients_shmptr_arr[i] != NULL) return 0;
-	URN_INFOF("Attach to urn_odbk_clients shm %d %s", i, urn_shm_exchanges[i]);
-
-	int rv = urn_odbk_clients_init((char *)(urn_shm_exchanges[i]), &(clients_shmptr_arr[i]));
-	return rv;
-}
-
-void sigusr1_handler(int sig) { return; }
-
-/* macos has no sigtimedwait(); use sigwait() + alarm() to simulate */
-void macos_sigalrm_handler(int sig) { kill(getpid(), SIGUSR1); }
-
-VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pairid) {
+VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pair) {
 	if (RB_TYPE_P(v_idx, T_FIXNUM) != 1)
 		return Qnil;
 	int idx = NUM2INT(v_idx);
@@ -209,10 +326,19 @@ VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pairid) {
 		}
 	}
 
-	if (RB_TYPE_P(v_pairid, T_FIXNUM) != 1)
+	uintptr_t pairid = 0;
+	rv = _get_pairid(idx, RSTRING_PTR(v_pair), &pairid);
+	if (rv != 0) {
+		URN_WARNF("Error in _get_pairid %d %s", idx, RSTRING_PTR(v_pair));
 		return Qnil;
-	int pairid = NUM2INT(v_pairid);
+	}
 	if (pairid < 1 || pairid >= urn_odbk_mem_cap) return Qnil;
+
+	// record pair to pair_sigusr1 hashmap.
+	urn_odbk_mem *shmp = shmptr_arr[idx];
+	char *key = malloc(strlen(shmp->pairs[pairid])+1);
+	strcpy(key, shmp->pairs[pairid]);
+	urn_hmap_set(pair_sigusr1[idx], key, (uintptr_t)pairid);
 
 	signal(SIGUSR1, sigusr1_handler);
 #if __APPLE__
@@ -271,8 +397,12 @@ void Init_urn_mktdata() {
 	rb_define_method(URN_MKTDATA, "mktdata_reg_sigusr1", method_mktdata_reg_sigusr1, 2);
 	rb_define_method(URN_MKTDATA, "mktdata_sigusr1_timedwait", method_sigusr1_timedwait, 1);
 
+	/* module essential init */
 	for (int i=0; i<urn_shm_exch_num; i++) {
 		shmptr_arr[i] = NULL;
+		clients_shmptr_arr[i] = NULL;
+		pair_to_id[i] = NULL;
+		pair_sigusr1[i] = urn_hmap_init(urn_odbk_mem_cap*5);
 		for (int j=0; j<urn_odbk_mem_cap; j++)
 			last_odbk_data_id[i][j] = 0l;
 	}

@@ -403,12 +403,14 @@ typedef struct urn_odbk_clients {
 	pid_t pids[urn_odbk_mem_cap][urn_odbk_pid_cap];
 } urn_odbk_clients;
 #define urn_shm_exch_num 10
-const char *urn_shm_exchanges[] = {
-	"Binance", "BNCM", "BNUM", "Bybit",
-	"BybitU", "Coinbase", "FTX", "Kraken",
-	"Bittrex", "Gemini",
-	"\0"};
+#define urn_shm_exch_list \
+	"Binance","BNCM","BNUM","Bybit", \
+	"BybitU","Coinbase","FTX","Kraken", \
+	"Bittrex", "Gemini", \
+	"\0" // SHMEM_KEY depends on list order
+const char *urn_shm_exchanges[] = { urn_shm_exch_list };
 
+/* linear find index from urn_shm_exch_list, please cache result */
 int urn_odbk_shm_i(char *exchange) {
 	int i = 0;
 	while(1) {
@@ -420,6 +422,7 @@ int urn_odbk_shm_i(char *exchange) {
 	return -1;
 }
 
+/* Attach SHMEM, reset data, reset pairs index */
 int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr) {
 	int rv = 0;
 	key_t tmp_shmkey = 0;
@@ -467,6 +470,7 @@ int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr) {
 	return rv;
 }
 
+/* write pair index to SHMEM */
 int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
 	if (len > urn_odbk_mem_cap && len <= 1) {
 		// pair_arr[0] should always be pair name of NULL(no such pair)
@@ -587,12 +591,31 @@ int urn_odbk_clients_init(char *exchange, urn_odbk_clients **shmptr) {
 	return rv;
 }
 
+int urn_odbk_clients_clear(urn_odbk_clients *shmp) {
+	pid_t p = getpid();
+	for (int i = 0; i < urn_odbk_mem_cap; i++) {
+		for (int j = 0; j < urn_odbk_pid_cap; j++) {
+			pid_t p2 = shmp->pids[i][j];
+			if (p == p2)
+				shmp->pids[i][j] = 0;
+		}
+	}
+	return 0;
+}
+
 int urn_odbk_clients_reg(urn_odbk_clients *shmp, int pairid) {
 	pid_t p = getpid();
 	for (int j = 0; j < urn_odbk_pid_cap; j++) {
-		if (shmp->pids[pairid][j] > 0)
-			continue;
-		URN_LOGF("Register urn odbk client pairid %d PID %d", pairid, p);
+		pid_t p2 = shmp->pids[pairid][j];
+		if (p == p2) {
+			URN_LOGF("Register urn odbk client pairid %d PID %d, exists", pairid, p);
+			return 0;
+		} else if (p2 > 0) {
+			// replace slot if PID p2 does not exist.
+			if (kill(p2, 0) == 0) continue;
+			URN_LOGF("Register urn odbk client pairid %d PID %d, replace %d", pairid, p, p2);
+		} else // empty slot
+			URN_LOGF("Register urn odbk client pairid %d PID %d, new", pairid, p);
 		shmp->pids[pairid][j] = p;
 		return 0;
 	}
