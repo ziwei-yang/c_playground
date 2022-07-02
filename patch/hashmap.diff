@@ -1,5 +1,5 @@
 diff --git a/map.c b/map.c
-index 744af9c..ad6a2ee 100644
+index 744af9c..ed79c5a 100644
 --- a/map.c
 +++ b/map.c
 @@ -4,12 +4,12 @@
@@ -61,7 +61,7 @@ index 744af9c..ad6a2ee 100644
 +	if (__hmap_bkt != NULL) \
 +	for (idx=0, key=__hmap_bkt->key, klen=__hmap_bkt->ksize, val=(void *)(__hmap_bkt->value); \
 +			__hmap_bkt != NULL; \
-+			idx+=(__hmap_bkt==NULL?0:1),__hmap_bkt=__hmap_bkt->next, key=__hmap_bkt==NULL?NULL:__hmap_bkt->key, klen=__hmap_bkt==NULL?-1:__hmap_bkt->ksize, val=__hmap_bkt==NULL?NULL:(void *)(__hmap_bkt->value)) \
++			idx+=(__hmap_bkt==NULL?0:1),__hmap_bkt=__hmap_bkt->next, key=__hmap_bkt==NULL?NULL:__hmap_bkt->key, klen=__hmap_bkt==NULL?0:__hmap_bkt->ksize, val=__hmap_bkt==NULL?NULL:(void *)(__hmap_bkt->value)) \
 +			if (key != NULL) 
 +
 +/**

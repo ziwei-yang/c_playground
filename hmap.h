@@ -41,6 +41,7 @@ void urn_hmap_print(hashmap *hmap, char *title) {
 				(unsigned long)val, (char*)val);
 	}
 	URN_LOGF("         end %s", title);
+	klen = klen;
 }
 // same as urn_hmap_print() but print val as number
 void urn_hmap_printi(hashmap *hmap, char *title) {
@@ -54,6 +55,7 @@ void urn_hmap_printi(hashmap *hmap, char *title) {
 				(unsigned long)val);
 	}
 	URN_LOGF("         end %s", title);
+	klen = klen;
 }
 
 #define urn_hmap_free(hmap) hashmap_free(hmap);
@@ -65,6 +67,8 @@ void urn_hmap_free_with_keys(hashmap *hmap) {
 	urn_hmap_foreach(hmap, idx, key, klen, val) {
 		free(key);
 	}
+	klen = klen;
+	val = val;
 	hashmap_free(hmap);
 }
 
@@ -75,6 +79,7 @@ void urn_hmap_free_with_vals(hashmap *hmap, urn_ptr_cb free_cb) {
 	urn_hmap_foreach(hmap, idx, key, klen, val) {
 		free_cb(val);
 	}
+	klen = klen;
 	hashmap_free(hmap);
 }
 
@@ -86,6 +91,7 @@ void urn_hmap_free_with_keyvals(hashmap *hmap, urn_ptr_cb free_cb) {
 		free(key);
 		free_cb(val);
 	}
+	klen = klen;
 	hashmap_free(hmap);
 }
 

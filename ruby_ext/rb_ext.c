@@ -68,6 +68,8 @@ static int _reset_pairmap(int i) {
 		URN_LOGF("\tre-register SIGUSR1 for %s %lu", key, pairid);
 		urn_odbk_clients_reg(clients_shmptr_arr[i], pairid);
 	}
+	klen = klen;
+	val = val;
 	return 0;
 }
 
