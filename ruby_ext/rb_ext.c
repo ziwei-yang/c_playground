@@ -35,7 +35,7 @@ static int _reset_pairmap(int i) {
 
 	int rv = _prepare_shmptr(i);
 	if (rv != 0) {
-		URN_WARNF("Attach shmptr %d failed", i);
+		URN_WARNF("Attach shmptr %d %s failed", i, urn_shm_exchanges[i]);
 		return rv;
 	}
 	urn_odbk_mem *shmp = shmptr_arr[i];
@@ -77,25 +77,27 @@ static int _reset_pairmap(int i) {
  * reset pair_to_id if pairid does not match
  */
 static int _get_pairid(int exch_i, char *pair, uintptr_t *pairidp) {
+	int rv = 0;
+	if (exch_i < 0 || exch_i >= urn_shm_exch_num) return ERANGE;
+	const char *exch = urn_shm_exchanges[exch_i];
+
 	if (pair == NULL) {
-		URN_WARNF("_get_pairmap %d pair is NULL", exch_i);
+		URN_WARNF("_get_pairmap %d %s pair is NULL", exch_i, exch);
 		return ERANGE;
 	}
 
-	int rv = 0;
-	if (exch_i < 0 || exch_i >= urn_shm_exch_num) return ERANGE;
 	hashmap *pair_map = pair_to_id[exch_i];
 	if (pair_map == NULL) {
 		rv = _reset_pairmap(exch_i);
 		pair_map = pair_to_id[exch_i];
 		if ((rv != 0) || (pair_map == NULL)) {
-			URN_WARNF("_reset_pairmap %d failed", exch_i);
+			URN_WARNF("_reset_pairmap %s failed", exch);
 			return EINVAL;
 		}
 	}
 	urn_hmap_getptr(pair_map, pair, pairidp);
 	if ((*pairidp) >= urn_odbk_mem_cap) {
-		URN_WARNF("_get_pairmap %d %s out of range: %lu", exch_i, pair, *pairidp);
+		URN_WARNF("_get_pairmap %s %s out of range: %lu", exch, pair, *pairidp);
 		return ERANGE;
 	}
 
@@ -103,13 +105,13 @@ static int _get_pairid(int exch_i, char *pair, uintptr_t *pairidp) {
 	bool must_rebuild = false;
 	// Found in pair_to_id, but still need to verify pair name.
 	if ((*pairidp) == 0) { // NULL means not found.
-		URN_WARNF("_get_pairmap %d %s not found: %lu, search again",
-			exch_i, pair, *pairidp);
+		URN_WARNF("_get_pairmap %s %s not found: %lu, search again",
+			exch, pair, *pairidp);
 	} else if (strcmp(shmp->pairs[*pairidp], pair) == 0)
 		return 0; // verified
 	else {
-		URN_LOGF("_get_pairmap %d %s=%lu found but does not match SHMEM %s, search again",
-			exch_i, pair, *pairidp, shmp->pairs[*pairidp]);
+		URN_LOGF("_get_pairmap %s %s=%lu found but does not match SHMEM %s, search again",
+			exch, pair, *pairidp, shmp->pairs[*pairidp]);
 		must_rebuild = true;
 	}
 
@@ -123,7 +125,7 @@ static int _get_pairid(int exch_i, char *pair, uintptr_t *pairidp) {
 			break;
 		}
 	}
-	URN_LOGF("SHMEM %d %s=%lu %s found", exch_i, pair, *pairidp, (found ? "":"not"));
+	URN_LOGF("SHMEM %s %s=%lu %s found", exch, pair, *pairidp, (found ? "":"not"));
 	if (!found && !must_rebuild) return ENOENT;
 	return _reset_pairmap(exch_i);
 }
@@ -138,7 +140,8 @@ static urn_odbk_mem * _get_valid_urn_odbk_mem(VALUE v_idx) {
 	int rv = 0;
 	if (shmptr_arr[idx] == NULL) {
 		if ((rv = _prepare_shmptr(idx)) != 0) {
-			URN_WARNF("Error in _prepare_shmptr %d", idx);
+			URN_WARNF("Error in _prepare_shmptr %d %s",
+				idx, urn_shm_exchanges[idx]);
 			return NULL;
 		}
 	}
