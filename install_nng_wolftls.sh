@@ -52,6 +52,8 @@ if [ ! -f $HOME/install/include/nng/nng.h ]; then
 	################################################
 	echo "Building nng1.5.2 without ssl first to build wolfssl"
 	cd $HOME/Proj/nng/
+	rm -rvf $HOME/install/include/nng/
+	rm -rvf $HOME/install/lib/libnng*
 	rm -rf build && mkdir build && cd build && \
 		echo cmake --install-prefix=$HOME/install .. && \
 		cmake --install-prefix=$HOME/install .. && \
@@ -90,6 +92,8 @@ if [ ! -f $HOME/install/include/nng/nng.h ]; then
 	cd $HOME/Proj/nng/
 	rm -rf build && mkdir build && cd build
 
+	rm -rvf $HOME/install/include/nng/
+	rm -rvf $HOME/install/lib/libnng*
 	echo cmake -DNNG_ENABLE_TLS=ON -DNNG_TLS_ENGINE=wolf \
 		-DWOLFSSL_ROOT_DIR=$HOME/install \
 		--install-prefix=$HOME/install ..
