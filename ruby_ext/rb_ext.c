@@ -234,7 +234,7 @@ VALUE _make_odbk_data_if_newer(VALUE v_idx, VALUE v_pair, VALUE v_max_row, bool 
 	}
 
 	int max_row = 99;
-	if (RB_TYPE_P(v_idx, T_FIXNUM) != 1)
+	if (RB_TYPE_P(v_idx, T_FIXNUM) == 1)
 		max_row = NUM2INT(v_max_row);
 	max_row = URN_MIN(99, (int)max_row);
 	if (max_row <= 0) return Qnil;
