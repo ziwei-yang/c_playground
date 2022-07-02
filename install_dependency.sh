@@ -11,6 +11,7 @@ HOMEBREW=
 [[ $os == Linux ]] && echo sudo apt install cmake && sudo apt install cmake
 
 cd $DIR
+source $DIR/install_mbedtls.sh
 source $DIR/install_nng_wolftls.sh
 
 # JSMN: get jsmn.h
