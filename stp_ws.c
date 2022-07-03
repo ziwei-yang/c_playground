@@ -222,6 +222,7 @@ int on_wss_msg(char *msg, size_t len) {
 	char *depth_pair = pair_arr[pairid];
 	URN_DEBUGF("\t -> odbk %s %3lu %s", (is_snapshot ? "full":"delta"), pairid, depth_pair);
 	odbk_t_arr[pairid] = ts_e6_l;
+	wss_mkt_ts = ts_e6_l;
 	if (is_snapshot) {
 		URN_GO_FINAL_ON_RV(on_odbk(pairid, NULL, jdata), "Err in odbk handling")
 		bitstamp_wss_cancel_channel(channel);
