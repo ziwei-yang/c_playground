@@ -127,6 +127,7 @@ int on_wss_msg(char *msg, size_t len) {
 	yyjson_val *jval = NULL;
 	yyjson_val *jdata = NULL;
 	bool        keep_last_half_msg = false;
+	bool        half_msg_matched = false;
 
 	URN_DEBUGF("on_wss_msg %zu %.*s", len, URN_MIN(1024, ((int)len)), msg);
 
@@ -137,7 +138,7 @@ int on_wss_msg(char *msg, size_t len) {
 	jval = yyjson_obj_get(jroot, "event");
 	if (jval == NULL) {
 		// Bitstamp msg might be split into 2 msg, save first half.
-		if (msg[0] == '{' && msg[len-1] != '}') {
+		if (msg[0] == '{') {
 			if (last_half_msg != NULL) {
 				URN_WARNF("on_wss_msg discard half json msg %s", last_half_msg);
 				free(last_half_msg);
@@ -149,7 +150,7 @@ int on_wss_msg(char *msg, size_t len) {
 			last_half_msg[len] = '\0';
 			URN_LOGF("on_wss_msg save half json msg %lu", len);
 			goto final;
-		} else if (msg[0] != '{' && msg[len-1] == '}' && last_half_msg != NULL) {
+		} else if (msg[len-1] == '}' && last_half_msg != NULL) {
 			// match last half msg and parse again.
 			size_t last_len = strlen(last_half_msg);
 			char *full_msg = malloc(len + last_len + 1);
@@ -170,6 +171,7 @@ int on_wss_msg(char *msg, size_t len) {
 				goto final;
 			} else {
 				URN_LOG("on_wss_msg combine msg matched");
+				half_msg_matched = true;
 			}
 		} else {
 			URN_WARNF("on_wss_msg unexpect no event\n%s", msg);
@@ -180,10 +182,10 @@ int on_wss_msg(char *msg, size_t len) {
 	URN_RET_ON_NULL(event, "Has event but no str val", EINVAL);
 
 	if (strcmp(event, "bts:subscription_succeeded") == 0) {
-		URN_INFOF("on_wss_msg omit %s", msg);
+		// URN_INFOF("on_wss_msg omit %s", msg);
 		goto final;
 	} else if (strcmp(event, "bts:unsubscription_succeeded") == 0) {
-		URN_INFOF("on_wss_msg omit %s", msg);
+		// URN_INFOF("on_wss_msg omit %s", msg);
 		goto final;
 	}
 
@@ -236,7 +238,10 @@ error:
 
 final:
 	if ((!keep_last_half_msg) && last_half_msg != NULL) {
-		URN_WARN("on_wss_msg discard half json msg");
+		if (!half_msg_matched) {
+			URN_WARNF("on_wss_msg discard half json msg, %s\ncurrent one:\n%s",
+				last_half_msg, msg);
+		}
 		free(last_half_msg);
 		last_half_msg = NULL;
 	}
