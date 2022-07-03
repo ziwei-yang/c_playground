@@ -27,6 +27,8 @@ elif [[ $1 == 'gemini' ]]; then
 	$DIR/run.sh gmn_ws.c bat doge eth link ltc zec eth-bat eth-link eth-ltc eth-zec usd-1inch usd-1inch usd-aave usd-aave usd-alcx usd-alcx usd-bal usd-bal usd-bat usd-bat usd-btc usd-btc usd-comp usd-comp usd-crv usd-crv usd-cvc usd-cvc usd-doge usd-doge usd-enj usd-enj usd-eth usd-eth usd-fil usd-fil usd-ftm usd-ftm usd-link usd-link usd-lrc usd-lrc usd-ltc usd-ltc usd-matic usd-matic usd-ren usd-ren usd-sand usd-sand usd-slp usd-slp usd-storj usd-storj usd-sushi usd-sushi usd-uni usd-uni usd-xtz usd-xtz usd-zec usd-zec usd-zrx usd-zrx
 elif [[ $1 == 'bitstamp' ]]; then
 	$DIR/run.sh stp_ws.c aave ada comp eth link ltc uni xrp zrx eth-link usd-aave usd-ada usd-btc usd-comp usd-eth usd-imx usd-link usd-ltc usd-pax usd-storj usd-uni usd-usdc usd-usdt usd-xrp usd-zrx usdt-btc usdt-eth usdt-usdc usdt-xrp
+elif [[ $1 == 'bybits' ]]; then
+	$DIR/run.sh bybs_ws.c usdt-btc usdt-eth usdc-bit usdt-bit usdt-usdc
 else
 	echo "Not supported $@"
 	exit 1
