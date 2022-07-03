@@ -196,7 +196,6 @@ int on_wss_msg(char *msg, size_t len) {
 		urn_hmap_getptr(depth_snpsht_chn_to_pairid, product_id, &pairid);
 		if (pairid != 0) {
 			// No E in snapshot data.
-			newodbk_arr[pairid] ++;
 			char *depth_pair = pair_arr[pairid];
 			URN_DEBUGF("\t -> odbk pair snapshot %lu %s", pairid, depth_pair);
 			URN_GO_FINAL_ON_RV(on_odbk(pairid, NULL, jroot), "Err in odbk handling")
@@ -210,7 +209,6 @@ int on_wss_msg(char *msg, size_t len) {
 		uintptr_t pairid = 0;
 		urn_hmap_getptr(depth_chn_to_pairid, product_id, &pairid);
 		if (pairid != 0) {
-			newodbk_arr[pairid] ++;
 			odbk_t_arr[pairid] = ts_e6;
 
 			char *depth_pair = pair_arr[pairid];

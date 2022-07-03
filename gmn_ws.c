@@ -129,7 +129,6 @@ int on_wss_msg(char *msg, size_t len) {
 	URN_RET_ON_NULL(data = yyjson_obj_get(jroot, "changes"), "No changes", EINVAL);
 
 	// l2_updates processing here.
-	newodbk_arr[pairid] ++;
 	odbk_t_arr[pairid] = (long)(odbk_mkt_t.tv_sec) * 1000000l + (long)(odbk_mkt_t.tv_usec);
 	char *depth_pair = pair_arr[pairid];
 	URN_DEBUGF("\t -> odbk update %3lu %s", pairid, depth_pair);

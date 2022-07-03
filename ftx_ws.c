@@ -138,7 +138,6 @@ int on_wss_msg(char *msg, size_t len) {
 		long ts_e6 = (long)(ts*1000000l);
 		odbk_t_arr[pairid] = ts_e6;
 
-		newodbk_arr[pairid] ++;
 		wss_mkt_ts = odbk_t_arr[pairid];
 
 		if (strcmp(action, "partial") == 0) {

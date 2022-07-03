@@ -221,7 +221,6 @@ int on_wss_msg(char *msg, size_t len) {
 			long ts_e6 = yyjson_get_uint(jval) * 1000l;
 			odbk_t_arr[pairid] = ts_e6;
 			wss_mkt_ts = ts_e6;
-			newodbk_arr[pairid] ++;
 
 			char *depth_pair = pair_arr[pairid];
 			URN_DEBUGF("\t -> odbk pair delta    %lu %s %ld", pairid, depth_pair, ts_e6);

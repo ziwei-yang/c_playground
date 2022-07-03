@@ -376,7 +376,6 @@ int on_odbk(int pairid, yyjson_val *jroot) {
 				"Error in parse_n_mod_odbk_porder() for asks");
 	}
 
-	newodbk_arr[pairid] ++;
 	odbk_updated(pairid);
 
 final:
@@ -428,7 +427,6 @@ int on_odbk_update(char *msg, size_t msg_len) {
 				"Error in parse_n_mod_odbk_porder() for asks");
 	}
 
-	newodbk_arr[pairid] ++;
 	odbk_updated(pairid);
 
 final:

@@ -153,7 +153,6 @@ int on_wss_msg(char *msg, size_t len) {
 				URN_GO_FINAL_ON_RV(EINVAL, "No t_e6");
 			}
 		}
-		newodbk_arr[pairid] ++;
 		wss_mkt_ts = odbk_t_arr[pairid];
 
 		if (depth_pair == NULL) {

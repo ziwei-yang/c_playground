@@ -402,11 +402,11 @@ typedef struct urn_odbk_clients {
 	char pids_desc[urn_odbk_mem_cap][urn_odbk_pid_cap][64];
 	pid_t pids[urn_odbk_mem_cap][urn_odbk_pid_cap];
 } urn_odbk_clients;
-#define urn_shm_exch_num 10
+#define urn_shm_exch_num 11
 #define urn_shm_exch_list \
 	"Binance","BNCM","BNUM","Bybit", \
 	"BybitU","Coinbase","FTX","Kraken", \
-	"Bittrex", "Gemini", \
+	"Bittrex", "Gemini", "Bitstamp", \
 	"\0" // SHMEM_KEY depends on list order
 const char *urn_shm_exchanges[] = { urn_shm_exch_list };
 

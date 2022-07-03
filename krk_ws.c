@@ -274,7 +274,6 @@ int on_wss_msg(char *msg, size_t len) {
 			processed = true;
 		}
 		if (processed) {
-			newodbk_arr[pairid] ++;
 			URN_GO_FINAL_ON_RV(odbk_updated(pairid), "Err in odbk_updated()")
 		} else {
 			URN_GO_FINAL_ON_RV(EINVAL, "nothing processed in array msg");

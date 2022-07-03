@@ -112,7 +112,7 @@ struct timespec _tmp_clock;
 ///////////// broadcast ctrl //////////////
 struct timespec brdcst_t; // last time to call broadcast()
 unsigned long brdcst_interval_ms; // min ms between two broadcast
-unsigned int  newodbk_arr[MAX_PAIRS];
+int           newodbk_arr[MAX_PAIRS];
 char         *pub_odbk_chn_arr[MAX_PAIRS];
 char         *pub_odbk_key_arr[MAX_PAIRS]; // kv snapshot
 char         *pub_tick_chn_arr[MAX_PAIRS];
@@ -816,7 +816,9 @@ void mkt_wss_odbk_purge(int pairid) {
 	bidct_arr[pairid] = 0;
 }
 
+/* newodbk_arr[pairid] is maintained: +1 if inserted and not removed later */
 void mkt_wss_odbk_insert(int pairid, urn_inum *p, urn_inum *s, bool buy) {
+	newodbk_arr[pairid] ++;
 	urn_porder *o = urn_porder_alloc(NULL, p, s, buy, NULL);
 	if (buy) { // bids from low to high, reversed
 		GList *bids = bids_arr[pairid];
@@ -827,9 +829,13 @@ void mkt_wss_odbk_insert(int pairid, urn_inum *p, urn_inum *s, bool buy) {
 		}
 		bids = g_list_insert_sorted(bids, o, urn_porder_px_cmp);
 		URN_DEBUGF_C(GREEN, "\t %s %s insert bids %p->%p o %p", urn_inum_str(p), urn_inum_str(s), bids, bids->data, o);
-		if (bidct_arr[pairid]+1 > MAX_DEPTH)
+		if (bidct_arr[pairid]+1 > MAX_DEPTH) {
+			// If this new appended data would be removed
+			// newodbk_arr stay unchanged.
+			if (bids->data == o)
+				newodbk_arr[pairid] --;
 			bids = remove_top_porder(bids);
-		else
+		} else
 			bidct_arr[pairid]++;
 		bids_arr[pairid] = bids;
 		bids->prev = NULL;
@@ -842,9 +848,13 @@ void mkt_wss_odbk_insert(int pairid, urn_inum *p, urn_inum *s, bool buy) {
 		}
 		asks = g_list_insert_sorted(asks, o, urn_porder_px_cmprv);
 		URN_DEBUGF_C(GREEN, "\t %s %s insert asks %p->%p o %p", urn_inum_str(p), urn_inum_str(s), asks, asks->data, o);
-		if (askct_arr[pairid]+1 > MAX_DEPTH)
+		if (askct_arr[pairid]+1 > MAX_DEPTH) {
+			// If this new appended data would be removed
+			// newodbk_arr stay unchanged.
+			if (asks->data == o)
+				newodbk_arr[pairid] --;
 			asks = remove_top_porder(asks);
-		else
+		} else
 			askct_arr[pairid]++;
 		asks_arr[pairid] = asks;
 		asks->prev = NULL;
@@ -893,11 +903,13 @@ bool mkt_wss_odbk_update_or_delete(int pairid, urn_inum *p, urn_inum *s, bool bu
 		}
 		// update should become insert after this
 		if (update) {
+			// newodbk_arr is well maintained in mkt_wss_odbk_insert()
 			mkt_wss_odbk_insert(pairid, p, s, buy);
 		}
 		return true;
 	}
 
+	newodbk_arr[pairid] ++;
 	// found node with same price.
 	if (update) { // update p and s only
 		urn_porder_free(node->data);
