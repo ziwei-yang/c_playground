@@ -1,7 +1,7 @@
 // uranus options
 #undef URN_WSS_DEBUG // wss I/O log
 #define URN_MAIN_DEBUG // debug log
-//#undef URN_MAIN_DEBUG // off debug log
+#undef URN_MAIN_DEBUG // off debug log
 
 // local options
 #define PUB_LESS_ON_ZERO_LISTENER
