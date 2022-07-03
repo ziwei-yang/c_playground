@@ -133,6 +133,7 @@ int on_wss_msg(char *msg, size_t len) {
 	char *depth_pair = pair_arr[pairid];
 	URN_DEBUGF("\t -> odbk %3lu %s %ld", pairid, depth_pair, ts_e3);
 	odbk_t_arr[pairid] = ts_e3 * 1000;
+	wss_mkt_ts = ts_e3 * 1000;
 	URN_GO_FINAL_ON_RV(on_odbk(pairid, NULL, jdata), "Err in odbk handling")
 	URN_DEBUGF("\t -> newodbk_arr %d %s", newodbk_arr[pairid], depth_pair);
 	URN_GO_FINAL_ON_RV(odbk_updated(pairid), "Err in odbk_updated()")
