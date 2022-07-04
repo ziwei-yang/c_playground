@@ -2,7 +2,13 @@
 SOURCE="${BASH_SOURCE[0]}"
 DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
-# echo "Don't do this, Ubuntu 20.04 says need this during building, but should be a NNG bug" && exit 1
+# Ubuntu 20.04 needs system mbedtls, self compiled does not work, should be a NNG bug
+os=$( uname )
+if [[ $os == Linux ]]; then
+	echo sudo apt -y install libmbedtls*
+	sudo apt -y install libmbedtls*
+	exit $?
+fi
 
 if [ ! -f $HOME/install/include/mbedtls/ssl.h ]; then
 	if [ ! -d $HOME/Proj/mbedtls-3.1.0 ]; then

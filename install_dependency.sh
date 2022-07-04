@@ -11,7 +11,8 @@ HOMEBREW=
 [[ $os == Linux ]] && echo sudo apt install cmake && sudo apt install cmake
 
 cd $DIR
-# nng does not need mbedtls as TLS module but requires lib mbedx509 + mbedcrypto
+# NNG does not need mbedtls as TLS module but,
+# it deeply depends mbedtls, even engine switched to wolfssl
 source $DIR/install_mbedtls.sh
 source $DIR/install_nng_wolftls.sh # TLS for NNG
 
