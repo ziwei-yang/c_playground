@@ -18,6 +18,12 @@ for f in shmutil.c mkt_viewer.c ; do
 	[[ $? != 0 ]] && echo "Failed" && exit 1
 done
 
-cd $DIR/ruby_ext
-echo "rvm use 3.0 ; ruby extconf.rb ; make clean; make"
-rvm use 3.0 && ruby extconf.rb && make clean && make
+echo "Checking RVM"
+which rvm
+if [[ $? == 0 ]]; then
+	cd $DIR/ruby_ext
+	echo "rvm use 3.0 ; ruby extconf.rb ; make clean; make"
+	rvm use 3.0 && ruby extconf.rb && make clean && make
+else
+	echo "rvm not exist, skip building ruby ext"
+fi

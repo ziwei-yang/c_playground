@@ -2,7 +2,7 @@
 SOURCE="${BASH_SOURCE[0]}"
 DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
-echo "Don't do this, Ubuntu 20.04 says need this during building, but should be a NNG bug" && exit 1
+# echo "Don't do this, Ubuntu 20.04 says need this during building, but should be a NNG bug" && exit 1
 
 if [ ! -f $HOME/install/include/mbedtls/ssl.h ]; then
 	if [ ! -d $HOME/Proj/mbedtls-3.1.0 ]; then
