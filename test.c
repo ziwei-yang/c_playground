@@ -66,6 +66,9 @@ int test_inum () {
 	URN_RET_UNLESS(sizeof_desc >= 32, "sizeof(inum.s) should >= 32", EINVAL);
 	URN_RET_UNLESS(sizeof(i1)==64, "sizeof(inum) should == 64", EINVAL);
 	URN_LOG_C(GREEN, "urn_inum test passed");
+
+	// TODO
+	// test urn_inum_add()
 	return rv;
 }
 
@@ -87,7 +90,7 @@ int test_ticks() {
 		urn_inum p, s;
 		p.intg = i+1;
 		s.intg = i+10;
-		urn_tick_append(&ticks, (i%2==0), &p, &s, i+1000000);
+		urn_tick_append(&ticks, (i%2==0), &p, &s, i*1000000);
 		// look back, verify ticks
 		for (int j=0; j<=URN_TICK_LENTH; j++) {
 			bool buy;
@@ -113,7 +116,7 @@ int test_ticks() {
 				URN_FATAL("urn_tick_get() s error", EINVAL);
 			}
 			if (ts_e6 != (i-j+1000000)) {
-				URN_WARNF("urn_tick_get() ts_e6 %lu, expect %d", ts_e6, i-j+1000000);
+				URN_WARNF("urn_tick_get() ts_e6 %lu, expect %d", ts_e6, (i-j)*1000000);
 				URN_FATAL("urn_tick_get() ts_e6 error", EINVAL);
 			}
 		}

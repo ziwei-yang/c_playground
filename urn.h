@@ -234,8 +234,8 @@ void urn_s_downcase(char *s, int slen) {
 #define URN_INUM_FRACEXP 1000000000000
 /* 64 bits fixed size of num, fixed size for share memory  */
 typedef struct urn_inum {
-	long   intg;
-	size_t frac_ext; // frac_ext = frac * 1e-URN_INUM_PRECISE
+	unsigned long intg;
+	unsigned long frac_ext; // frac_ext = frac * 1e-URN_INUM_PRECISE
 	_Bool  pstv; // when intg is zero, use this for sign.
 	// description size padding to 64
 	char   s[64-sizeof(long)-sizeof(size_t)-sizeof(_Bool)];
@@ -359,6 +359,52 @@ int urn_inum_alloc(urn_inum **i, const char *s) {
 	return urn_inum_parse(*i, s);
 }
 
+/* add i2 to i1 */
+int urn_inum_add(urn_inum *i1, urn_inum *i2) {
+	if (i1 == NULL && i2 == NULL) return EINVAL;
+	if (i1 != NULL && i2 == NULL) return EINVAL;
+	if (i1 == NULL && i2 != NULL) return EINVAL;
+//	URN_DEBUGF("Add inum %20s to %20s", urn_inum_str(i2), urn_inum_str(i1));
+	if (i1->pstv == i2->pstv) {
+		// Both pos or neg
+		i1->intg += i2->intg;
+		i1->frac_ext += i2->frac_ext;
+		if (i1->frac_ext > URN_INUM_FRACEXP) {
+			i1->intg += 1;
+			i1->frac_ext -= URN_INUM_FRACEXP;
+		}
+	} else {
+		// +i1-i2 OR -i1+i2, does not matter, just reverse pstv
+		if (i1->intg > i2->intg) {
+			i1->intg -= i2->intg;
+			i1->intg --;
+			i1->frac_ext += URN_INUM_FRACEXP;
+			i1->frac_ext -= i2->frac_ext;
+			if (i1->frac_ext > URN_INUM_FRACEXP) {
+				i1->intg += 1;
+				i1->frac_ext -= URN_INUM_FRACEXP;
+			}
+		} else if (i1->intg == i2->intg) {
+			i1->intg = 0;
+			if (i1->intg >= i2->intg) {
+				i1->frac_ext -= i2->frac_ext;
+			} else {
+				i1->pstv = !(i1->pstv);
+				i1->frac_ext = i2->frac_ext - i1->frac_ext;
+			}
+		} else if (i1->intg < i2->intg) {
+			i1->pstv = !(i1->pstv);
+			i1->intg = i2->intg - i1->intg - 1;
+			i1->frac_ext = i2->frac_ext - i1->frac_ext + URN_INUM_PRECISE;
+			if (i1->frac_ext > URN_INUM_FRACEXP) {
+				i1->intg += 1;
+				i1->frac_ext -= URN_INUM_FRACEXP;
+			}
+		}
+	}
+	return 0;
+}
+
 //////////////////////////////////////////
 // orderbook data read/write in share memory
 //////////////////////////////////////////
@@ -402,6 +448,7 @@ typedef struct urn_odbk {
  * 		idx = LEN - 1;
  */
 #define URN_TICK_LENTH 32 // must be less than ushort/2
+#define URN_TICK_MERGE 1000000 // merge tick at same price in 1000000us(1s)
 typedef struct urn_ticks {
 	char           desc[64-sizeof(unsigned long)-2*sizeof(unsigned short)];
 	unsigned long  latest_t_e6; // 0:no tick, >0:last tick ts_e6
@@ -430,13 +477,26 @@ int urn_tick_append(urn_ticks *ticks, bool buy, urn_inum *p, urn_inum *s, unsign
 		ticks->latest_t_e6 = ts_e6;
 		return 0;
 	}
-	unsigned short idx = (ticks->latest_idx + 1) % URN_TICK_LENTH;
+	unsigned short idx;
+#ifdef URN_TICK_MERGE
+	idx = ticks->latest_idx;
+	if ((ticks->tickts_e6[idx] + URN_TICK_MERGE > ts_e6) &&
+			(ticks->tickB[idx] == buy) &&
+			(urn_inum_cmp(p, &(ticks->tickp[idx])) == 0)) {
+		// Time close, p same, buy same -> merge size
+		// Also update time for next merge.
+		urn_inum_add(&(ticks->ticks[idx]), s);
+		ticks->tickts_e6[idx] = ts_e6;
+		ticks->latest_t_e6 = ts_e6;
+		return 0;
+	}
+#endif
+	idx = (ticks->latest_idx + 1) % URN_TICK_LENTH;
 	ticks->oldest_idx = (ticks->oldest_idx + 1) % URN_TICK_LENTH;
-	// URN_LOGF("write to urn_ticks %hu", idx);
 	memcpy(&(ticks->tickp[idx]), p, sizeof(urn_inum));
 	memcpy(&(ticks->ticks[idx]), s, sizeof(urn_inum));
-	ticks->tickts_e6[idx] = ts_e6;
 	ticks->tickB[idx] = buy;
+	ticks->tickts_e6[idx] = ts_e6;
 	ticks->latest_t_e6 = ts_e6;
 	ticks->latest_idx = idx;
 	return 0;
@@ -651,12 +711,12 @@ int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 			urn_inum_str(&(odbk->asks[i])));
 	}
 
-	// Print latest 5 trades.
+	// Print latest 6 trades.
 	urn_ticks *ticks = &(shmp->ticks[pairid]);
 	bool buy = false;
 	urn_inum p, s;
 	unsigned long ts_e6 = 0, ts = 0;
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < 6; i++) {
 		int rv = urn_tick_get(ticks, i, &buy, &p, &s, &ts_e6);
 		ts = ts_e6 / 1000000;
 		if (rv == ERANGE) {
