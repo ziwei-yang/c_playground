@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
 		URN_LOG("Compiled at " __TIMESTAMP__);
 		return 0;
 	} else if (strcasecmp(argv[1], "-h") == 0) {
-		URN_LOG("args: shmkey del/resize [subargs]");
+		URN_LOG("args: shmkey stat/del/resize [subargs]");
 		return 0;
 	}
 
@@ -28,11 +28,18 @@ int main(int argc, char **argv) {
 		return errno;
 	}
 
-	if (strcasecmp(argv[2], "stat") == 0) {
+	if (argc == 2) {
+		URN_LOG("args: shmkey stat/del/resize [subargs]");
+		return 0;
+	} else if (strcasecmp(argv[2], "stat") == 0) {
 		rv = shmctl(shmid, IPC_STAT, &ds);
-		if (errno != 0)
+		if (rv != 0)
 			perror("shmctl IPC_STAT error");
-		URN_INFOF("\tIPC_STAT rv=%d", rv);
+		URN_INFOF("\tIPC_STAT rv: %d", rv);
+		URN_INFOF("\tshm_segsz:   %zu", ds.shm_segsz);
+		URN_INFOF("\tlast op pid: %d", ds.shm_lpid);
+		URN_INFOF("\tcreator pid: %d", ds.shm_cpid);
+		URN_INFOF("\tnum attach:  %d", ds.shm_nattch);
 	} else if (strcasecmp(argv[2], "del") == 0) {
 		rv = shmctl(shmid, IPC_RMID, NULL);
 		if (errno != 0)
