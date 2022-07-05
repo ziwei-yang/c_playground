@@ -76,12 +76,12 @@ typedef struct urn_porder {
 	urn_pair *pair;
 	urn_inum *p;
 	urn_inum *s;
-	struct timeval  *t;
+	unsigned long t; // ts_e6
 	_Bool    T; // 1: buy, 0: sell
 	char    *desc; // self managed description cache.
 } urn_porder;
 
-urn_porder *urn_porder_alloc(urn_pair *pair, urn_inum *p, urn_inum *s, _Bool buy, struct timeval *t) {
+urn_porder *urn_porder_alloc(urn_pair *pair, urn_inum *p, urn_inum *s, _Bool buy, unsigned long t) {
 	urn_porder *o = malloc(sizeof(urn_porder));
 	if (o == NULL) return o;
 	o->pair = pair;
@@ -99,7 +99,6 @@ void urn_porder_free(void *ptr) {
 	if (o->pair != NULL) free(o->pair);
 	if (o->p != NULL) free(o->p);
 	if (o->s != NULL) free(o->s);
-	if (o->t != NULL) free(o->t);
 	if (o->desc != NULL) free(o->desc);
 	free(o);
 }

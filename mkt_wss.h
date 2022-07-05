@@ -819,7 +819,7 @@ void mkt_wss_odbk_purge(int pairid) {
 /* newodbk_arr[pairid] is maintained: +1 if inserted and not removed later */
 void mkt_wss_odbk_insert(int pairid, urn_inum *p, urn_inum *s, bool buy) {
 	newodbk_arr[pairid] ++;
-	urn_porder *o = urn_porder_alloc(NULL, p, s, buy, NULL);
+	urn_porder *o = urn_porder_alloc(NULL, p, s, buy, 0);
 	if (buy) { // bids from low to high, reversed
 		GList *bids = bids_arr[pairid];
 		if (bids->data == NULL) {
@@ -913,7 +913,7 @@ bool mkt_wss_odbk_update_or_delete(int pairid, urn_inum *p, urn_inum *s, bool bu
 	// found node with same price.
 	if (update) { // update p and s only
 		urn_porder_free(node->data);
-		urn_porder *o = urn_porder_alloc(NULL, p, s, buy, NULL);
+		urn_porder *o = urn_porder_alloc(NULL, p, s, buy, 0);
 		node->data = o;
 		URN_DEBUGF_C(BLUE, "update the node %p s %s p %s", node, urn_inum_str(o->s), urn_inum_str(o->p));
 	} else { // delete this node.
@@ -964,8 +964,8 @@ int odbk_updated(int pairid) {
 	return 0;
 }
 
-// Post action after tick updated.
-int tick_updated(int pairid) {
+// Post action after num of ticks updated.
+int tick_updated(int pairid, int num) {
 	return 0;
 }
 
