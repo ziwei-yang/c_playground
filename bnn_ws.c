@@ -118,26 +118,26 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	//
 	// For Binance SPOT market, no more than 120 channels per request.
 	int batch_sz = 40; // odbk + snapshot + tick = 120 requests
-	// For BNUM and BNCM it is okay to send all in one.
-	if (bnn_wss_mode != 0) batch_sz = max_pair_id;
 
-	// Over than 180~200 subscribes in TOTAL makes BNUM server hang
+	// Over than 140 subscribes in TOTAL makes BNUM server hang
 	int chn_per_pair = 3;
+	int max_bnum_chn = 140;
 	bool req_trades = recv_trades && (odbk_shmptr != NULL);
-	if (req_trades && bnn_wss_mode != 0 && (max_pair_id * 3 > 180)) {
+	if (req_trades && bnn_wss_mode != 0 && (max_pair_id * 3 > max_bnum_chn)) {
 		URN_WARNF("BNUM/BNCM %d pairs, req trades after snapshot canceled", max_pair_id);
 		req_trades = false;
 		bnum_cancel_snpsht_req_tick = true; // do this later.
 		chn_per_pair = 2;
 	}
 	bool req_snapshot = true;
-	if (bnn_wss_mode != 0 && (max_pair_id * 2 > 180)) {
+	if (bnn_wss_mode != 0 && (max_pair_id * 2 > max_bnum_chn)) {
 		URN_WARNF("BNUM/BNCM %d pairs, give up snapshot & trades listening", max_pair_id);
 		req_snapshot = false;
 		chn_per_pair = 1;
 	}
-	if (bnn_wss_mode != 0 && max_pair_id > 180)
-		URN_WARNF("BNUM/BNCM %d pairs, more than 180~200 subscrptions might get hang there", max_pair_id);
+	if (bnn_wss_mode != 0 && max_pair_id > max_bnum_chn)
+		URN_WARNF("BNUM/BNCM %d pairs, more than %dsubscrptions might get hang there",
+			max_pair_id, max_bnum_chn);
 
 	int batch = 0;
 	int cmd_ct = 0;
