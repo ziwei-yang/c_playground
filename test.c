@@ -75,12 +75,57 @@ int test_odbk() {
 	URN_LOGF("sizeof urn_odbk %zu", sizeof(urn_odbk));
 	unsigned long expected_s = 64*(4*URN_ODBK_DEPTH+1);
 	URN_RET_UNLESS(sizeof(urn_odbk)==expected_s, "sizeof(inum) should == 64*(4*DEPTH+1)", EINVAL);
+	URN_LOG_C(GREEN, "urn_odbk test passed");
+	return 0;
+}
+
+int test_ticks() {
+	URN_LOGF("sizeof urn_ticks %zu", sizeof(urn_ticks));
+	urn_ticks ticks;
+	memset(&ticks, 0, sizeof(urn_ticks));
+	for (int i=0; i<URN_TICK_LENTH*4; i++) {
+		urn_inum p, s;
+		p.intg = i+1;
+		s.intg = i+10;
+		urn_tick_append(&ticks, (i%2==0), &p, &s, i+1000000);
+		// look back, verify ticks
+		for (int j=0; j<=URN_TICK_LENTH; j++) {
+			bool buy;
+			unsigned long ts_e6=9999;
+			int rv = urn_tick_get(&ticks, j, &buy, &p, &s, &ts_e6);
+			if (j >= URN_TICK_LENTH && rv != ERANGE) {
+				URN_FATAL("urn_tick_get() should return ERANGE", EINVAL);
+			} else if (j > i && rv != ERANGE) {
+				URN_FATAL("urn_tick_get() should return ERANGE", EINVAL);
+			}
+			if (j >= URN_TICK_LENTH) continue;
+			if (j >= i) continue;
+			if (rv != 0) {
+				URN_WARNF("urn_tick_get() write %d, back %d, rv %d", i, j, rv);
+				URN_FATAL("urn_tick_get() should return 0", EINVAL);
+			}
+			if (p.intg != (i-j+1)) {
+				URN_WARNF("urn_tick_get() p %lu, expect %d", p.intg, i-j+1);
+				URN_FATAL("urn_tick_get() p error", EINVAL);
+			}
+			if (s.intg != (i-j+10)) {
+				URN_WARNF("urn_tick_get() s %lu, expect %d", s.intg, i-j+10);
+				URN_FATAL("urn_tick_get() s error", EINVAL);
+			}
+			if (ts_e6 != (i-j+1000000)) {
+				URN_WARNF("urn_tick_get() ts_e6 %lu, expect %d", ts_e6, i-j+1000000);
+				URN_FATAL("urn_tick_get() ts_e6 error", EINVAL);
+			}
+		}
+	}
+	URN_LOG_C(GREEN, "urn_ticks test passed");
 	return 0;
 }
 
 int main() {
 	int rv = 0;
 	URN_RET_ON_RV(test_inum(), "Error in test_inum()");
-	URN_RET_ON_RV(test_odbk(), "Error in test_inum()");
+	URN_RET_ON_RV(test_odbk(), "Error in test_odbk()");
+	URN_RET_ON_RV(test_ticks(), "Error in test_ticks()");
 	return rv;
 }

@@ -383,6 +383,71 @@ typedef struct urn_odbk {
 	urn_inum asks[URN_ODBK_DEPTH];
 } urn_odbk;
 
+/* store latest LEN history trades in cycle
+ * Init:
+ * 	latest_idx = 0; oldest_idx = 1; memset data all NULL;
+ * When writing new ticker:
+ * 	idx = (latest_idx + 1) % LEN;
+ * 	oldest_idx = (oldest_idx + 1) % LEN;
+ * 	write at idx; // idx not accessible now.
+ * 	latest_idx = (latest_idx + 1) % LEN; // idx accessible
+ * When reading, idx = latest_idx, loop;
+ * 	break if data == NULL;
+ * 	break if idx == oldest_idx;
+ * 	read at idx;
+ * 	decr idx below: // from latest to oldest
+ * 	if idx > 0
+ * 		idx = (idx - 1);
+ * 	else
+ * 		idx = LEN - 1;
+ */
+#define URN_TICK_LENTH 32 // must be less than ushort/2
+typedef struct urn_ticks {
+	char           desc[64-sizeof(unsigned long)-2*sizeof(unsigned short)];
+	unsigned long  latest_t_e6; // 0:no tick, >0:last tick ts_e6
+	unsigned short latest_idx;
+	unsigned short oldest_idx;
+	bool           tickB[URN_TICK_LENTH]; // side is buy
+	urn_inum       tickp[URN_TICK_LENTH];
+	urn_inum       ticks[URN_TICK_LENTH];
+	unsigned long  tickts_e6[URN_TICK_LENTH]; // 0:no data
+} urn_ticks;
+int urn_tick_append(urn_ticks *ticks, bool buy, urn_inum *p, urn_inum *s, unsigned long ts_e6) {
+	if (ticks->latest_t_e6 == 0) { // init first data.
+		// URN_LOGF("write to urn_ticks init 0");
+		ticks->latest_idx = 0;
+		ticks->oldest_idx = 1;
+		memcpy(&(ticks->tickp[0]), p, sizeof(urn_inum));
+		memcpy(&(ticks->ticks[0]), s, sizeof(urn_inum));
+		ticks->tickts_e6[0] = ts_e6;
+		ticks->tickB[0] = buy;
+		ticks->latest_t_e6 = ts_e6;
+		return 0;
+	}
+	unsigned short idx = (ticks->latest_idx + 1) % URN_TICK_LENTH;
+	ticks->oldest_idx = (ticks->oldest_idx + 1) % URN_TICK_LENTH;
+	// URN_LOGF("write to urn_ticks %hu", idx);
+	memcpy(&(ticks->tickp[idx]), p, sizeof(urn_inum));
+	memcpy(&(ticks->ticks[idx]), s, sizeof(urn_inum));
+	ticks->tickts_e6[idx] = ts_e6;
+	ticks->tickB[idx] = buy;
+	ticks->latest_t_e6 = ts_e6;
+	ticks->latest_idx = idx;
+	return 0;
+}
+int urn_tick_get(urn_ticks *ticks, int idx, bool *buy, urn_inum *p, urn_inum *s, unsigned long *ts_e6) {
+	if (idx >= URN_TICK_LENTH) return ERANGE;
+	unsigned short i = (ticks->latest_idx + URN_TICK_LENTH - idx) % URN_TICK_LENTH;
+	if (i > ticks->latest_idx && i < ticks->oldest_idx) return ERANGE;
+	if (ticks->tickts_e6[i] == 0) return ERANGE;
+	memcpy(p, &(ticks->tickp[i]), sizeof(urn_inum));
+	memcpy(s, &(ticks->ticks[i]), sizeof(urn_inum));
+	*buy = ticks->tickB[i];
+	*ts_e6 = ticks->tickts_e6[i];
+	// URN_LOGF("read urn_ticks %hu %hhu %lu", i, *buy, *ts_e6);
+	return 0;
+}
+
 // First data is a 512 pair index
 // For each pair, get a swap writing 2 odbk cache [full, dirty] -> [dirty, full]
 // on macos the sizeof(urn_odbk_mem) is 2695168, enough to fit in its SHMMAX 4MB
@@ -394,14 +459,18 @@ typedef struct urn_odbk {
 // https://dansketcher.com/2021/03/30/shmmax-error-on-big-sur/
 #define urn_odbk_mem_cap 512
 typedef struct urn_odbk_mem {
-	char pairs[urn_odbk_mem_cap][16];
-	urn_odbk odbks[urn_odbk_mem_cap][2];
+	char      pairs[urn_odbk_mem_cap][16];
+	urn_odbk  odbks[urn_odbk_mem_cap][2];
+	/* ticks history appened */
+	urn_ticks ticks[urn_odbk_mem_cap];
 } urn_odbk_mem;
+
 #define urn_odbk_pid_cap 8
 typedef struct urn_odbk_clients {
 	char pids_desc[urn_odbk_mem_cap][urn_odbk_pid_cap][64];
 	pid_t pids[urn_odbk_mem_cap][urn_odbk_pid_cap];
 } urn_odbk_clients;
+typedef urn_odbk_clients urn_tick_clients;
 #define urn_shm_exch_num 12
 #define urn_shm_exch_list \
 	"Binance","BNCM","BNUM","Bybit", \
@@ -410,7 +479,7 @@ typedef struct urn_odbk_clients {
 	"\0" // SHMEM_KEY depends on list order
 const char *urn_shm_exchanges[] = { urn_shm_exch_list };
 
-/* linear find index from urn_shm_exch_list, please cache result */
+/* linear find index from constant urn_shm_exch_list, please cache result */
 int urn_odbk_shm_i(char *exchange) {
 	int i = 0;
 	while(1) {
@@ -448,6 +517,42 @@ int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr) {
 			*shmkey, desired_sz, writer ? 'W' : 'R');
 		*shmid = shmget(*shmkey, desired_sz, shmflg | IPC_CREAT);
 		created = true;
+	} else if ((*shmid == -1) && (errno == EINVAL)) {
+		// If is reader, and memory size is larger than desired_sz.
+		// Okay because of writer has newer but comaptiable struct
+		URN_WARNF("odbk_shm_init() EINVAL at key %#08x size %lu %c",
+			*shmkey, desired_sz, writer ? 'W' : 'R');
+		URN_WARN("Checking share memory stat");
+		*shmid = shmget(*shmkey, 0, 0);
+		struct shmid_ds ds;
+		rv = shmctl(*shmid, IPC_STAT, &ds);
+		if (rv != 0) {
+			perror("shmctl IPC_STAT error");
+			URN_RET_ON_RV(errno, "shmget with shmid failed in odbk_shm_init()");
+		}
+		URN_WARNF("\tIPC_STAT rv: %d", rv);
+		URN_WARNF("\tshm_segsz:   %zu", ds.shm_segsz);
+		URN_WARNF("\tlast op pid: %d", ds.shm_lpid);
+		URN_WARNF("\tcreator pid: %d", ds.shm_cpid);
+		URN_WARNF("\tnum attach:  %d", ds.shm_nattch);
+		URN_WARNF("desired_sz %lu", desired_sz);
+		if (writer) {
+			URN_WARN("Try to remove it as writer");
+			URN_RET_ON_RV(shmctl(*shmid, IPC_RMID, NULL),
+				"shmctl with IPC_REID failed in odbk_shm_init()");
+			created = true;
+		} else if (ds.shm_segsz <= desired_sz) {
+			// as reader, refuse smaller shm_segsz
+			URN_WARN("Reader only accepts larger shm_segsz but not smaller");
+			URN_RET_ON_RV(EINVAL, "shmget with shmid failed in odbk_shm_init()");
+		} else {
+			// as reader, accept larger shm_segsz only.
+			URN_WARN("Try shmget() as reader with larger size");
+			desired_sz = ds.shm_segsz;
+		}
+		URN_LOGF("odbk_shm_init() new  at key %#08x size %lu %c",
+			*shmkey, desired_sz, writer ? 'W' : 'R');
+		*shmid = shmget(*shmkey, desired_sz, shmflg | IPC_CREAT);
 	}
 	if (*shmid == -1)
 		URN_RET_ON_RV(errno, "shmget with shmid failed in odbk_shm_init()");
@@ -463,6 +568,8 @@ int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr) {
 			(*shmptr)->pairs[i][0] = '\0';
 			(*shmptr)->odbks[i][0].complete = false;
 			(*shmptr)->odbks[i][1].complete = false;
+			// set all zero.
+			memset(&((*shmptr)->ticks[i]), 0, sizeof(urn_ticks));
 		}
 	}
 	URN_INFOF("odbk_shm_init() done at key %#08x id %d size %lu ptr %p %c",
