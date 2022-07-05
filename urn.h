@@ -412,6 +412,12 @@ typedef struct urn_ticks {
 	urn_inum       ticks[URN_TICK_LENTH];
 	unsigned long  tickts_e6[URN_TICK_LENTH]; // 0:no data
 } urn_ticks;
+urn_ticks *urn_tick_alloc() {
+	return calloc(1, sizeof(urn_ticks));
+}
+void urn_tick_init(urn_ticks *ticks) {
+	memset(ticks, 0, sizeof(urn_ticks));
+}
 int urn_tick_append(urn_ticks *ticks, bool buy, urn_inum *p, urn_inum *s, unsigned long ts_e6) {
 	if (ticks->latest_t_e6 == 0) { // init first data.
 		// URN_LOGF("write to urn_ticks init 0");
@@ -569,7 +575,7 @@ int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr) {
 			(*shmptr)->odbks[i][0].complete = false;
 			(*shmptr)->odbks[i][1].complete = false;
 			// set all zero.
-			memset(&((*shmptr)->ticks[i]), 0, sizeof(urn_ticks));
+			urn_tick_init(&((*shmptr)->ticks[i]));
 		}
 	}
 	URN_INFOF("odbk_shm_init() done at key %#08x id %d size %lu ptr %p %c",
@@ -601,7 +607,7 @@ int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
 
 int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 	URN_RET_IF((pairid >= urn_odbk_mem_cap), "pairid too big", ERANGE);
-	printf("odbk_shm_init %d [%s] complete: [%d, %d]\n", pairid, shmp->pairs[pairid],
+	printf("odbk_shm_init %d [%s] complete: [%d, %d] ", pairid, shmp->pairs[pairid],
 		shmp->odbks[pairid][0].complete, shmp->odbks[pairid][1].complete);
 
 	urn_odbk *odbk = NULL;
@@ -644,7 +650,25 @@ int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 			urn_inum_str(&(odbk->askp[i])),
 			urn_inum_str(&(odbk->asks[i])));
 	}
-	printf("odbk_shm_init %d [%s] -- end --\n", pairid, shmp->pairs[pairid]);
+
+	// Print latest 5 trades.
+	urn_ticks *ticks = &(shmp->ticks[pairid]);
+	bool buy = false;
+	urn_inum p, s;
+	unsigned long ts_e6 = 0, ts = 0;
+	for (int i = 0; i < 5; i++) {
+		int rv = urn_tick_get(ticks, i, &buy, &p, &s, &ts_e6);
+		ts = ts_e6 / 1000000;
+		if (rv == ERANGE) {
+			printf(CLR_YELLOW "ERANGE" CLR_RST "\n");
+			break;
+		}
+		printf("%s  %24s %24s %02lu:%02lu:%02lu.%06lu%s\n",
+			(buy ? CLR_GREEN : CLR_RED),
+			urn_inum_str(&p), urn_inum_str(&s),
+			(ts % 86400)/3600, (ts % 3600)/60,
+			(ts % 60), ts_e6 % 1000000, CLR_RST);
+	}
 	return 0;
 }
 

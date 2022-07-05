@@ -121,6 +121,10 @@ redisContext *redis;
 bool          pub_redis = false;
 
 ///////////// write to SHRMEM //////////////
+/* odbk_shmptr has area to save public trades,
+ * only recv+parse ticks if (WRITE_SHRMEM && recv_trades)
+ */
+bool recv_trades = true;
 urn_odbk_mem *odbk_shmptr = NULL;
 urn_odbk_clients *odbk_clients_shmptr = NULL;
 struct timeval odbk_shm_w_t;
@@ -956,18 +960,20 @@ bool mkt_wss_odbk_update_or_delete(int pairid, urn_inum *p, urn_inum *s, bool bu
 }
 
 // Post action after odbk updated.
-int odbk_updated(int pairid) {
 #ifdef WRITE_SHRMEM
+int odbk_updated(int pairid) {
 	URN_DEBUGF("Write share mem %d", pairid);
 	return odbk_shm_write(pairid);
-#endif
-	return 0;
 }
+#else
+#define odbk_updated(...) 0
+#endif
 
 // Post action after num of ticks updated.
-int tick_updated(int pairid, int num) {
-	return 0;
-}
+//int tick_updated(int pairid, int num) {
+//	return 0;
+//}
+#define tick_updated(...) 0
 
 #ifdef WRITE_SHRMEM
 int odbk_shm_write(int pairid) {

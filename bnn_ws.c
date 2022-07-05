@@ -11,6 +11,7 @@
 
 #include "mkt_wss.h"
 
+int   on_tick(int pairid, yyjson_val *jdata);
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
@@ -101,6 +102,7 @@ void mkt_data_odbk_snpsht_channel(char *sym, char *chn) { sprintf(chn, "%s@depth
 
 void mkt_data_tick_channel(char *sym, char *chn) { sprintf(chn, "%s@aggTrade", sym); }
 
+bool bnum_cancel_snpsht_req_tick = false;
 int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_snpsht_chns, const char**tick_chns) {
 	/*
 	"method": "SUBSCRIBE",
@@ -119,17 +121,18 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	// For BNUM and BNCM it is okay to send all in one.
 	if (bnn_wss_mode != 0) batch_sz = max_pair_id;
 
-	// Over than 180~200 subscribes in total makes BNUM server hang
+	// Over than 180~200 subscribes in TOTAL makes BNUM server hang
 	int chn_per_pair = 3;
-	bool req_trades = true;
-	if (bnn_wss_mode != 0 && (max_pair_id * 3 > 180)) {
-		URN_WARNF("BNUM/BNCM %d pairs, give up trades listening", max_pair_id);
+	bool req_trades = recv_trades && (odbk_shmptr != NULL);
+	if (req_trades && bnn_wss_mode != 0 && (max_pair_id * 3 > 180)) {
+		URN_WARNF("BNUM/BNCM %d pairs, req trades after snapshot canceled", max_pair_id);
 		req_trades = false;
+		bnum_cancel_snpsht_req_tick = true; // do this later.
 		chn_per_pair = 2;
 	}
 	bool req_snapshot = true;
 	if (bnn_wss_mode != 0 && (max_pair_id * 2 > 180)) {
-		URN_WARNF("BNUM/BNCM %d pairs, give up snapshot listening", max_pair_id);
+		URN_WARNF("BNUM/BNCM %d pairs, give up snapshot & trades listening", max_pair_id);
 		req_snapshot = false;
 		chn_per_pair = 1;
 	}
@@ -158,7 +161,7 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 			URN_DEBUGF("\tchn %d %s %s %s", i, odbk_chns[i], odbk_snpsht_chns[i], tick_chns[i]);
 			batch_chn[(i-i_s)*chn_per_pair]   = odbk_chns[i];
 			if (chn_per_pair >= 2)
-			batch_chn[(i-i_s)*chn_per_pair+1] = odbk_snpsht_chns[i];
+				batch_chn[(i-i_s)*chn_per_pair+1] = odbk_snpsht_chns[i];
 			if (chn_per_pair >= 3)
 				batch_chn[(i-i_s)*chn_per_pair+2] = tick_chns[i];
 		}
@@ -241,11 +244,13 @@ int on_wss_msg(char *msg, size_t len) {
 
 		urn_hmap_getptr(trade_chn_to_pairid, channel, &pairid);
 		if (pairid != 0) {
-			URN_RET_ON_NULL(jval = yyjson_obj_get(jcore_data, "E"), "No data/E", EINVAL);
-			long ts_e6 = yyjson_get_int(jval) * 1000l;
-
+			if (!recv_trades || (odbk_shmptr == NULL)) {
+				URN_LOGF("Skip %s", msg);
+				goto final;
+			}
 			char *trade_pair = pair_arr[pairid];
-			URN_DEBUGF("\t -> tick pair          %lu %s %ld", pairid, trade_pair, ts_e6);
+			URN_DEBUGF("\t -> tick pair          %lu %s", pairid, trade_pair);
+			URN_GO_FINAL_ON_RV(on_tick(pairid, jcore_data), "Err in on_tick()")
 			URN_GO_FINAL_ON_RV(tick_updated(pairid, 0), "Err in tick_updated()")
 			goto final;
 		}
@@ -320,6 +325,36 @@ final:
 		if (p != NULL) free(p);
 		if (s != NULL) free(s);
 	}
+	return 0;
+}
+
+int on_tick(int pairid, yyjson_val *jdata) {
+	int rv = 0;
+	//  "E": 123456789,   // Event time
+	//  "p": "0.001",     // Price
+	//  "q": "100",       // Quantity
+	//  "T": 123456785,   // Trade time (use this as time)
+	//  "m": true,        // Is the buyer the market maker?
+	yyjson_val *jval = NULL;
+	const char *p_str=NULL, *s_str=NULL;
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "T"), "No data/T", EINVAL);
+	unsigned long ts_e6 = yyjson_get_uint(jval) * 1000l;
+
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "p"), "No data/p", EINVAL);
+	URN_RET_ON_NULL((p_str = yyjson_get_str(jval)), "No data/p str val", EINVAL);
+
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "q"), "No data/q", EINVAL);
+	URN_RET_ON_NULL((s_str = yyjson_get_str(jval)), "No data/s str val", EINVAL);
+
+	urn_inum p, s;
+	urn_inum_parse(&p, p_str);
+	urn_inum_parse(&s, s_str);
+
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "m"), "No data/m", EINVAL);
+	bool buy = !(yyjson_get_bool(jval));
+
+	urn_tick_append(&(odbk_shmptr->ticks[pairid]), buy, &p, &s, ts_e6);
+
 	return 0;
 }
 
