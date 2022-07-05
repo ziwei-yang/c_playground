@@ -449,6 +449,7 @@ typedef struct urn_odbk {
  */
 #define URN_TICK_LENTH 32 // must be less than ushort/2
 #define URN_TICK_MERGE 1000000 // merge tick at same price in 1000000us(1s)
+#define URN_TICK_MERGE_M 100000// merge tick at diff price in 100000us(0.1s)
 typedef struct urn_ticks {
 	char           desc[64-sizeof(unsigned long)-2*sizeof(unsigned short)];
 	unsigned long  latest_t_e6; // 0:no tick, >0:last tick ts_e6
@@ -486,6 +487,16 @@ int urn_tick_append(urn_ticks *ticks, bool buy, urn_inum *p, urn_inum *s, unsign
 		// Time close, p same, buy same -> merge size
 		// Also update time for next merge.
 		urn_inum_add(&(ticks->ticks[idx]), s);
+		ticks->tickts_e6[idx] = ts_e6;
+		ticks->latest_t_e6 = ts_e6;
+		return 0;
+	} else if ((ticks->tickts_e6[idx] + URN_TICK_MERGE_M > ts_e6) &&
+			(ticks->tickB[idx] == buy)) {
+		// Time very close, buy same -> merge size
+		// Update price
+		// Also update time for next merge.
+		urn_inum_add(&(ticks->ticks[idx]), s);
+		memcpy(&(ticks->tickp[idx]), p, sizeof(urn_inum));
 		ticks->tickts_e6[idx] = ts_e6;
 		ticks->latest_t_e6 = ts_e6;
 		return 0;
