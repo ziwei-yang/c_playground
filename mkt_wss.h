@@ -113,6 +113,8 @@ struct timespec _tmp_clock;
 struct timespec brdcst_t; // last time to call broadcast()
 unsigned long brdcst_interval_ms; // min ms between two broadcast
 int           newodbk_arr[MAX_PAIRS];
+int           newodbk_a_arr[MAX_PAIRS];
+int           newodbk_b_arr[MAX_PAIRS];
 char         *pub_odbk_chn_arr[MAX_PAIRS];
 char         *pub_odbk_key_arr[MAX_PAIRS]; // kv snapshot
 char         *pub_tick_chn_arr[MAX_PAIRS];
@@ -181,6 +183,8 @@ int main(int argc, char **argv) {
 		askct_arr[i] = 0;
 		bidct_arr[i] = 0;
 		newodbk_arr[i] = 0;
+		newodbk_a_arr[i] = 0;
+		newodbk_b_arr[i] = 0;
 		snapshot_init[i] = false;
 		pub_odbk_chn_arr[i] = NULL;
 		pub_odbk_key_arr[i] = NULL;
@@ -471,6 +475,8 @@ if (pub_redis) {
 		}
 }
 		newodbk_arr[pairid] = 0; // reset new odbk ct;
+		newodbk_a_arr[pairid] = 0; // reset new odbk ct;
+		newodbk_b_arr[pairid] = 0; // reset new odbk ct;
 		brdcst_pairs[data_ct] = pairid;
 		data_ct ++;
 	}
@@ -823,6 +829,10 @@ void mkt_wss_odbk_purge(int pairid) {
 /* newodbk_arr[pairid] is maintained: +1 if inserted and not removed later */
 void mkt_wss_odbk_insert(int pairid, urn_inum *p, urn_inum *s, bool buy) {
 	newodbk_arr[pairid] ++;
+	if (buy)
+		newodbk_b_arr[pairid] ++;
+	else
+		newodbk_a_arr[pairid] ++;
 	urn_porder *o = urn_porder_alloc(NULL, p, s, buy, 0);
 	if (buy) { // bids from low to high, reversed
 		GList *bids = bids_arr[pairid];
@@ -837,7 +847,7 @@ void mkt_wss_odbk_insert(int pairid, urn_inum *p, urn_inum *s, bool buy) {
 			// If this new appended data would be removed
 			// newodbk_arr stay unchanged.
 			if (bids->data == o)
-				newodbk_arr[pairid] --;
+				newodbk_arr[pairid] --, newodbk_b_arr[pairid] --;
 			bids = remove_top_porder(bids);
 		} else
 			bidct_arr[pairid]++;
@@ -856,7 +866,7 @@ void mkt_wss_odbk_insert(int pairid, urn_inum *p, urn_inum *s, bool buy) {
 			// If this new appended data would be removed
 			// newodbk_arr stay unchanged.
 			if (asks->data == o)
-				newodbk_arr[pairid] --;
+				newodbk_arr[pairid] --, newodbk_a_arr[pairid] --;
 			asks = remove_top_porder(asks);
 		} else
 			askct_arr[pairid]++;
@@ -914,6 +924,10 @@ bool mkt_wss_odbk_update_or_delete(int pairid, urn_inum *p, urn_inum *s, bool bu
 	}
 
 	newodbk_arr[pairid] ++;
+	if (buy)
+		newodbk_b_arr[pairid] ++;
+	else
+		newodbk_a_arr[pairid] ++;
 	// found node with same price.
 	if (update) { // update p and s only
 		urn_porder_free(node->data);
@@ -978,11 +992,18 @@ int odbk_updated(int pairid) {
 #ifdef WRITE_SHRMEM
 int odbk_shm_write(int pairid) {
 	if (newodbk_arr[pairid] <= 0) return 0;
+	if (newodbk_a_arr[pairid] <= 0 && newodbk_b_arr[pairid] <= 0) {
+		URN_WARNF("pairid %d, newodbk_arr %d but a_arr %d b_arr %d",
+			pairid, newodbk_arr[pairid],
+			newodbk_a_arr[pairid], newodbk_b_arr[pairid]);
+		return 0;
+	}
 	gettimeofday(&odbk_shm_w_t, NULL);
 	// write odbk to share memory.
+	// Only write bids/asks when correspond count > 0
 	urn_odbk_shm_write(odbk_shmptr, pairid,
-			asks_arr[pairid], askct_arr[pairid],
-			bids_arr[pairid], bidct_arr[pairid],
+			(newodbk_a_arr[pairid] > 0 ? asks_arr[pairid] : NULL), askct_arr[pairid],
+			(newodbk_b_arr[pairid] > 0 ? bids_arr[pairid] : NULL), bidct_arr[pairid],
 			odbk_t_arr[pairid],
 			(long)(odbk_shm_w_t.tv_sec) * 1000000l + (long)(odbk_shm_w_t.tv_usec),
 			exchange
