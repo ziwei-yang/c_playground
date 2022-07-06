@@ -525,15 +525,13 @@ int urn_tick_get(urn_ticks *ticks, int idx, bool *buy, urn_inum *p, urn_inum *s,
 	return 0;
 }
 
-// First data is a 512 pair index
-// For each pair, get a swap writing 2 odbk cache [full, dirty] -> [dirty, full]
-// on macos the sizeof(urn_odbk_mem) is 2695168, enough to fit in its SHMMAX 4MB
-// 	$sysctl kern.sysv.shmmax
-// 	kern.sysv.shmmax: 4194304
-// 	OR
-// 	$sysctl -a | grep shm
+// First data is a 512 pair name index
+// For each pair, repeatly swap writing in 2 caches [ready, dirty] <-> [dirty, ready]
+// on macos the sizeof(urn_odbk_mem) is 4976640, can't fit in default 4MB
 // To change SHMMAX on macos, see:
-// https://dansketcher.com/2021/03/30/shmmax-error-on-big-sur/
+// 	https://dansketcher.com/2021/03/30/shmmax-error-on-big-sur/
+// OR:
+// 	macos_chg_shmmax.sh
 #define urn_odbk_mem_cap 512
 typedef struct urn_odbk_mem {
 	char      pairs[urn_odbk_mem_cap][16];
