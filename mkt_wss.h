@@ -204,12 +204,12 @@ int main(int argc, char **argv) {
 	URN_INFOF("nng_tls_engine_name %s", nng_tls_engine_name());
 	URN_INFOF("nng_tls_engine_description %s", nng_tls_engine_description());
 
-	if (pub_redis) {
+if (pub_redis) {
 	urn_func_opt verbose_opt = {.verbose=1,.silent=0};
 	rv = urn_redis(&redis, getenv("REDIS_HOST"), getenv("REDIS_PORT"), getenv("REDIS_PSWD"), &verbose_opt);
 	if (rv != 0)
 		return URN_FATAL("Error in init redis", rv);
-	}
+}
 #ifdef WRITE_SHRMEM
 	rv = urn_odbk_shm_init(true, exchange, &odbk_shmptr);
 	if (rv != 0)
@@ -394,7 +394,7 @@ static int broadcast() {
 	bool write_snapshot = false;
 	long long listener_ttl_ct = 0;
 
-	if (pub_redis) {
+if (pub_redis) {
 	URN_GO_FINAL_ON_RV(redis->err, "redis context err");
 	/* only collect replies from last time */
 	long long listener_ct = 0;
@@ -423,7 +423,7 @@ static int broadcast() {
 		URN_DEBUGF_C(YELLOW, "write_snapshot %ld %ld, %ld, %ld",
 			_tmp_clock.tv_sec, (_tmp_clock.tv_sec & 7),
 			_tmp_clock.tv_nsec, (_tmp_clock.tv_nsec & 65535));
-	}
+}
 
 	/* broadcast this time */
 	int data_ct = 0;
@@ -433,14 +433,14 @@ static int broadcast() {
 			continue;
 
 #ifdef PUB_LESS_ON_ZERO_LISTENER
-		if (pub_redis) {
+if (pub_redis) {
 		if ((!write_snapshot) && (brdcst_listener_arr[pairid] == 0)) {
 			// Publish every 2s if no listener last time.
 			if (brdcst_t_arr[pairid].tv_sec + 2 > brdcst_t.tv_sec)
 				continue;
 			brdcst_t_arr[pairid].tv_sec = brdcst_t.tv_sec;
 		}
-		}
+}
 #endif
 
 		URN_DEBUGF("to broadcast %s %d/%d, updates %d bids %d asks %d",
@@ -450,7 +450,7 @@ static int broadcast() {
 			continue;
 		brdcst_stat_ct ++;
 
-		if (pub_redis) {
+if (pub_redis) {
 		int ct = 0;
 		*(s+ct) = '['; ct++;
 		ct += sprintf_odbk_json(s+ct, bids_arr[pairid]);
@@ -469,7 +469,7 @@ static int broadcast() {
 			URN_DEBUGF("also snapshot to %s", pub_odbk_key_arr[pairid]);
 			redisAppendCommand(redis, "SET %s %s", pub_odbk_key_arr[pairid], s);
 		}
-		}
+}
 		newodbk_arr[pairid] = 0; // reset new odbk ct;
 		brdcst_pairs[data_ct] = pairid;
 		data_ct ++;
@@ -513,15 +513,15 @@ static int broadcast() {
 			brdcst_interval_ms --;
 		}
 
-		if (pub_redis) {
+if (pub_redis) {
 		URN_LOGF_C(GREEN, "--> %d/s %dr/s in %d, every %ldms, %4.2fms > %d chn, last: %lld ears %s",
 			speed, brdcst_stat_rd_ct/diff, diff, brdcst_interval_ms,
 			(float)cost_us/1000.f, data_ct, listener_ttl_ct,
 			(write_snapshot ? "FULL" : ""));
-		} else {
+} else {
 		URN_LOGF_C(GREEN, "--> %d/s %dr/s in %d, every %ldms",
 			speed, brdcst_stat_rd_ct/diff, diff, brdcst_interval_ms);
-		}
+}
 		brdcst_stat_rd_ct = 0;
 		brdcst_stat_ct = 0;
 		brdcst_stat_t = brdcst_t.tv_sec;
