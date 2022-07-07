@@ -198,10 +198,24 @@ int main(int argc, char **argv) {
 	brdcst_stat_ct = 0;
 	brdcst_stat_rd_ct = 0;
 	brdcst_stat_t = 0;
-
 	int rv = 0;
+
+#ifdef WRITE_SHRMEM
+	rv = urn_odbk_shm_init(true, exchange, &odbk_shmptr);
+	if (rv != 0)
+		return URN_FATAL("Error in init share memory", rv);
+	rv = urn_odbk_clients_init(exchange, &odbk_clients_shmptr);
+	if (rv != 0)
+		return URN_FATAL("Error in odbk_clients_init()", rv);
+#endif
+	// Init share memory first, then req args should contain trades.
 	if ((rv = parse_args_build_idx(argc, argv)) != 0)
 		return URN_FATAL("Error in parse_args_build_idx()", rv);
+#ifdef WRITE_SHRMEM
+	rv = urn_odbk_shm_write_index(odbk_shmptr, pair_arr, max_pair_id);
+	if (rv != 0)
+		return URN_FATAL("Error in odbk_shm_write_index()", rv);
+#endif
 
 	URN_INFOF("max_pair_id %d", max_pair_id);
 
@@ -214,17 +228,6 @@ if (pub_redis) {
 	if (rv != 0)
 		return URN_FATAL("Error in init redis", rv);
 }
-#ifdef WRITE_SHRMEM
-	rv = urn_odbk_shm_init(true, exchange, &odbk_shmptr);
-	if (rv != 0)
-		return URN_FATAL("Error in init share memory", rv);
-	rv = urn_odbk_shm_write_index(odbk_shmptr, pair_arr, max_pair_id);
-	if (rv != 0)
-		return URN_FATAL("Error in odbk_shm_write_index()", rv);
-	rv = urn_odbk_clients_init(exchange, &odbk_clients_shmptr);
-	if (rv != 0)
-		return URN_FATAL("Error in odbk_shm_write_index()", rv);
-#endif
 
 	if ((rv = wss_connect()) != 0)
 		return URN_FATAL("Error in wss_connect()", rv);
