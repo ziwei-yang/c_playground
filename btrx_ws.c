@@ -470,28 +470,35 @@ int on_tick(char *msg, size_t msg_len) {
 		URN_WARNF("Symbol %s not found", symb);
 		goto final;
 	}
+	URN_DEBUGF("pairid parsed %lu", (unsigned long)pairid);
 
 	URN_RET_ON_NULL(jtrades = yyjson_obj_get(jroot, "deltas"), "No deltas", EINVAL);
 	size_t idx, max;
 	long latest_ts_e6 = 0;
 	char ask_or_bid = 0;
 	yyjson_arr_foreach(jtrades, idx, max, v) {
+		URN_DEBUGF("\tparsing %d/%d executedAt", idx, max);
 		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "executedAt"), "No deltas/executedAt", EINVAL);
 		const char *tstr = yyjson_get_str(jval);
 		URN_RET_ON_NULL(tstr, "No deltas/executedAt str", EINVAL);
+		URN_DEBUGF("\tparsing %d/%d tstr %s", idx, max, tstr);
 		long ts_e6 = parse_timestr_w_e6(&_bittrex_tm, tstr, "%Y-%m-%dT%H:%M:%S.");
+		URN_DEBUGF("\tparsing %d/%d ts_e6 %ld", idx, max, ts_e6);
 		if (ts_e6 > latest_ts_e6)
 			latest_ts_e6 = ts_e6;
 
 		urn_inum p, s;
+		URN_DEBUGF("\tparsing %d/%d quantity", idx, max);
 		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "quantity"), "No deltas/quantity", EINVAL);
 		URN_RET_ON_NULL(yyjson_get_str(jval), "No deltas/quantity str", EINVAL);
 		urn_inum_parse(&s, yyjson_get_str(jval));
+		URN_DEBUGF("\tparsing %d/%d rate", idx, max);
 		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "rate"), "No deltas/rate", EINVAL);
 		URN_RET_ON_NULL(yyjson_get_str(jval), "No deltas/rate str", EINVAL);
 		urn_inum_parse(&p, yyjson_get_str(jval));
 
-		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "takerSide"), "No deltas/rate", EINVAL);
+		URN_DEBUGF("\tparsing %d/%d takerSide", idx, max);
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "takerSide"), "No deltas/takerSide", EINVAL);
 		const char *side = yyjson_get_str(jval);
 		URN_RET_ON_NULL(side, "No deltas/takerSide str", EINVAL);
 		bool buy = false;
@@ -501,6 +508,7 @@ int on_tick(char *msg, size_t msg_len) {
 			buy = false;
 		else
 			URN_RET_ON_NULL(NULL, "Unexpected deltas/takerSide", EINVAL);
+		URN_DEBUGF("\t urn_tick_append %d/%d", idx, max);
 		urn_tick_append(&(odbk_shmptr->ticks[pairid]), buy, &p, &s, ts_e6);
 	}
 	// Display market latency, only in this case.

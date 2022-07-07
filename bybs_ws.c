@@ -9,6 +9,7 @@
 
 #include "mkt_wss.h"
 
+int   on_tick(int pairid, yyjson_val *jdata);
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
@@ -49,24 +50,40 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 		"binary": false
 	}
 	*/
-	char *pre = "{\"topic\":\"depth\",\"event\":\"sub\",\"params\":{\"symbol\":\"";
-	char *end = "\",\"binary\":false}}";
 	int cmd_ct = 0;
+	char *pre = "{\"topic\":\"";
+	char *mid = "\",\"event\":\"sub\",\"params\":{\"symbol\":\"";
+	char *end = "\",\"binary\":false}}";
 
 	for (int i=0; i<chn_ct; i++) {
 		char *cmd = malloc(strlen(pre) + strlen(end) + 64);
 		if (cmd == NULL) return ENOMEM;
-		strcpy(cmd, pre);
-		char *pos = cmd + strlen(pre);
-		strcpy(pos, odbk_snpsht_chns[i]);
-		pos = pos + strlen(odbk_snpsht_chns[i]);
-		strcpy(pos, end);
+		char *pos = cmd;
+		pos += sprintf(pos, "%s", pre);
+		pos += sprintf(pos, "%s", "depth");
+		pos += sprintf(pos, "%s", mid);
+		pos += sprintf(pos, "%s", odbk_snpsht_chns[i]);
+		pos += sprintf(pos, "%s", end);
 
 		wss_req_s[cmd_ct] = cmd;
 		URN_DEBUGF("req %d : %s", cmd_ct, cmd);
 		cmd_ct++;
 	}
 
+	for (int i=0; i<chn_ct; i++) {
+		char *cmd = malloc(strlen(pre) + strlen(end) + 64);
+		if (cmd == NULL) return ENOMEM;
+		char *pos = cmd;
+		pos += sprintf(pos, "%s", pre);
+		pos += sprintf(pos, "%s", "trade");
+		pos += sprintf(pos, "%s", mid);
+		pos += sprintf(pos, "%s", odbk_snpsht_chns[i]);
+		pos += sprintf(pos, "%s", end);
+
+		wss_req_s[cmd_ct] = cmd;
+		URN_DEBUGF("req %d : %s", cmd_ct, cmd);
+		cmd_ct++;
+	}
 
 	URN_INFOF("Parsing ARGV end, %d req str prepared.", cmd_ct);
 	wss_req_interval_e = 1;
@@ -105,24 +122,17 @@ int on_wss_msg(char *msg, size_t len) {
 	const char *topic = yyjson_get_str(jval);
 	URN_RET_ON_NULL(topic, "Has topic but no str val", EINVAL);
 
-	if (strcmp(topic, "depth") != 0) {
+	if (strcmp(topic, "depth") != 0 && strcmp(topic, "trade") != 0) {
 		URN_WARNF("on_wss_msg unknown topic %s", msg);
 		goto final;
 	}
 
-	// depth topic only.
+	// Topic depth and trade has params, params/symbol, and data
 	URN_RET_ON_NULL(jparams = yyjson_obj_get(jroot, "params"), "No params", EINVAL);
 
 	URN_RET_ON_NULL(jval = yyjson_obj_get(jparams, "symbol"), "No params/symbol", EINVAL);
 	const char *symbol = yyjson_get_str(jval);
 	URN_RET_ON_NULL(symbol, "Has params/symbol but no str val", EINVAL);
-
-	URN_RET_ON_NULL(jdata = yyjson_obj_get(jroot, "data"), "No data", EINVAL);
-
-	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "t"), "No data/t", EINVAL);
-	long ts_e3 = yyjson_get_uint(jval);
-	URN_RET_IF(ts_e3 < 1656853597000, "No valid data/t long val", EINVAL);
-
 	uintptr_t pairid = 0;
 	bool is_snapshot = true;
 	urn_hmap_getptr(symb_to_pairid, symbol, &pairid);
@@ -130,6 +140,20 @@ int on_wss_msg(char *msg, size_t len) {
 		URN_WARNF("on_wss_msg unexpect symbol %s\n%s", symbol, msg);
 		goto error;
 	}
+
+	URN_RET_ON_NULL(jdata = yyjson_obj_get(jroot, "data"), "No data", EINVAL);
+
+	if (strcmp(topic, "trade") == 0) {
+		URN_GO_FINAL_ON_RV(on_tick(pairid, jdata), "Err in on_tick()")
+		URN_GO_FINAL_ON_RV(tick_updated(pairid, 0), "Err in tick_updated()")
+		goto final;
+	}
+
+	// depth topic only.
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "t"), "No data/t", EINVAL);
+	long ts_e3 = yyjson_get_uint(jval);
+	URN_RET_IF(ts_e3 < 1656853597000, "No valid data/t long val", EINVAL);
+
 	char *depth_pair = pair_arr[pairid];
 	URN_DEBUGF("\t -> odbk %3lu %s %ld", pairid, depth_pair, ts_e3);
 	odbk_t_arr[pairid] = ts_e3 * 1000;
@@ -240,5 +264,34 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *jdata) {
 		URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, "A", v, 4),
 			"Error in parse_n_mod_odbk_porder() for bids");
 	}
+	return 0;
+}
+
+int on_tick(int pairid, yyjson_val *jdata) {
+	int rv = 0;
+	// "t":1657199242517,
+	// "p":"1185.96",
+	// "q":"0.1462",
+	// "m":false
+	yyjson_val *jval = NULL;
+	const char *p_str=NULL, *s_str=NULL;
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "t"), "No data/t", EINVAL);
+	unsigned long ts_e6 = yyjson_get_uint(jval) * 1000l;
+
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "p"), "No data/p", EINVAL);
+	URN_RET_ON_NULL((p_str = yyjson_get_str(jval)), "No data/p str val", EINVAL);
+
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "q"), "No data/q", EINVAL);
+	URN_RET_ON_NULL((s_str = yyjson_get_str(jval)), "No data/s str val", EINVAL);
+
+	urn_inum p, s;
+	urn_inum_parse(&p, p_str);
+	urn_inum_parse(&s, s_str);
+
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "m"), "No data/m", EINVAL);
+	bool buy = yyjson_get_bool(jval);
+
+	urn_tick_append(&(odbk_shmptr->ticks[pairid]), buy, &p, &s, ts_e6);
+
 	return 0;
 }

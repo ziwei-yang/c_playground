@@ -38,6 +38,7 @@ int test_inum () {
 		urn_inum i1;
 		URN_RET_ON_RV(urn_inum_parse(&i1, s), "error in parsing s");
 		char *is = urn_inum_str(&i1);
+		URN_LOGF("parsed s      [%s]", s);
 		URN_LOGF("parsed INUM s [%s]", is);
 		URN_LOGF("expected ans  [%s]", ans);
 		URN_RET_ON_RV(strcmp(is, ans), "error in comparing s and parsed is");
@@ -151,6 +152,13 @@ int test_parse_timestr() {
 		return EINVAL;
 	}
 	ts_e6 = parse_timestr_w_e6(&tm, "2022-07-07T03:51:03.62", "%Y-%m-%dT%H:%M:%S.");
+	if (ts_e6 != res) {
+		URN_WARNF("parse_timestr_w_e6() ts_e6 %lu, expect %lu", ts_e6, res);
+		return EINVAL;
+	}
+
+	res = 1657165863000000l;
+	ts_e6 = parse_timestr_w_e6(&tm, "2022-07-07T03:51:03Z", "%Y-%m-%dT%H:%M:%S.");
 	if (ts_e6 != res) {
 		URN_WARNF("parse_timestr_w_e6() ts_e6 %lu, expect %lu", ts_e6, res);
 		return EINVAL;

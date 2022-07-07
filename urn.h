@@ -189,13 +189,20 @@ long urn_msdiff(struct timeval t1, struct timeval t2) {
  * format should be '%Y-%m-%dT%H:%M:%S.'
  */
 long parse_timestr_w_e6(struct tm *tmp, const char *s, const char* format) {
+	URN_DEBUGF("parse_timestr_w_e6 strptime %s %s", s, format);
 	char *end = strptime(s, format, tmp); // parsed as local time.
 	// timezone global is defined in time.h, reset to GMT
+	URN_DEBUGF("parse_timestr_w_e6 timegm");
 	time_t epoch = timegm(tmp);
 	epoch -= timezone;
+	if (end == NULL) { // no microsecond
+		return epoch*1000000l;
+	}
 	// parse microsecond
 	char *invalid_char;
+	URN_DEBUGF("parse_timestr_w_e6 strtol %s", end);
 	long us = strtol(end, &invalid_char, 10);
+	URN_DEBUGF("parse_timestr_w_e6 strtol us %ld", us);
 	unsigned int mul[7] = {0, 100000, 10000, 1000, 100, 10, 1};
 	if (invalid_char-end > 6)
 		us = us % 1000000;
@@ -326,9 +333,12 @@ int urn_inum_parse(urn_inum *i, const char *s) {
 	rv = sscanf(s, "%ld.%s", &(i->intg), frac_s);
 	if (rv == 1) {
 		i->frac_ext = 0;
+		(i->s)[0] = '\0'; // clear desc
 		return 0;
-	} else if (rv != 2)
+	} else if (rv != 2) {
+		(i->s)[0] = '\0'; // clear desc
 		return EINVAL;
+	}
 
 	// right pading '00456'
 	// -> rpad(URN_INUM_PRECISE) '00456000000000'
