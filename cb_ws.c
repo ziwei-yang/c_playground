@@ -11,6 +11,7 @@
 
 #include "mkt_wss.h"
 
+int   on_tick(int pairid, long ts_e6, yyjson_val *jdata);
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
@@ -208,6 +209,7 @@ int on_wss_msg(char *msg, size_t len) {
 		if (pairid != 0) {
 			char *trade_pair = pair_arr[pairid];
 			URN_DEBUGF("\t -> odbk pair ticker   %lu %s", pairid, trade_pair, ts_e6);
+			URN_GO_FINAL_ON_RV(on_tick(pairid, ts_e6, jroot), "Err in tick_updated()")
 			URN_GO_FINAL_ON_RV(tick_updated(pairid), "Err in tick_updated()")
 			goto final;
 		}
@@ -356,5 +358,35 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *jdata) {
 	yyjson_arr_foreach(orders, idx, max, v) {
 		URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, NULL, v, 4), "Error in parse_n_mod_odbk_porder() for bids");
 	}
+	return 0;
+}
+
+int on_tick(int pairid, long ts_e6, yyjson_val *jdata) {
+	URN_DEBUGF("\ton_tick %d %s", pairid, type);
+	char* pair = pair_arr[pairid];
+	int rv = 0;
+	const char *pstr=NULL, *sstr=NULL, *side=NULL;
+	yyjson_val *jval = NULL;
+
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "price"), "No price", EINVAL);
+	URN_RET_ON_NULL(pstr = yyjson_get_str(jval), "No price str", EINVAL);
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "last_size"), "No last_size", EINVAL);
+	URN_RET_ON_NULL(sstr = yyjson_get_str(jval), "No last_size str", EINVAL);
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "side"), "No side", EINVAL);
+	URN_RET_ON_NULL(side = yyjson_get_str(jval), "No side str", EINVAL);
+
+	urn_inum p, s;
+	urn_inum_parse(&p, pstr);
+	urn_inum_parse(&s, sstr);
+	bool buy;
+	if (strcmp(side, "buy") == 0)
+		buy = true;
+	else if (strcmp(side, "sell") == 0)
+		buy = false;
+	else
+		URN_RET_ON_NULL(NULL, "Unexpected side str", EINVAL);
+
+	urn_tick_append(&(odbk_shmptr->ticks[pairid]), buy, &p, &s, ts_e6);
+
 	return 0;
 }
