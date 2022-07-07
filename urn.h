@@ -183,6 +183,30 @@ long urn_msdiff(struct timeval t1, struct timeval t2) {
 	return (long)(t2.tv_sec - t1.tv_sec) * 1000 + (long) (t2.tv_usec - t1.tv_usec)/1000;
 }
 
+/*
+ * 2022-06-18T09:14:56.470799Z - example
+ * s                   us(end)
+ * format should be '%Y-%m-%dT%H:%M:%S.'
+ */
+long parse_timestr_w_e6(struct tm *tmp, const char *s, const char* format) {
+	char *end = strptime(s, format, tmp); // parsed as local time.
+	// timezone global is defined in time.h, reset to GMT
+	time_t epoch = timegm(tmp);
+	epoch -= timezone;
+	// parse microsecond
+	char *invalid_char;
+	long us = strtol(end, &invalid_char, 10);
+	unsigned int mul[7] = {0, 100000, 10000, 1000, 100, 10, 1};
+	if (invalid_char-end > 6)
+		us = us % 1000000;
+	else if (invalid_char-end == 0)
+		us = mul[0];
+	else
+		us = us * mul[invalid_char-end];
+	long ts_e6 = epoch*1000000l + us;
+	return ts_e6;
+}
+
 //////////////////////////////////////////
 // Enhanced String struct
 //////////////////////////////////////////

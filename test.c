@@ -115,7 +115,7 @@ int test_ticks() {
 				URN_WARNF("urn_tick_get() s %lu, expect %d", s.intg, i-j+10);
 				URN_FATAL("urn_tick_get() s error", EINVAL);
 			}
-			if (ts_e6 != (i-j+1000000)) {
+			if (ts_e6 != (i-j)*1000000) {
 				URN_WARNF("urn_tick_get() ts_e6 %lu, expect %d", ts_e6, (i-j)*1000000);
 				URN_FATAL("urn_tick_get() ts_e6 error", EINVAL);
 			}
@@ -125,10 +125,45 @@ int test_ticks() {
 	return 0;
 }
 
+int test_parse_timestr() {
+	struct tm tm;
+	long res = 1657165863628573l;
+	long ts_e6 = parse_timestr_w_e6(&tm, "2022-07-07T03:51:03.628573Z", "%Y-%m-%dT%H:%M:%S.");
+
+//	URN_LOGF("tm %d-%02d-%02d %02d:%02d:%02d tm_isdst %d tm_gmtoff %ld zone %s",
+//		tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
+//		tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_isdst,
+//		tm.tm_gmtoff, tm.tm_zone);
+	if (ts_e6 != res) {
+		URN_WARNF("parse_timestr_w_e6() ts_e6 %lu, expect %lu", ts_e6, res);
+		return EINVAL;
+	}
+	ts_e6 = parse_timestr_w_e6(&tm, "2022-07-07T03:51:03.ABC628573Z", "%Y-%m-%dT%H:%M:%S.ABC");
+	if (ts_e6 != res) {
+		URN_WARNF("parse_timestr_w_e6() ts_e6 %lu, expect %lu", ts_e6, res);
+		return EINVAL;
+	}
+
+	res = 1657165863620000l;
+	ts_e6 = parse_timestr_w_e6(&tm, "2022-07-07T03:51:03.62Z", "%Y-%m-%dT%H:%M:%S.");
+	if (ts_e6 != res) {
+		URN_WARNF("parse_timestr_w_e6() ts_e6 %lu, expect %lu", ts_e6, res);
+		return EINVAL;
+	}
+	ts_e6 = parse_timestr_w_e6(&tm, "2022-07-07T03:51:03.62", "%Y-%m-%dT%H:%M:%S.");
+	if (ts_e6 != res) {
+		URN_WARNF("parse_timestr_w_e6() ts_e6 %lu, expect %lu", ts_e6, res);
+		return EINVAL;
+	}
+	URN_LOG_C(GREEN, "parse_timestr_w_e6() test passed");
+	return 0;
+}
+
 int main() {
 	int rv = 0;
 	URN_RET_ON_RV(test_inum(), "Error in test_inum()");
 	URN_RET_ON_RV(test_odbk(), "Error in test_odbk()");
 	URN_RET_ON_RV(test_ticks(), "Error in test_ticks()");
+	URN_RET_ON_RV(test_parse_timestr(), "Error in test_parse_timestr()");
 	return rv;
 }

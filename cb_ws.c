@@ -131,27 +131,9 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 }
 
 struct tm _coinbase_tm;
-long parse_coinbase_time_to_e6(const char *s) {
-	// 2022-06-18T09:14:56.470799Z
-	// %Y  -%m-%dT%H:%M:%S+SELFPARSING
-	char *end = strptime(s, "%Y-%m-%dT%H:%M:%S", &_coinbase_tm);
-	time_t epoch = mktime(&_coinbase_tm);
-	// timezone global is defined in time.h
-	epoch -= timezone;
-	// parse microsecond
-	char *invalid_char;
-	long us = strtol(end+1, &invalid_char, 10);
-	long ts_e6 = epoch*1000000l + us;
-	if (invalid_char-end-1 != 6) {
-		URN_WARNF("\tparse_coinbase_time_to_e6:%s -> [%s] + epoch %ld tmzone %ld, us %ld %p->%p len %ld",
-			s, end+1, epoch, timezone, us, end+1, invalid_char, (invalid_char-end-1));
-		return 0;
-	} else {
-		URN_DEBUGF("\tparse_coinbase_time_to_e6:%s -> [%s] + epoch %ld tmzone %ld, us %ld %p->%p len %ld",
-			s, end+1, epoch, timezone, us, end+1, invalid_char, (invalid_char-end-1));
-	}
-	return ts_e6;
-}
+// 2022-06-18T09:14:56.470799Z
+#define parse_coinbase_time_to_e6(s) \
+	parse_timestr_w_e6(&_coinbase_tm, (s), "%Y-%m-%dT%H:%M:%S.");
 
 int on_wss_msg(char *msg, size_t len) {
 	int rv = 0;

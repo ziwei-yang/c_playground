@@ -30,8 +30,10 @@ int main(int argc, char **argv) {
 		return URN_FATAL("Error in odbk_shm_write_index()", rv);
 
 	for (int i=0; i<urn_odbk_mem_cap; i++) {
-		if (shmptr->pairs[i][0] == '\0')
+		if (shmptr->pairs[i][0] == '\0') {
+			URN_INFOF("%d pair end", i);
 			break;
+		}
 		URN_INFOF("%d pair %s", i, shmptr->pairs[i]);
 		if (strcasecmp(argv[2], shmptr->pairs[i]) == 0)
 			pairid = i;
