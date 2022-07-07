@@ -508,7 +508,7 @@ int on_tick(char *msg, size_t msg_len) {
 	clock_gettime(CLOCK_REALTIME, &_tmp_clock);
 	long latency_ms = _tmp_clock.tv_sec * 1000l +
 		_tmp_clock.tv_nsec/1000000l - latest_ts_e6/1000l;
-	URN_LOGF("Bittrex %lu trades got, +%ldms", max, latency_ms);
+	URN_LOGF("Bittrex %s %lu trades, +%ldms", pair_arr[pairid], max, latency_ms);
 
 final:
 	if (jdoc != NULL) yyjson_doc_free(jdoc);
