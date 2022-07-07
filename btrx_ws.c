@@ -13,6 +13,7 @@
 #include "mkt_wss.h"
 #include "enc.h"
 
+int   on_tick(char *msg, size_t msg_len);
 int   on_odbk(int pairid, yyjson_val *jdata);
 int   on_odbk_update(char *msg, size_t msg_len);
 
@@ -109,6 +110,7 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 		A: args, // [["Heartbeat","orderbook_BTC-USDT_25","trade_BTC-USDT"]]
 		I: messageId // always incr from 1
 	*/
+	bool req_trades = recv_trades && (odbk_shmptr != NULL);
 
 	yyjson_mut_doc *wss_req_j = yyjson_mut_doc_new(NULL);
 	yyjson_mut_val *jroot = yyjson_mut_obj(wss_req_j);
@@ -118,11 +120,17 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	yyjson_mut_obj_add_str(wss_req_j, jroot, "H", "c3");
 	yyjson_mut_obj_add_str(wss_req_j, jroot, "M", "Subscribe");
 
-	const char *channels[chn_ct+1];
+	const char *channels[req_trades ? (2*chn_ct+1) : (chn_ct+1)];
 	channels[0] = "Heartbeat";
-	for(int i=0; i<=chn_ct; i++)
-		channels[i+1] = odbk_chns[i];
-	yyjson_mut_val *target_chns = yyjson_mut_arr_with_strcpy(wss_req_j, channels, chn_ct+1);
+	for(int i=0; i<=chn_ct; i++) {
+		if (req_trades) {
+			channels[2*i+1] = odbk_chns[i];
+			channels[2*i+2] = tick_chns[i];
+		} else
+			channels[i+1] = odbk_chns[i];
+	}
+	yyjson_mut_val *target_chns = yyjson_mut_arr_with_strcpy(wss_req_j, channels,
+		req_trades ? (2*chn_ct+1) : (chn_ct+1));
 	yyjson_mut_val *a_arr = yyjson_mut_arr_with_strcpy(wss_req_j, NULL, 0);
 	yyjson_mut_arr_append(a_arr,target_chns);
 	yyjson_mut_obj_add_val(wss_req_j, jroot, "A", a_arr);
@@ -136,7 +144,8 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	URN_DEBUGF("req %d : %s", cmd_ct, cmd);
 	cmd_ct++;
 
-	URN_INFOF("Parsing ARGV end, %d req str prepared.", cmd_ct);
+	URN_INFOF("Parsing ARGV end, %d req str prepared, req_trades %hhu recv_trades %hhu, odbk_shmptr %p",
+		cmd_ct, req_trades, recv_trades, odbk_shmptr);
 	wss_req_interval_e = 1;
 	wss_req_interval_ms = 100;
 	return 0;
@@ -197,7 +206,7 @@ int on_wss_msg(char *msg, size_t len) {
 			rv = EINVAL;
 			goto final;
 		} else if (yyjson_arr_size(jval) == 0) {
-			// [{"H":"C3","M":"heartbeat","A":[]}]
+			// {}
 			processed++;
 			continue;
 		} else if (yyjson_arr_size(jval) != 1) {
@@ -233,18 +242,13 @@ int on_wss_msg(char *msg, size_t len) {
 			inflated_sz ++;
 			decompressA[inflated_sz] = '\0';
 		}
-		URN_DEBUGF("H %s M %s A %lu/%lu %s", h, m, inflated_sz, tmp_A_sz, decompressA);
-		/*
-		 * H C3 M orderBook A {
-		 * "marketSymbol":"BTC-USDT","depth":25,"sequence":1233757,
-		 * "bidDeltas":[{"quantity":"0.16000000","rate":"19163.179954930000"}],
-		 * "askDeltas":[]}
-		 */
+		URN_DEBUGF("H %s M %s A %zu/%d %s", h, m, inflated_sz, tmp_A_sz, decompressA);
 		if (strcmp(m, "orderBook") == 0) {
 			rv = on_odbk_update((char *)decompressA, inflated_sz);
 			processed++;
 			continue;
 		} else if (strcmp(m, "trade") == 0) {
+			rv = on_tick((char *)decompressA, inflated_sz);
 			processed++;
 			continue;
 		} else {
@@ -384,6 +388,12 @@ final:
 }
 
 int on_odbk_update(char *msg, size_t msg_len) {
+	/*
+	 * H C3 M orderBook A {
+	 * "marketSymbol":"BTC-USDT","depth":25,"sequence":1233757,
+	 * "bidDeltas":[{"quantity":"0.16000000","rate":"19163.179954930000"}],
+	 * "askDeltas":[]}
+	 */
 	struct timeval odbk_mkt_t; // no mkt_t, use local time instead.
 	gettimeofday(&odbk_mkt_t, NULL);
 
@@ -428,6 +438,77 @@ int on_odbk_update(char *msg, size_t msg_len) {
 	}
 
 	odbk_updated(pairid);
+
+final:
+	if (jdoc != NULL) yyjson_doc_free(jdoc);
+	return rv;
+}
+
+struct tm _bittrex_tm;
+int on_tick(char *msg, size_t msg_len) {
+	/*
+	 * {"deltas":[{
+	 * "id":"02bcce7f-05a5-4e5c-935e-73d958d5c9c3",
+	 * "executedAt":"2022-07-06T18:58:20.09Z",
+	 * "quantity":"0.00011793","rate":"20348.124000000000",
+	 * "takerSide":"SELL"
+	 * }],"sequence":8969,"marketSymbol":"BTC-USD"}
+	 */
+	int rv = 0;
+	yyjson_doc *jdoc = NULL;
+	yyjson_val *jroot = NULL, *jval = NULL, *jtrades = NULL, *v = NULL;
+
+	// Parsing key values from json
+	jdoc = yyjson_read(msg, msg_len, 0);
+	jroot = yyjson_doc_get_root(jdoc);
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "marketSymbol"), "No marketSymbol", EINVAL);
+	const char *symb = yyjson_get_str(jval);
+	uintptr_t pairid = 0;
+	urn_hmap_getptr(symb_to_pairid, symb, &pairid);
+	if (pairid == 0) {
+		rv = ERANGE;
+		URN_WARNF("Symbol %s not found", symb);
+		goto final;
+	}
+
+	URN_RET_ON_NULL(jtrades = yyjson_obj_get(jroot, "deltas"), "No deltas", EINVAL);
+	size_t idx, max;
+	long latest_ts_e6 = 0;
+	char ask_or_bid = 0;
+	yyjson_arr_foreach(jtrades, idx, max, v) {
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "executedAt"), "No deltas/executedAt", EINVAL);
+		const char *tstr = yyjson_get_str(jval);
+		URN_RET_ON_NULL(tstr, "No deltas/executedAt str", EINVAL);
+		long ts_e6 = parse_timestr_w_e6(&_bittrex_tm, tstr, "%Y-%m-%dT%H:%M:%S.");
+		if (ts_e6 > latest_ts_e6)
+			latest_ts_e6 = ts_e6;
+
+		urn_inum p, s;
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "quantity"), "No deltas/quantity", EINVAL);
+		URN_RET_ON_NULL(yyjson_get_str(jval), "No deltas/quantity str", EINVAL);
+		urn_inum_parse(&s, yyjson_get_str(jval));
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "rate"), "No deltas/rate", EINVAL);
+		URN_RET_ON_NULL(yyjson_get_str(jval), "No deltas/rate str", EINVAL);
+		urn_inum_parse(&p, yyjson_get_str(jval));
+
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "takerSide"), "No deltas/rate", EINVAL);
+		const char *side = yyjson_get_str(jval);
+		URN_RET_ON_NULL(side, "No deltas/takerSide str", EINVAL);
+		bool buy = false;
+		if (strcmp(side, "BUY") == 0)
+			buy = true;
+		else if (strcmp(side, "SELL") == 0)
+			buy = false;
+		else
+			URN_RET_ON_NULL(NULL, "Unexpected deltas/takerSide", EINVAL);
+		urn_tick_append(&(odbk_shmptr->ticks[pairid]), buy, &p, &s, ts_e6);
+	}
+	// Display market latency, only in this case.
+	// Dont set to mkt_wss, bittrex is not active at all.
+	clock_gettime(CLOCK_REALTIME, &_tmp_clock);
+	long latency_ms = _tmp_clock.tv_sec * 1000l +
+		_tmp_clock.tv_nsec/1000000l - latest_ts_e6/1000l;
+	URN_LOGF("Bittrex %lu trades got, latency %ld", max, latency_ms);
 
 final:
 	if (jdoc != NULL) yyjson_doc_free(jdoc);
