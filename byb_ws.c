@@ -10,6 +10,7 @@
 
 #include "mkt_wss.h"
 
+int   on_tick(int pairid, yyjson_val *jdata);
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
@@ -176,7 +177,8 @@ int on_wss_msg(char *msg, size_t len) {
 	if (pairid != 0) {
 		char *trade_pair = pair_arr[pairid];
 		URN_DEBUGF("trade_pair id %lu %s for topic %s", pairid, trade_pair, topic);
-		URN_DEBUGF("\t trade data %s", trade_pair);
+		URN_DEBUGF("\t trade data %s %.*s", trade_pair, len, msg);
+		URN_GO_FINAL_ON_RV(on_tick(pairid, jcore_data), "Err in tick handling")
 		goto final;
 	}
 
@@ -319,5 +321,65 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *jdata) {
 		URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, type, v, 1), "Error in parse_n_mod_odbk_porder() to insert");
 	}
 
+	return 0;
+}
+
+int on_tick(int pairid, yyjson_val *jdata) {
+	URN_DEBUGF("on_odbk %d %s", pairid, type);
+	char* pair = pair_arr[pairid];
+	int rv = 0;
+
+	yyjson_val *v, *jval;
+	size_t idx, max;
+	yyjson_arr_foreach(jdata, idx, max, v) {
+		unsigned long ts_e6 = 0;
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "trade_time_ms"), "No data/trade_time_ms", EINVAL);
+		if (byb_wss_mode == 0) {
+			// trade_time_ms in integer
+			ts_e6 = yyjson_get_uint(jval) * 1000;
+		} else {
+			// trade_time_ms in string
+			const char *timestr = yyjson_get_str(jval);
+			URN_RET_ON_NULL(timestr, "No data/trade_time_ms str", EINVAL);
+			ts_e6 = strtol(timestr, NULL, 10) * 1000;
+		}
+		URN_RET_IF(ts_e6 <= 0, "No data/trade_time_ms valid value", EINVAL);
+
+		urn_inum p, s;
+		const char *sstr=NULL, *pstr=NULL;
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "price"), "No data/price", EINVAL);
+		if (byb_wss_mode == 0) {
+			// price in num
+			double pd = yyjson_get_real(jval);
+			if (pd <= 0)
+				pd = (double)(yyjson_get_uint(jval));
+			URN_RET_IF(pd <= 0, "No data/price double", EINVAL);
+			urn_inum_from_db(&p, pd);
+		} else {
+			// price in string
+			URN_RET_ON_NULL((pstr = yyjson_get_str(jval)), "No data/price str", EINVAL);
+			urn_inum_parse(&p, pstr);
+		}
+
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "size"), "No data/size", EINVAL);
+		// size always in num.
+		double sd = yyjson_get_real(jval);
+		if (sd <= 0)
+			sd = (double)(yyjson_get_uint(jval));
+		URN_RET_IF(sd <= 0, "No data/size double", EINVAL);
+		urn_inum_from_db(&s, sd);
+
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "side"), "No data/side", EINVAL);
+		const char *side = yyjson_get_str(jval);
+		URN_RET_ON_NULL(side, "No data/side str", EINVAL);
+		bool buy = false;
+		if (strcmp(side, "Buy") == 0)
+			buy = true;
+		else if (strcmp(side, "Sell") == 0)
+			buy = false;
+		else
+			URN_RET_ON_NULL(NULL, "Unexpected data/side", EINVAL);
+		urn_tick_append(&(odbk_shmptr->ticks[pairid]), buy, &p, &s, ts_e6);
+	}
 	return 0;
 }

@@ -316,7 +316,6 @@ int urn_inum_sprintf(urn_inum *i, char *s) {
 
 // Every inum should be initialized here.
 int urn_inum_parse(urn_inum *i, const char *s) {
-	(i->s)[0] = '\0'; // clear desc
 	int rv = 0;
 	// -0.00456 -> intg=0 intg_s='-0'  frac_s='00456'
 	char intg_s[99];
@@ -342,6 +341,7 @@ int urn_inum_parse(urn_inum *i, const char *s) {
 	frac_padded[padto] = '\0';
 	i->frac_ext = (size_t)(atol(frac_padded));
 
+	(i->s)[0] = '\0'; // clear desc
 	return 0;
 }
 
@@ -376,6 +376,13 @@ double urn_inum_to_db(urn_inum *i) {
 		return 0 - (double)(i->frac_ext)/URN_INUM_FRACEXP;
 	else
 		return (double)(i->intg) + (double)(i->frac_ext)/URN_INUM_FRACEXP;
+}
+
+int urn_inum_from_db(urn_inum *i, double d) {
+	sprintf(i->s, "%lf", d);
+	int rv = urn_inum_parse(i, i->s);
+	(i->s)[0] = '\0'; // clear desc
+	return rv;
 }
 
 int urn_inum_alloc(urn_inum **i, const char *s) {
@@ -491,6 +498,10 @@ void urn_tick_init(urn_ticks *ticks) {
 	memset(ticks, 0, sizeof(urn_ticks));
 }
 int urn_tick_append(urn_ticks *ticks, bool buy, urn_inum *p, urn_inum *s, unsigned long ts_e6) {
+	if (ts_e6 <= 0) {
+		URN_WARNF("write to urn_ticks %p with zero ts_e6", ticks);
+		return EINVAL;
+	}
 	if (ticks->latest_t_e6 == 0) { // init first data.
 		// URN_LOGF("write to urn_ticks init 0");
 		ticks->latest_idx = 0;
@@ -699,6 +710,7 @@ int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
 }
 
 int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
+	int timezone = 3600*8;
 	URN_RET_IF((pairid >= urn_odbk_mem_cap), "pairid too big", ERANGE);
 	printf("odbk_shm_init %d [%s] complete: [%d, %d] ", pairid, shmp->pairs[pairid],
 		shmp->odbks[pairid][0].complete, shmp->odbks[pairid][1].complete);
@@ -723,12 +735,14 @@ int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 
 	long shm_latency_e6 = now_t.tv_sec*1000000 + now_t.tv_usec - w_ts_e6;
 
+	mkt_ts_e6 += (timezone*1000000l);
 	printf("mkt %02lu:%02lu:%02lu.%06ld shm_w +%8.3f ms shm_r +%6.3f ms\n",
 			((mkt_ts_e6/1000000) % 86400)/3600,
 			((mkt_ts_e6/1000000) % 3600)/60,
 			((mkt_ts_e6/1000000) % 60),
 			mkt_ts_e6 % 1000000, latency_e3,
 			((float)shm_latency_e6)/1000);
+	mkt_ts_e6 -= (timezone*1000000l);
 
 	for (int i = 0; i < urn_odbk_mem_cap; i++) {
 		if (urn_inum_iszero(&(odbk->bidp[i])) &&
@@ -749,6 +763,9 @@ int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 	bool buy = false;
 	urn_inum p, s;
 	unsigned long ts_e6 = 0, ts = 0;
+	printf("Trades %p idx old %hu -> %hu latest_t_e6 %lu timezone %d\n",
+		ticks, ticks->oldest_idx, ticks->latest_idx,
+		ticks->latest_t_e6, timezone);
 	for (int i = 0; i < 6; i++) {
 		int rv = urn_tick_get(ticks, i, &buy, &p, &s, &ts_e6);
 		ts = ts_e6 / 1000000;
@@ -756,6 +773,7 @@ int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 			printf(CLR_YELLOW "ERANGE" CLR_RST "\n");
 			break;
 		}
+		ts += timezone;
 		printf("%s  %24s %24s %02lu:%02lu:%02lu.%06lu%s\n",
 			(buy ? CLR_GREEN : CLR_RED),
 			urn_inum_str(&p), urn_inum_str(&s),
