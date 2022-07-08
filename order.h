@@ -245,7 +245,7 @@ int urn_odbk_shm_write(
 			bid_ct --;
 			URN_RET_IF((bids == NULL), "bids is NULL", EINVAL);
 		}
-		// write NULL for bid_ct+1 order
+		// clear bid_ct+1 ~ DEPTH order memory
 		if (bid_ct < URN_ODBK_DEPTH) {
 			memset(&(odbk->bidp[bid_ct]), 0, (URN_ODBK_DEPTH-bid_ct)*sizeof(urn_inum));
 			memset(&(odbk->bids[bid_ct]), 0, (URN_ODBK_DEPTH-bid_ct)*sizeof(urn_inum));
