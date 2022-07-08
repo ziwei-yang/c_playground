@@ -706,11 +706,12 @@ int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
 	}
 	// mark [0] as useless
 	strcpy(shmp->pairs[0], "USELESS");
-	for (int i = 1; i <= len; i++)
-		strcpy(shmp->pairs[i], pair_arr[i]);
-	// set unused pair name NULL
-	for (int i = len+1; i < urn_odbk_mem_cap; i++)
-		shmp->pairs[i][0] = '\0';
+	for (int i = 1; i < urn_odbk_mem_cap; i++) {
+		if (i <= len)
+			strcpy(shmp->pairs[i], pair_arr[i]);
+		else
+			shmp->pairs[i][0] = '\0';
+	}
 	// Mark all odbk dirty.
 	for (int i = 0; i < urn_odbk_mem_cap; i++) {
 		shmp->odbks[i][0].complete = false;
