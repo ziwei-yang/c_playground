@@ -11,6 +11,7 @@
 
 #include "mkt_wss.h"
 
+int   on_tick(int pairid, yyjson_val *jdata);
 int   on_odbk(int pairid, const char *type, yyjson_val *asks, yyjson_val *bids);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *asks, yyjson_val *bids);
 
@@ -83,6 +84,10 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 		if (i_s >= i_e) {
 			batch--; break;
 		}
+		char *cmd;
+		const char *batch_chn[(i_e-i_s)];
+
+		////////////// BOOK ///////////////
 
 		yyjson_mut_doc *wss_req_j = yyjson_mut_doc_new(NULL);
 		yyjson_mut_val *jroot = yyjson_mut_obj(wss_req_j);
@@ -93,7 +98,6 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 		URN_LOGF("preparing wss req batch %d:", batch);
 
 		// "pair": [symbol ... ], // no more than 3
-		const char *batch_chn[(i_e-i_s)];
 		for (int i=i_s; i<i_e; i++) {
 			URN_DEBUGF("\tchn %d %s %s %s", i, odbk_chns[i], odbk_snpsht_chns[i], tick_chns[i]);
 			batch_chn[(i-i_s)] = odbk_chns[i];
@@ -112,7 +116,42 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 		yyjson_mut_obj_add_val(wss_req_j, jroot, "subscription", jname);
 
 		// save command
-		char *cmd = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
+		cmd = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
+		wss_req_s[cmd_ct] = cmd;
+		URN_DEBUGF("req %d : %s", cmd_ct, cmd);
+		cmd_ct++;
+		yyjson_mut_doc_free(wss_req_j);
+
+		////////////// TRADE ///////////////
+
+		wss_req_j = yyjson_mut_doc_new(NULL);
+		jroot = yyjson_mut_obj(wss_req_j);
+		if (jroot == NULL)
+			return URN_FATAL("Error in creating json root", EINVAL);
+		yyjson_mut_doc_set_root(wss_req_j, jroot);
+		yyjson_mut_obj_add_str(wss_req_j, jroot, "event", "subscribe");
+		URN_LOGF("preparing wss req batch %d:", batch);
+
+		// "pair": [symbol ... ], // no more than 3
+		for (int i=i_s; i<i_e; i++) {
+			URN_DEBUGF("\tchn %d %s %s %s", i, odbk_chns[i], odbk_snpsht_chns[i], tick_chns[i]);
+			batch_chn[(i-i_s)] = odbk_chns[i];
+			krk_symbol_arr[i+1] = odbk_chns[i];
+		}
+
+		target_chns = yyjson_mut_arr_with_strcpy(
+			wss_req_j, batch_chn, (i_e-i_s));
+		if (target_chns == NULL)
+			return URN_FATAL("Error in strcpy json array", EINVAL);
+		yyjson_mut_obj_add_val(wss_req_j, jroot, "pair", target_chns);
+
+		// "subscription": { "name": "trade"}
+		jname = yyjson_mut_obj(wss_req_j);
+		yyjson_mut_obj_add_str(wss_req_j, jname, "name", "trade");
+		yyjson_mut_obj_add_val(wss_req_j, jroot, "subscription", jname);
+
+		// save command
+		cmd = yyjson_mut_write(wss_req_j, 0, NULL); // one-line json
 		wss_req_s[cmd_ct] = cmd;
 		URN_DEBUGF("req %d : %s", cmd_ct, cmd);
 		cmd_ct++;
@@ -212,9 +251,11 @@ int on_wss_msg(char *msg, size_t len) {
 		yyjson_val *chn_name_val = yyjson_arr_get(jroot, jroot_size-2);
 		const char* chn_name = yyjson_get_str(chn_name_val);
 		int pairid = 0;
+		bool is_trade = false;
 		if (strcmp(chn_name, "book-10") == 0) {
 			pairid = krk_odbk_pairs[chn_id];
 		} else if (strcmp(chn_name, "trade") == 0) {
+			is_trade = true;
 			pairid = krk_tick_pairs[chn_id];
 		} else {
 			URN_WARNF("unexpect msg name: %s", chn_name);
@@ -237,6 +278,18 @@ int on_wss_msg(char *msg, size_t len) {
 		// symbol verified
 		URN_DEBUGF("chn_id %d of %s symbol %s -> pairid %d %s -> %s",
 			chn_id, chn_name, chn_symb, pairid, pair, symbol);
+
+		if (is_trade) {
+			// [chn_id, [[trade]...], "trade", "symbol"]
+			yyjson_val *jdata = yyjson_arr_get(jroot, 1);
+			if (jdata == NULL) {
+				URN_WARNF("on_wss_msg %.*s no [1]", (int)len, msg);
+				URN_GO_FINAL_ON_RV(EINVAL, msg);
+			}
+			URN_GO_FINAL_ON_RV(on_tick(pairid, jdata), "Err in tick handling")
+			URN_GO_FINAL_ON_RV(tick_updated(pairid), "Err in tick_updated()")
+			goto final;
+		}
 
 		// parse jroot[1..-3] data
 		// Might be [ {'as','bs'} ]
@@ -390,6 +443,47 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *asks, yyjson_val *b
 			URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, &ask_or_bid, v, 4),
 					"Error in parse_n_mod_odbk_porder() for asks");
 		}
+	}
+	return 0;
+}
+
+int on_tick(int pairid, yyjson_val *jdata) {
+	// [["0.00023900","0.19649514","1657251478.152315","b","l",""]]
+	// [[price, volume, time, side, order_type, misc], [] ...]
+	URN_DEBUGF("on_odbk %d %s", pairid, type);
+	char* pair = pair_arr[pairid];
+	int rv = 0;
+
+	yyjson_val *v, *jval;
+	size_t idx, max;
+	yyjson_arr_foreach(jdata, idx, max, v) {
+		const char *pstr, *sstr, *timestr, *side;
+		URN_RET_ON_NULL(jval = yyjson_arr_get(v, 0), "No data/i/0", EINVAL);
+		URN_RET_ON_NULL(pstr = yyjson_get_str(jval), "No data/i/0 str", EINVAL);
+		URN_RET_ON_NULL(jval = yyjson_arr_get(v, 1), "No data/i/1", EINVAL);
+		URN_RET_ON_NULL(sstr = yyjson_get_str(jval), "No data/i/1 str", EINVAL);
+		URN_RET_ON_NULL(jval = yyjson_arr_get(v, 2), "No data/i/2", EINVAL);
+		URN_RET_ON_NULL(timestr = yyjson_get_str(jval), "No data/i/2 str", EINVAL);
+		URN_RET_ON_NULL(jval = yyjson_arr_get(v, 3), "No data/i/3", EINVAL);
+		URN_RET_ON_NULL(side = yyjson_get_str(jval), "No data/i/3 str", EINVAL);
+
+		urn_inum p, s;
+		urn_inum_parse(&p, pstr);
+		urn_inum_parse(&s, sstr);
+
+		// timestamp in num
+		double ts;
+		sscanf(timestr, "%lf", &ts);
+		double ts_e6 = (long)(ts * 1000000);
+
+		bool buy = false;
+		if (strcmp(side, "b") == 0)
+			buy = true;
+		else if (strcmp(side, "s") == 0)
+			buy = false;
+		else
+			URN_RET_ON_NULL(NULL, "Unexpected data/i/side", EINVAL);
+		urn_tick_append(&(odbk_shmptr->ticks[pairid]), buy, &p, &s, ts_e6);
 	}
 	return 0;
 }
