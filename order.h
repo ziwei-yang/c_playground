@@ -222,10 +222,10 @@ int urn_odbk_shm_write(
 			ask_ct --;
 			URN_RET_IF((asks == NULL), "asks is NULL", EINVAL);
 		}
-		// write NULL for ask_ct+1 order
+		// clear ask_ct+1 ~ DEPTH order memory
 		if (ask_ct < URN_ODBK_DEPTH) {
-			memset(&(odbk->askp[ask_ct]), 0, sizeof(urn_inum));
-			memset(&(odbk->asks[ask_ct]), 0, sizeof(urn_inum));
+			memset(&(odbk->askp[ask_ct]), 0, (URN_ODBK_DEPTH-ask_ct)*sizeof(urn_inum));
+			memset(&(odbk->asks[ask_ct]), 0, (URN_ODBK_DEPTH-ask_ct)*sizeof(urn_inum));
 		}
 		// write data from [ask_ct-1] to [0]
 		while (ask_ct > 0) {
@@ -247,8 +247,8 @@ int urn_odbk_shm_write(
 		}
 		// write NULL for bid_ct+1 order
 		if (bid_ct < URN_ODBK_DEPTH) {
-			memset(&(odbk->bidp[bid_ct]), 0, sizeof(urn_inum));
-			memset(&(odbk->bids[bid_ct]), 0, sizeof(urn_inum));
+			memset(&(odbk->bidp[bid_ct]), 0, (URN_ODBK_DEPTH-bid_ct)*sizeof(urn_inum));
+			memset(&(odbk->bids[bid_ct]), 0, (URN_ODBK_DEPTH-bid_ct)*sizeof(urn_inum));
 		}
 		// write data from [bid_ct-1] to [0]
 		while (bid_ct > 0) {
