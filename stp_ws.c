@@ -9,6 +9,7 @@
 
 #include "mkt_wss.h"
 
+int   on_tick(int pairid, yyjson_val *jdata);
 int   on_odbk(int pairid, const char *type, yyjson_val *jdata);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
@@ -68,6 +69,18 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 		pos = cmd + strlen(pre);
 		strcpy(pos, odbk_chns[i]);
 		pos = pos + strlen(odbk_chns[i]);
+		strcpy(pos, end);
+
+		wss_req_s[cmd_ct] = cmd;
+		URN_DEBUGF("req %d : %s", cmd_ct, cmd);
+		cmd_ct++;
+
+		cmd = malloc(strlen(pre) + strlen(end) + 64);
+		if (cmd == NULL) return ENOMEM;
+		strcpy(cmd, pre);
+		pos = cmd + strlen(pre);
+		strcpy(pos, tick_chns[i]);
+		pos = pos + strlen(tick_chns[i]);
 		strcpy(pos, end);
 
 		wss_req_s[cmd_ct] = cmd;
@@ -189,12 +202,7 @@ int on_wss_msg(char *msg, size_t len) {
 		goto final;
 	}
 
-	if (strcmp(event, "data") != 0) {
-		URN_WARNF("on_wss_msg unexpect event %s\n%s", event, msg);
-		goto error;
-	}
-
-	// event data only
+	// Parse data and trade common attributes.
 	URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "channel"), "No channel", EINVAL);
 	const char *channel = yyjson_get_str(jval);
 	URN_RET_ON_NULL(channel, "No channel", EINVAL);
@@ -207,6 +215,23 @@ int on_wss_msg(char *msg, size_t len) {
 	long ts_e6_l = strtol(ts_e6, NULL, 10);
 
 	URN_DEBUGF("on_wss_msg event %s channel %s", event, channel);
+
+	if (strcmp(event, "trade") == 0) {
+		uintptr_t pairid = 0;
+		urn_hmap_getptr(trade_chn_to_pairid, channel, &pairid);
+		if (pairid == 0) {
+			URN_WARNF("on_wss_msg unexpect channel %s\n%s", channel, msg);
+			goto error;
+		}
+		URN_GO_FINAL_ON_RV(on_tick(pairid, jdata), "Err in tick handling")
+		URN_GO_FINAL_ON_RV(tick_updated(pairid), "Err in tick_updated()")
+		goto final;
+	} else if (strcmp(event, "data") != 0) {
+		URN_WARNF("on_wss_msg unexpect event %s\n%s", event, msg);
+		goto error;
+	}
+
+	// event data only
 	uintptr_t pairid = 0;
 	bool is_snapshot = true;
 	urn_hmap_getptr(depth_snpsht_chn_to_pairid, channel, &pairid);
@@ -342,5 +367,49 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *jdata) {
 		URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, "A", v, 4),
 			"Error in parse_n_mod_odbk_porder() for bids");
 	}
+	return 0;
+}
+
+int on_tick(int pairid, yyjson_val *jdata) {
+	/*
+	 * "timestamp":"1657253001",
+	 * "amount":0.00057871,
+	 * "amount_str":"0.00057871",
+	 * "price":22100.01,
+	 * "price_str":"22100.01",
+	 * "type":1,
+	 * "microtimestamp":"1657253001408000"
+	 */
+	URN_DEBUGF("\ton_tick %d", pairid);
+	char* pair = pair_arr[pairid];
+	int rv = 0;
+	const char *pstr=NULL, *sstr=NULL, *timestr;
+	int side = -1;
+	yyjson_val *jval = NULL;
+
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "price_str"), "No price_str", EINVAL);
+	URN_RET_ON_NULL(pstr = yyjson_get_str(jval), "No price_str str", EINVAL);
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "amount_str"), "No amount_str", EINVAL);
+	URN_RET_ON_NULL(sstr = yyjson_get_str(jval), "No amount_str str", EINVAL);
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "type"), "No type", EINVAL);
+	side = yyjson_get_int(jval);
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "microtimestamp"), "No microtimestamp", EINVAL);
+	URN_RET_ON_NULL(timestr = yyjson_get_str(jval), "No microtimestamp str", EINVAL);
+	long ts_e6 = strtol(timestr, NULL, 10);
+	URN_RET_IF(ts_e6 <= 0, "No microtimestamp long", EINVAL);
+
+	urn_inum p, s;
+	urn_inum_parse(&p, pstr);
+	urn_inum_parse(&s, sstr);
+	bool buy;
+	if (side == 0)
+		buy = true;
+	else if (side == 1)
+		buy = false;
+	else
+		URN_RET_ON_NULL(NULL, "Unexpected side str", EINVAL);
+
+	urn_tick_append(&(odbk_shmptr->ticks[pairid]), buy, &p, &s, ts_e6);
+
 	return 0;
 }
