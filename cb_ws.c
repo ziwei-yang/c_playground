@@ -362,7 +362,7 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *jdata) {
 }
 
 int on_tick(int pairid, long ts_e6, yyjson_val *jdata) {
-	URN_DEBUGF("\ton_tick %d %s", pairid, type);
+	URN_DEBUGF("\ton_tick %d", pairid);
 	char* pair = pair_arr[pairid];
 	int rv = 0;
 	const char *pstr=NULL, *sstr=NULL, *side=NULL;

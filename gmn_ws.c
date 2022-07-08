@@ -11,6 +11,7 @@
 
 #include "mkt_wss.h"
 
+int   on_tick(int pairid, yyjson_val *jdata);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *jdata);
 
 char *preprocess_pair(char *pair) { return pair; }
@@ -29,7 +30,7 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 
 void mkt_data_set_exchange(char *s) {
 	// not so active, wait longer.
-	wss_stat_max_msg_t = 900;
+	wss_stat_max_msg_t = 1200;
 	sprintf(s, "Gemini");
 }
 
@@ -91,10 +92,6 @@ int on_wss_msg(char *msg, size_t len) {
 	const char *type = yyjson_get_str(jval);
 	URN_RET_ON_NULL(type, "No type", EINVAL);
 
-	if (strcmp(type, "trade") == 0) {
-		goto final;
-	}
-
 	// No server time, use local time only.
 	struct timeval odbk_mkt_t;
 	gettimeofday(&odbk_mkt_t, NULL);
@@ -106,15 +103,17 @@ int on_wss_msg(char *msg, size_t len) {
 		// Calculate latency only, only heartbeat has server ts
 		long ts_e3 = (long)(odbk_mkt_t.tv_sec) * 1000l + (long)(odbk_mkt_t.tv_usec/1000);
 		long latency_e3 = ts_e3 - server_ts_e3;
+		// wss_mkt_ts = ts_e3 * 1000; // Dont set as market latest msg ts
 		URN_LOGF("heartbeat latency %ldms", latency_e3);
 		goto final;
 	}
 
-	if (strcmp(type, "l2_updates") != 0) {
+	if (strcmp(type, "l2_updates") != 0 && strcmp(type, "trade") != 0) {
 		URN_WARNF("Unknown type %s\n%s", type, msg);
 		goto error;
 	}
 
+	// Both trade and l2_updates has symbol.
 	URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "symbol"), "No symbol", EINVAL);
 	const char *symbol = yyjson_get_str(jval);
 	URN_RET_ON_NULL(symbol, "No symbol", EINVAL);
@@ -123,6 +122,12 @@ int on_wss_msg(char *msg, size_t len) {
 	if (pairid == 0) {
 		URN_WARNF("Unknown symbol %s\n%s", symbol, msg);
 		goto error;
+	}
+
+	if (strcmp(type, "trade") == 0) {
+		URN_GO_FINAL_ON_RV(on_tick(pairid, jroot), "Err in tick handling")
+		URN_GO_FINAL_ON_RV(tick_updated(pairid), "Err in tick_updated()")
+		goto final;
 	}
 
 	yyjson_val *data = NULL;
@@ -224,5 +229,45 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *jdata) {
 		URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, NULL, v, 4),
 			"Error in parse_n_mod_odbk_porder() for bids");
 	}
+	return 0;
+}
+
+int on_tick(int pairid, yyjson_val *jdata) {
+	/*
+	 * "timestamp":1657248456005,
+	 * "price":"49.12","quantity":"0.006",
+	 * "side":"sell"
+	 */
+	URN_DEBUGF("\ton_tick %d", pairid);
+	char* pair = pair_arr[pairid];
+	int rv = 0;
+	const char *pstr=NULL, *sstr=NULL, *side=NULL;
+	yyjson_val *jval = NULL;
+	long ts_e6 = -1;
+
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "timestamp"), "No timestamp", EINVAL);
+	ts_e6 = yyjson_get_uint(jval)*1000;
+	URN_RET_IF(ts_e6 <= 0, "No timestamp uint", EINVAL);
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "price"), "No price", EINVAL);
+	URN_RET_ON_NULL(pstr = yyjson_get_str(jval), "No price str", EINVAL);
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "quantity"), "No quantity", EINVAL);
+	URN_RET_ON_NULL(sstr = yyjson_get_str(jval), "No quantity str", EINVAL);
+	URN_RET_ON_NULL(jval = yyjson_obj_get(jdata, "side"), "No side", EINVAL);
+	URN_RET_ON_NULL(side = yyjson_get_str(jval), "No side str", EINVAL);
+
+	urn_inum p, s;
+	urn_inum_parse(&p, pstr);
+	urn_inum_parse(&s, sstr);
+	bool buy;
+	if (strcmp(side, "buy") == 0)
+		buy = true;
+	else if (strcmp(side, "sell") == 0)
+		buy = false;
+	else
+		URN_RET_ON_NULL(NULL, "Unexpected side str", EINVAL);
+
+	// wss_mkt_ts = ts_e6; // Dont set as market latest msg ts
+	urn_tick_append(&(odbk_shmptr->ticks[pairid]), buy, &p, &s, ts_e6);
+
 	return 0;
 }
