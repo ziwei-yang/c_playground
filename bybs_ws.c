@@ -91,7 +91,16 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	return 0;
 }
 
+void bybits_req_heartbeat() {
+	wss_req_s[wss_req_i] = malloc(64);
+	strcpy(wss_req_s[wss_req_i], "{\"ping\": 1535975085052}");
+	URN_DEBUGF("set req heartbeat %d : %s", wss_req_i, cmd);
+}
+
 int on_wss_msg(char *msg, size_t len) {
+	// stat every few seconds
+	if ((wss_stat_ct >> wss_stat_per_e) > 0)
+		bybits_req_heartbeat();
 	int rv = 0;
 	yyjson_doc *jdoc = NULL;
 	yyjson_val *jroot = NULL;
@@ -117,6 +126,9 @@ int on_wss_msg(char *msg, size_t len) {
 			goto final;
 		}
 	}
+
+	if ((jval = yyjson_obj_get(jroot, "pong")) != NULL)
+		goto final;
 
 	URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "topic"), "No topic", EINVAL);
 	const char *topic = yyjson_get_str(jval);
