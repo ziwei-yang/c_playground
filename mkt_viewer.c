@@ -56,6 +56,7 @@ int main(int argc, char **argv) {
 		return URN_FATAL("Error in odbk_shm_write_index()", rv);
 
 	strcpy(target_pair, argv[2]);
+	urn_s_upcase(target_pair, strlen(target_pair));
 	locate_pairid();
 	urn_odbk_clients_reg(odbk_clients_shmptr, pairid);
 
