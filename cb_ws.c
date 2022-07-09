@@ -78,7 +78,12 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	]
 	*/
 
-	int batch_sz = max_pair_id;
+	/*
+	 * coinbase could accept all req in one,
+	 * but disconnect directly once invalid pair received.
+	 * sending channel req one by one better to debug.
+	 */
+	int batch_sz = 1;
 	int batch = 0;
 	int cmd_ct = 0;
 	for (; batch <= (chn_ct/batch_sz+1); batch++) {
