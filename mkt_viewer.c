@@ -28,6 +28,8 @@ void work() {
 	urn_odbk_clients_print(odbk_clients_shmptr, pairid);
 }
 
+void noop() {};
+
 int main(int argc, char **argv) {
 	if (argc < 3)
 		URN_FATAL("Usage: exchange pair1 pair2 ...", EINVAL);
@@ -55,7 +57,9 @@ int main(int argc, char **argv) {
 	sigaddset(&sigusr1_set, SIGUSR1);
 	sigaddset(&sigusr1_set, SIGINT);
 	sigaddset(&sigusr1_set, SIGKILL);
-	signal(SIGUSR1, work);
+
+	/* do nothing on SIGUSR1, just sigwait then work() */
+	signal(SIGUSR1, noop);
 	int pid = getpid();
 
 	/* signal incoming or timeout */
@@ -65,7 +69,7 @@ int main(int argc, char **argv) {
 	int sig = 0;
 #if __APPLE__
 	sigaddset(&sigusr1_set, SIGALRM);
-	signal(SIGALRM, work);
+	signal(SIGALRM, noop);
 	// macos has no sigtimedwait();
 	// setup a alarm to send self a SIGUSR1
 	unsigned secs = (unsigned)(timeout.tv_sec);

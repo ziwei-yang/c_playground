@@ -267,22 +267,18 @@ void urn_s_downcase(char *s, int slen) {
 typedef struct urn_inum {
 	unsigned long intg;
 	unsigned long frac_ext; // frac_ext = frac * 1e-URN_INUM_PRECISE
-	_Bool  pstv; // when intg is zero, use this for sign.
+	bool   pstv; // when intg is zero, use this for sign.
 	// description size padding to 64
-	char   s[64-sizeof(long)-sizeof(size_t)-sizeof(_Bool)];
+	char   s[64-sizeof(long)-sizeof(size_t)-sizeof(bool)];
 } urn_inum;
 
-bool urn_inum_iszero(urn_inum *i) {
-	if (i->intg == 0 && i->frac_ext == 0)
-		return true;
-	return false;
-}
+#define urn_inum_iszero(i) (((i)->intg == 0) && ((i)->frac_ext == 0))
 
 // print inum into s (or internal description pointer)
 char *urn_inum_str(urn_inum *i) {
 	if (i == NULL) return NULL;
 	char *s = i->s;
-	if (s[0] != '\0') // cached already.
+	if (s[0] != '\0') // generated already.
 		return s;
 
 	if (i->frac_ext == 0) {
@@ -297,7 +293,8 @@ char *urn_inum_str(urn_inum *i) {
 		chars = sprintf(s, "%ld.%012zu", i->intg, i->frac_ext);
 	else // intg=0 and negative.
 		chars = sprintf(s, "-%ld.%012zu", i->intg, i->frac_ext);
-	// Replace 0s in fraction at end with space.
+	// Replace 0 with space at the tail of fraction
+	// 1.230000 -> 1.23
 	while (chars > 0) {
 		if (s[chars-1] == '0') {
 			s[chars-1] = ' ';
