@@ -654,7 +654,7 @@ int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr) {
 		URN_WARNF("\tshm_segsz:   %zu", ds.shm_segsz);
 		URN_WARNF("\tlast op pid: %d", ds.shm_lpid);
 		URN_WARNF("\tcreator pid: %d", ds.shm_cpid);
-		URN_WARNF("\tnum attach:  %d", ds.shm_nattch);
+		URN_WARNF("\tnum attach:  %lu", (unsigned long)(ds.shm_nattch));
 		URN_WARNF("desired_sz %lu", desired_sz);
 		if (writer) {
 			URN_WARN("Try to remove it as writer");
