@@ -176,8 +176,8 @@ long urn_msdiff(struct timeval t1, struct timeval t2) {
 }
 
 /*
- * 2022-06-18T09:14:56.470799Z - example
- * s                   us(end)
+ * 2022-06-18T09:14:56.470799Z - example:
+ * s-------------------us----invalid_char
  * format should be '%Y-%m-%dT%H:%M:%S.'
  */
 long parse_timestr_w_e6(struct tm *tmp, const char *s, const char* format) {
@@ -187,9 +187,8 @@ long parse_timestr_w_e6(struct tm *tmp, const char *s, const char* format) {
 	URN_DEBUGF("parse_timestr_w_e6 timegm");
 	time_t epoch = timegm(tmp);
 	epoch -= timezone;
-	if (end == NULL) { // no microsecond
+	if (end == NULL) // no microsecond
 		return epoch*1000000l;
-	}
 	// parse microsecond
 	char *invalid_char;
 	URN_DEBUGF("parse_timestr_w_e6 strtol %s", end);
@@ -211,17 +210,15 @@ long parse_timestr_w_e6(struct tm *tmp, const char *s, const char* format) {
 //////////////////////////////////////////
 
 void urn_s_upcase(char *s, int slen) {
-	for (int i = 0; s[i]!='\0' && i<slen; i++) {
+	for (int i = 0; s[i] != '\0' && i < slen; i++)
 		if(s[i] >= 'a' && s[i] <= 'z')
-			s[i] = s[i] -32;
-	}
+			s[i] = s[i] - 32;
 }
 
 void urn_s_downcase(char *s, int slen) {
-	for (int i = 0; s[i]!='\0' && i<slen; i++) {
+	for (int i = 0; s[i] !='\0' && i < slen; i++)
 		if(s[i] >= 'A' && s[i] <= 'Z')
-			s[i] = s[i] +32;
-	}
+			s[i] = s[i] + 32;
 }
 
 //// substring of origin
@@ -477,8 +474,8 @@ typedef struct urn_odbk {
  * 	else
  * 		idx = LEN - 1;
  */
-#define URN_TICK_LENTH 32 // must be less than ushort/2
-#define URN_TICK_MERGE 1000000 // merge tick at same price in 1000000us(1s)
+#define URN_TICK_LENTH   16 // must be less than ushort/2
+#define URN_TICK_MERGE   1000000 // merge tick at same price in 1000000us(1s)
 #define URN_TICK_MERGE_M 100000// merge tick at diff price in 100000us(0.1s)
 typedef struct urn_ticks {
 	char           desc[64-sizeof(unsigned long)-2*sizeof(unsigned short)];
@@ -731,7 +728,7 @@ void urn_odbk_shm_print_index(urn_odbk_mem *shmp) {
 }
 
 int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
-	int timezone = 3600*8;
+	int timezone = URN_TIMEZONE;
 	URN_RET_IF((pairid >= URN_ODBK_MAX_PAIR), "pairid too big", ERANGE);
 	printf("odbk_shm_print %d [%s] complete: [%d, %d] ", pairid, shmp->pairs[pairid],
 		shmp->odbks[pairid][0].complete, shmp->odbks[pairid][1].complete);
