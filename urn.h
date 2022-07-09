@@ -856,6 +856,7 @@ int urn_odbk_clients_clear(urn_odbk_clients *shmp) {
 	return 0;
 }
 
+/* Add self PID into clients area, return ENOMEM if no empty slot */
 int urn_odbk_clients_reg(urn_odbk_clients *shmp, int pairid) {
 	pid_t p = getpid();
 	for (int j = 0; j < urn_odbk_pid_cap; j++) {
@@ -874,6 +875,19 @@ int urn_odbk_clients_reg(urn_odbk_clients *shmp, int pairid) {
 	}
 	URN_WARNF("Failed to register urn odbk client pairid %d PID %d", pairid, p);
 	return ENOMEM;
+}
+
+/* remove self PID from clients area */
+int urn_odbk_clients_dereg(urn_odbk_clients *shmp, int pairid) {
+	pid_t p = getpid();
+	for (int j = 0; j < urn_odbk_pid_cap; j++) {
+		pid_t p2 = shmp->pids[pairid][j];
+		if (p == p2) {
+			shmp->pids[pairid][j] = 0;
+			URN_LOGF("De-register urn odbk client pairid %d PID %d", pairid, p);
+		}
+	}
+	return 0;
 }
 
 int urn_odbk_clients_notify(urn_odbk_mem *odbk_shmp, urn_odbk_clients *shmp, int pairid) {
