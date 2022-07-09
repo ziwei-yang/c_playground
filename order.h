@@ -190,7 +190,7 @@ int urn_odbk_shm_write(
 		char *desc
 		)
 {
-	URN_RET_IF((pairid >= urn_odbk_mem_cap), "pairid too big", ERANGE);
+	URN_RET_IF((pairid >= URN_ODBK_MAX_PAIR), "pairid too big", ERANGE);
 	// choose a dirty side to write in.
 	urn_odbk *odbk = NULL;
 	int mark_i_complete = -1;

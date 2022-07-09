@@ -5,7 +5,7 @@
 
 VALUE             URN_MKTDATA = Qnil;
 urn_odbk_mem     *shmptr_arr[urn_shm_exch_num];
-long              last_odbk_data_id[urn_shm_exch_num][urn_odbk_mem_cap];
+long              last_odbk_data_id[urn_shm_exch_num][URN_ODBK_MAX_PAIR];
 urn_odbk_clients *clients_shmptr_arr[urn_shm_exch_num];
 hashmap          *pair_to_id[urn_shm_exch_num];
 hashmap          *pair_sigusr1[urn_shm_exch_num]; // pairs listening SIGUSR1
@@ -42,8 +42,8 @@ static int _reset_pairmap(int i) {
 
 	// build hashmap
 	URN_LOGF("Reset %s pair_to_id[%d] with shmp->pairs", urn_shm_exchanges[i], i);
-	pair_map = urn_hmap_init(urn_odbk_mem_cap*5);
-	for (int pairid=0; pairid<urn_odbk_mem_cap; pairid++) {
+	pair_map = urn_hmap_init(URN_ODBK_MAX_PAIR*5);
+	for (int pairid=0; pairid<URN_ODBK_MAX_PAIR; pairid++) {
 		if (shmp->pairs[pairid][0] == '\0') break;
 		char *key = malloc(strlen(shmp->pairs[pairid])+1);
 		strcpy(key, shmp->pairs[pairid]);
@@ -61,7 +61,7 @@ static int _reset_pairmap(int i) {
 	urn_hmap_foreach(pair_sigusr1[i], kidx, key, klen, val) {
 		uintptr_t pairid = 0;
 		urn_hmap_getptr(pair_map, key, &pairid);
-		if (pairid < 1 || pairid > urn_odbk_mem_cap) {
+		if (pairid < 1 || pairid > URN_ODBK_MAX_PAIR) {
 			URN_WARNF("\tre-register SIGUSR1 for %s failed, not found", key);
 			continue;
 		}
@@ -96,7 +96,7 @@ static int _get_pairid(int exch_i, char *pair, uintptr_t *pairidp) {
 		}
 	}
 	urn_hmap_getptr(pair_map, pair, pairidp);
-	if ((*pairidp) >= urn_odbk_mem_cap) {
+	if ((*pairidp) >= URN_ODBK_MAX_PAIR) {
 		URN_WARNF("_get_pairmap %s %s out of range: %lu", exch, pair, *pairidp);
 		return ERANGE;
 	}
@@ -117,7 +117,7 @@ static int _get_pairid(int exch_i, char *pair, uintptr_t *pairidp) {
 
 	// Linear search in shmp, if found then reset pair_to_id
 	bool found = false;
-	for (int i=0; i<urn_odbk_mem_cap; i++) {
+	for (int i=0; i<URN_ODBK_MAX_PAIR; i++) {
 		if (shmp->pairs[i][0] == '\0') break;
 		if (strcmp(shmp->pairs[i], pair) == 0) {
 			*pairidp = (uintptr_t) i;
@@ -186,8 +186,8 @@ VALUE method_mktdata_pairs(VALUE self, VALUE v_idx) {
 	urn_odbk_mem *shmp = _get_valid_urn_odbk_mem(v_idx);
 	if (shmp == NULL) return Qnil;
 
-	VALUE pairs = rb_ary_new_capa(urn_odbk_mem_cap);
-	for (int i=0; i<urn_odbk_mem_cap; i++) {
+	VALUE pairs = rb_ary_new_capa(URN_ODBK_MAX_PAIR);
+	for (int i=0; i<URN_ODBK_MAX_PAIR; i++) {
 		if (shmp->pairs[i][0] == '\0') break;
 		rb_ary_push(pairs, rb_str_new_cstr(shmp->pairs[i]));
 	}
@@ -205,7 +205,7 @@ urn_odbk * _get_valid_urn_odbk(VALUE v_idx, VALUE v_pair, uintptr_t *pairidp) {
 	if (rv != 0) return NULL;
 	uintptr_t pairid = *pairidp;
 
-	if (pairid < 1 || pairid >= urn_odbk_mem_cap) return NULL;
+	if (pairid < 1 || pairid >= URN_ODBK_MAX_PAIR) return NULL;
 
 	urn_odbk *odbk = NULL;
 	if (shmp->odbks[pairid][0].complete) {
@@ -233,10 +233,10 @@ VALUE _make_odbk_data_if_newer(VALUE v_idx, VALUE v_pair, VALUE v_max_row, bool 
 			return Qnil;
 	}
 
-	int max_row = 99;
+	int max_row = URN_ODBK_DEPTH;
 	if (RB_TYPE_P(v_idx, T_FIXNUM) == 1)
 		max_row = NUM2INT(v_max_row);
-	max_row = URN_MIN(99, (int)max_row);
+	max_row = URN_MIN(URN_ODBK_DEPTH, (int)max_row);
 	if (max_row <= 0) return Qnil;
 
 	long mkt_ts_e6;
@@ -337,7 +337,7 @@ VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pair) {
 		URN_WARNF("Error in _get_pairid %d %s", idx, RSTRING_PTR(v_pair));
 		return Qnil;
 	}
-	if (pairid < 1 || pairid >= urn_odbk_mem_cap) return Qnil;
+	if (pairid < 1 || pairid >= URN_ODBK_MAX_PAIR) return Qnil;
 
 	// record pair to pair_sigusr1 hashmap.
 	urn_odbk_mem *shmp = shmptr_arr[idx];
@@ -407,8 +407,8 @@ void Init_urn_mktdata() {
 		shmptr_arr[i] = NULL;
 		clients_shmptr_arr[i] = NULL;
 		pair_to_id[i] = NULL;
-		pair_sigusr1[i] = urn_hmap_init(urn_odbk_mem_cap*5);
-		for (int j=0; j<urn_odbk_mem_cap; j++)
+		pair_sigusr1[i] = urn_hmap_init(URN_ODBK_MAX_PAIR*5);
+		for (int j=0; j<URN_ODBK_MAX_PAIR; j++)
 			last_odbk_data_id[i][j] = 0l;
 	}
 	sigemptyset(&sigusr1_set);

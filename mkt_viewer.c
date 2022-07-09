@@ -12,30 +12,16 @@ char target_pair[32];
 urn_odbk_mem *shmptr = NULL;
 urn_odbk_clients *odbk_clients_shmptr = NULL;
 
-void locate_pairid() {
-	pairid = -1;
-	for (int i=0; i<urn_odbk_mem_cap; i++) {
-		if (shmptr->pairs[i][0] == '\0') {
-			URN_INFOF("%d pair end", i);
-			break;
-		}
-		URN_INFOF("%d pair %s", i, shmptr->pairs[i]);
-		if (strcasecmp(target_pair, shmptr->pairs[i]) == 0) {
-			pairid = i;
-			break;
-		}
-	}
-	if (pairid <= 0)
-		URN_FATAL("Pair not found", ERANGE);
-}
-
 /* verify pair info, then print data */
 void work() {
 	if (strcmp(shmptr->pairs[pairid], target_pair) != 0) {
 		URN_WARNF("Pair changed to %s, locate %s again",
 			shmptr->pairs[pairid], target_pair);
 		urn_odbk_clients_dereg(odbk_clients_shmptr, pairid);
-		locate_pairid();
+		urn_odbk_shm_print_index(shmptr);
+		pairid = urn_odbk_shm_pair_index(shmptr, target_pair);
+		if (pairid <= 0)
+			URN_FATAL("Pair not found", ERANGE);
 		urn_odbk_clients_reg(odbk_clients_shmptr, pairid);
 	}
 	urn_odbk_shm_print(shmptr, pairid);
@@ -57,7 +43,10 @@ int main(int argc, char **argv) {
 
 	strcpy(target_pair, argv[2]);
 	urn_s_upcase(target_pair, strlen(target_pair));
-	locate_pairid();
+	urn_odbk_shm_print_index(shmptr);
+	pairid = urn_odbk_shm_pair_index(shmptr, target_pair);
+	if (pairid <= 0)
+		URN_FATAL("Pair not found", ERANGE);
 	urn_odbk_clients_reg(odbk_clients_shmptr, pairid);
 
 	/* create signal set contains SIGUSR1, KILL and INT */

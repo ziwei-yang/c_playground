@@ -577,18 +577,18 @@ int urn_tick_get(urn_ticks *ticks, int idx, bool *buy, urn_inum *p, urn_inum *s,
 // 	https://dansketcher.com/2021/03/30/shmmax-error-on-big-sur/
 // OR:
 // 	macos_chg_shmmax.sh
-#define urn_odbk_mem_cap 512
+#define URN_ODBK_MAX_PAIR 512
 typedef struct urn_odbk_mem {
-	char      pairs[urn_odbk_mem_cap][16];
-	urn_odbk  odbks[urn_odbk_mem_cap][2];
+	char      pairs[URN_ODBK_MAX_PAIR][16];
+	urn_odbk  odbks[URN_ODBK_MAX_PAIR][2];
 	/* ticks history appened */
-	urn_ticks ticks[urn_odbk_mem_cap];
+	urn_ticks ticks[URN_ODBK_MAX_PAIR];
 } urn_odbk_mem;
 
 #define urn_odbk_pid_cap 8
 typedef struct urn_odbk_clients {
-	char pids_desc[urn_odbk_mem_cap][urn_odbk_pid_cap][64];
-	pid_t pids[urn_odbk_mem_cap][urn_odbk_pid_cap];
+	char pids_desc[URN_ODBK_MAX_PAIR][urn_odbk_pid_cap][64];
+	pid_t pids[URN_ODBK_MAX_PAIR][urn_odbk_pid_cap];
 } urn_odbk_clients;
 typedef urn_odbk_clients urn_tick_clients;
 #define urn_shm_exch_num 12
@@ -684,7 +684,7 @@ int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr) {
 	if (created) {
 		URN_INFO("Cleaning new created urn_odbk_mem");
 		// set pair name NULL, mark all odbk dirty.
-		for (int i = 0; i < urn_odbk_mem_cap; i++) {
+		for (int i = 0; i < URN_ODBK_MAX_PAIR; i++) {
 			(*shmptr)->pairs[i][0] = '\0';
 			(*shmptr)->odbks[i][0].complete = false;
 			(*shmptr)->odbks[i][1].complete = false;
@@ -699,31 +699,52 @@ int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr) {
 
 /* write pair index to SHMEM */
 int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len) {
-	if (len > urn_odbk_mem_cap && len <= 1) {
+	if (len > URN_ODBK_MAX_PAIR && len <= 1) {
 		// pair_arr[0] should always be pair name of NULL(no such pair)
 		URN_WARNF("odbk_shm_write_index() with illegal len %d", len);
 		return ERANGE;
 	}
 	// mark [0] as useless
 	strcpy(shmp->pairs[0], "USELESS");
-	for (int i = 1; i < urn_odbk_mem_cap; i++) {
+	for (int i = 1; i < URN_ODBK_MAX_PAIR; i++) {
 		if (i <= len)
 			strcpy(shmp->pairs[i], pair_arr[i]);
 		else
 			shmp->pairs[i][0] = '\0';
 	}
 	// Mark all odbk dirty.
-	for (int i = 0; i < urn_odbk_mem_cap; i++) {
+	for (int i = 0; i < URN_ODBK_MAX_PAIR; i++) {
 		shmp->odbks[i][0].complete = false;
 		shmp->odbks[i][1].complete = false;
 	}
 	return 0;
 }
 
+int urn_odbk_shm_pair_index(urn_odbk_mem *shmp, char *pair) {
+	int pairid = -1;
+	for (int i=0; i<URN_ODBK_MAX_PAIR; i++) {
+		if (shmp->pairs[i][0] == '\0')
+			break;
+		if (strcasecmp(pair, shmp->pairs[i]) == 0) {
+			pairid = i;
+			break;
+		}
+	}
+	return pairid;
+}
+
+void urn_odbk_shm_print_index(urn_odbk_mem *shmp) {
+	for (int i=0; i<URN_ODBK_MAX_PAIR; i++) {
+		if (shmp->pairs[i][0] == '\0')
+			break;
+		URN_LOGF("urn_odbk_mem %p pair %d %s", shmp, i, shmp->pairs[i]);
+	}
+}
+
 int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 	int timezone = 3600*8;
-	URN_RET_IF((pairid >= urn_odbk_mem_cap), "pairid too big", ERANGE);
-	printf("odbk_shm_init %d [%s] complete: [%d, %d] ", pairid, shmp->pairs[pairid],
+	URN_RET_IF((pairid >= URN_ODBK_MAX_PAIR), "pairid too big", ERANGE);
+	printf("odbk_shm_print %d [%s] complete: [%d, %d] ", pairid, shmp->pairs[pairid],
 		shmp->odbks[pairid][0].complete, shmp->odbks[pairid][1].complete);
 
 	urn_odbk *odbk = NULL;
@@ -755,14 +776,14 @@ int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
 			((float)shm_latency_e6)/1000);
 	mkt_ts_e6 -= (timezone*1000000l);
 
-	for (int i = 0; i < urn_odbk_mem_cap; i++) {
+	for (int i = 0; i < URN_ODBK_DEPTH; i++) {
 		if (urn_inum_iszero(&(odbk->bidp[i])) &&
 			urn_inum_iszero(&(odbk->bids[i])) &&
 			urn_inum_iszero(&(odbk->askp[i])) &&
 			urn_inum_iszero(&(odbk->asks[i]))) {
 			break;
 		}
-		printf("%d %24s %24s - %24s %24s\n", i,
+		printf("%d %18s %18s - %18s %18s\n", i,
 			urn_inum_str(&(odbk->bidp[i])),
 			urn_inum_str(&(odbk->bids[i])),
 			urn_inum_str(&(odbk->askp[i])),
@@ -832,7 +853,7 @@ int urn_odbk_clients_init(char *exchange, urn_odbk_clients **shmptr) {
 	if (created) {
 		URN_INFO("Cleaning new created urn_odbk_clients");
 		// set pid as zero, desc NULL
-		for (int i = 0; i < urn_odbk_mem_cap; i++) {
+		for (int i = 0; i < URN_ODBK_MAX_PAIR; i++) {
 			for (int j = 0; j < urn_odbk_pid_cap; j++) {
 				(*shmptr)->pids[i][j] = 0;
 				(*shmptr)->pids_desc[i][j][0] = '\0';
@@ -846,7 +867,7 @@ int urn_odbk_clients_init(char *exchange, urn_odbk_clients **shmptr) {
 
 int urn_odbk_clients_clear(urn_odbk_clients *shmp) {
 	pid_t p = getpid();
-	for (int i = 0; i < urn_odbk_mem_cap; i++) {
+	for (int i = 0; i < URN_ODBK_MAX_PAIR; i++) {
 		for (int j = 0; j < urn_odbk_pid_cap; j++) {
 			pid_t p2 = shmp->pids[i][j];
 			if (p == p2)
