@@ -30,7 +30,7 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 
 void mkt_data_set_exchange(char *s) {
 	// not so active, wait longer.
-	wss_stat_max_msg_t = 1200;
+	wss_stat_max_msg_t = 3600;
 	sprintf(s, "Gemini");
 }
 
