@@ -73,6 +73,7 @@ int main(int argc, char **argv) {
 	struct timespec timeout;
 	timeout.tv_sec = 2;
 	timeout.tv_nsec = 0;
+	int sig = 0;
 #if __APPLE__
 	sigaddset(&sigusr1_set, SIGALRM);
 	signal(SIGALRM, work);
@@ -80,7 +81,6 @@ int main(int argc, char **argv) {
 	// setup a alarm to send self a SIGUSR1
 	unsigned secs = (unsigned)(timeout.tv_sec);
 	if (secs <= 0) secs = 1;
-	int sig = 0;
 
 	while (true) {
 		alarm(secs); // reset timer
