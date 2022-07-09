@@ -73,6 +73,7 @@ int main(int argc, char **argv) {
 	timeout.tv_nsec = 0;
 #if __APPLE__
 	sigaddset(&sigusr1_set, SIGALRM);
+	signal(SIGALRM, work);
 	// macos has no sigtimedwait();
 	// setup a alarm to send self a SIGUSR1
 	unsigned secs = (unsigned)(timeout.tv_sec);
