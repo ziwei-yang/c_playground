@@ -32,7 +32,8 @@ void locate_pairid() {
 /* verify pair info, then print data */
 void work() {
 	if (strcmp(shmptr->pairs[pairid], target_pair) != 0) {
-		URN_WARN("Pair changed, locate again");
+		URN_WARNF("Pair changed to %s, locate %s again",
+			shmptr->pairs[pairid], target_pair);
 		urn_odbk_clients_dereg(odbk_clients_shmptr, pairid);
 		locate_pairid();
 		urn_odbk_clients_reg(odbk_clients_shmptr, pairid);

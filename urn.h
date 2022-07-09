@@ -853,7 +853,7 @@ int urn_odbk_clients_clear(urn_odbk_clients *shmp) {
 				shmp->pids[i][j] = 0;
 		}
 	}
-	URN_LOGF("Clear client PID %d from share mem %p", pairid, shmp);
+	URN_LOGF("Clear client PID %d from share mem %p", p, shmp);
 	return 0;
 }
 
