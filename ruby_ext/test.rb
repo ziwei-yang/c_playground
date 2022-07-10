@@ -81,31 +81,56 @@ print " √\n"
 puts "--"
 
 puts "Test mktdata_sigusr1_timedwait(), could change tasks of bnn_ws.c now"
-100.times {
+puts "Signal timed wait:"
+100.times { |i|
 	t = Time.now.to_f
 	sig = mktdata_sigusr1_timedwait(0.1)
 	t = Time.now.to_f - t
-  puts "Sig   timed wait got SIGNAL #{sig} in #{t.round(9)}s"
+  print "\r#{i} Sig #{sig} in #{t.round(9)}s"
   odbk = mktdata_new_odbk(exch_id, pair, depth)
-  puts "\t #{pair} #{odbk.inspect[0..79]}..."
+  print "\t-> #{pair} #{odbk.inspect[0..39]}..."
 	next if odbk.nil?
 	bids, asks, t1, t2 = odbk
 	raise "Too much data #{odbk}" if bids.size > depth || asks.size > depth
 }
-100.times {
+puts "\nSignal endless wait:"
+100.times { |i|
 	t = Time.now.to_f
 	sig = mktdata_sigusr1_timedwait(nil)
 	t = Time.now.to_f - t
-  puts "Sig endless wait got SIGNAL #{sig} in #{t.round(9)}s"
+  print "\r#{i} Sig #{sig} in #{t.round(9)}s"
   odbk = mktdata_new_odbk(exch_id, pair, depth)
-  puts "\t #{pair} #{odbk.inspect[0..79]}..."
+  print "\t-> #{pair} #{odbk.inspect[0..39]}..."
   # Sometimes this happens, data changed but orderbook kept same at last.
 	# raise "odbk is nil in no timed wait" if odbk.nil?
   next if odbk.nil?
 	bids, asks, t1, t2 = odbk
 	raise "Too much data #{odbk}" if bids.size > depth || asks.size > depth
 }
+puts "\nSignal endless wait then get new trades:"
+last_trade_ts = 0
+length = 3
+100.times { |i|
+	t = Time.now.to_f
+	sig = mktdata_sigusr1_timedwait(nil)
+	t = Time.now.to_f - t
+  print "\r#{i} Sig #{sig} in #{t.round(9)}s"
+  ticks = mktdata_new_ticks(exch_id, pair, length)
+  next if ticks.nil?
+  # from old to new
+  print "\n"
+  ticks.reverse.each { |trade|
+    print "\t-> #{pair} #{trade.inspect}\n"
+    p, s, type, ts_e3 = trade
+    if ts_e3 < last_trade_ts
+      raise "ts #{ts_e3} older than last #{last_trade_ts}"
+    end
+    last_trade_ts = ts_e3
+    raise "type should only be 1/0" unless [0,1].include?(type)
+  }
+}
 print " √\n"
 
 puts "--"
+puts "All passed"
 puts "--"

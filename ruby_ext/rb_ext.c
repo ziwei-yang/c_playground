@@ -6,6 +6,7 @@
 VALUE             URN_MKTDATA = Qnil;
 urn_odbk_mem     *shmptr_arr[urn_shm_exch_num];
 long              last_odbk_data_id[urn_shm_exch_num][URN_ODBK_MAX_PAIR];
+long              last_tick_data_id[urn_shm_exch_num][URN_ODBK_MAX_PAIR];
 urn_odbk_clients *clients_shmptr_arr[urn_shm_exch_num];
 hashmap          *pair_to_id[urn_shm_exch_num];
 hashmap          *pair_sigusr1[urn_shm_exch_num]; // pairs listening SIGUSR1
@@ -216,6 +217,22 @@ urn_odbk * _get_valid_urn_odbk(VALUE v_idx, VALUE v_pair, uintptr_t *pairidp) {
 	return odbk;
 }
 
+urn_ticks * _get_valid_urn_ticks(VALUE v_idx, VALUE v_pair, uintptr_t *pairidp) {
+	urn_odbk_mem *shmp = _get_valid_urn_odbk_mem(v_idx);
+	if (shmp == NULL) return NULL;
+
+	if (RB_TYPE_P(v_pair, T_STRING) != 1)
+		return NULL;
+
+	int rv = _get_pairid(NUM2INT(v_idx), RSTRING_PTR(v_pair), pairidp);
+	if (rv != 0) return NULL;
+	uintptr_t pairid = *pairidp;
+
+	if (pairid < 1 || pairid >= URN_ODBK_MAX_PAIR) return NULL;
+
+	return &(shmp->ticks[pairid]);
+}
+
 VALUE _make_odbk_data_if_newer(VALUE v_idx, VALUE v_pair, VALUE v_max_row, bool comp_ver) {
 	uintptr_t pairid = 0;
 	urn_odbk *odbk = _get_valid_urn_odbk(v_idx, v_pair, &pairid);
@@ -307,13 +324,79 @@ read_shmem:
 	return r_odbk;
 }
 
+VALUE _make_tick_data_if_newer(VALUE v_idx, VALUE v_pair, VALUE v_max_row, bool comp_ver) {
+	uintptr_t pairid = 0;
+	urn_ticks *ticks = _get_valid_urn_ticks(v_idx, v_pair, &pairid);
+	if (ticks == NULL) return Qnil;
+
+	int exch_idx = NUM2INT(v_idx);
+	unsigned long data_ts_e6 = ticks->latest_t_e6;
+	unsigned long known_data_id = 0l;
+	if (data_ts_e6 <= 0)
+		return Qnil;
+	if (comp_ver) {
+		known_data_id = last_tick_data_id[exch_idx][pairid];
+		if (known_data_id >= data_ts_e6)
+			return Qnil;
+	}
+
+	int max_row = URN_TICK_LENTH;
+	if (RB_TYPE_P(v_idx, T_FIXNUM) == 1)
+		max_row = NUM2INT(v_max_row);
+	max_row = URN_MIN(URN_TICK_LENTH, (int)max_row);
+	if (max_row <= 0) return Qnil;
+
+	double sizes[max_row];
+	double prices[max_row];
+	bool   sides[max_row];
+	unsigned long ts_e6s[max_row];
+	urn_inum p, s;
+
+read_shmem:
+	for (int i = 0; i < max_row; i++) {
+		int rv = urn_tick_get(ticks, i, &(sides[i]), &p, &s, &(ts_e6s[i]));
+		if (rv == ERANGE) {
+			max_row = i;
+			break;
+		}
+		if (comp_ver && (ts_e6s[i] <= known_data_id)) {
+			// break if data is not new
+			max_row = i;
+			break;
+		}
+		prices[i] = urn_inum_to_db(&p);
+		sizes[i] = urn_inum_to_db(&s);
+	}
+
+	// make ruby array [[p, s, 1/0:(buy/sell), ts_e3]]
+	VALUE r_ticks = rb_ary_new_capa(max_row);
+	for (int i=0; i<max_row; i++) {
+		VALUE r_tk = rb_ary_new_capa(4);
+		rb_ary_push(r_tk, DBL2NUM(prices[i]));
+		rb_ary_push(r_tk, DBL2NUM(sizes[i]));
+		rb_ary_push(r_tk, INT2NUM((int)(sides[i])));
+		rb_ary_push(r_tk, LONG2NUM(ts_e6s[i]/1000));
+		rb_ary_push(r_ticks, r_tk);
+	}
+	// save data time to local cache, next time compare this first.
+	last_tick_data_id[exch_idx][pairid] = data_ts_e6;
+	return r_ticks;
+}
+
 // Always return shmem odbk without comparing known_data_id
 VALUE method_mktdata_odbk(VALUE self, VALUE v_idx, VALUE v_pair, VALUE v_max_row) {
 	return _make_odbk_data_if_newer(v_idx, v_pair, v_max_row, false);
 }
-
 VALUE method_mktdata_new_odbk(VALUE self, VALUE v_idx, VALUE v_pair, VALUE v_max_row) {
 	return _make_odbk_data_if_newer(v_idx, v_pair, v_max_row, true);
+}
+
+// Always return shmem ticks without comparing known_data_id
+VALUE method_mktdata_ticks(VALUE self, VALUE v_idx, VALUE v_pair, VALUE v_max_row) {
+	return _make_tick_data_if_newer(v_idx, v_pair, v_max_row, false);
+}
+VALUE method_mktdata_new_ticks(VALUE self, VALUE v_idx, VALUE v_pair, VALUE v_max_row) {
+	return _make_tick_data_if_newer(v_idx, v_pair, v_max_row, true);
 }
 
 VALUE method_mktdata_reg_sigusr1(VALUE self, VALUE v_idx, VALUE v_pair) {
@@ -399,6 +482,8 @@ void Init_urn_mktdata() {
 	rb_define_method(URN_MKTDATA, "mktdata_pairs", method_mktdata_pairs, 1);
 	rb_define_method(URN_MKTDATA, "mktdata_odbk", method_mktdata_odbk, 3);
 	rb_define_method(URN_MKTDATA, "mktdata_new_odbk", method_mktdata_new_odbk, 3);
+	rb_define_method(URN_MKTDATA, "mktdata_ticks", method_mktdata_ticks, 3);
+	rb_define_method(URN_MKTDATA, "mktdata_new_ticks", method_mktdata_new_ticks, 3);
 	rb_define_method(URN_MKTDATA, "mktdata_reg_sigusr1", method_mktdata_reg_sigusr1, 2);
 	rb_define_method(URN_MKTDATA, "mktdata_sigusr1_timedwait", method_sigusr1_timedwait, 1);
 
@@ -408,8 +493,10 @@ void Init_urn_mktdata() {
 		clients_shmptr_arr[i] = NULL;
 		pair_to_id[i] = NULL;
 		pair_sigusr1[i] = urn_hmap_init(URN_ODBK_MAX_PAIR*5);
-		for (int j=0; j<URN_ODBK_MAX_PAIR; j++)
+		for (int j=0; j<URN_ODBK_MAX_PAIR; j++) {
 			last_odbk_data_id[i][j] = 0l;
+			last_tick_data_id[i][j] = 0l;
+		}
 	}
 	sigemptyset(&sigusr1_set);
 	sigaddset(&sigusr1_set, SIGUSR1);
