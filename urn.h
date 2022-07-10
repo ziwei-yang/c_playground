@@ -588,7 +588,7 @@ const char *urn_shm_exchanges[] = { urn_shm_exch_list };
 /* linear find index from constant urn_shm_exch_list, please cache result */
 int urn_odbk_shm_i(char *exchange) {
 	int i = 0;
-	while(1) {
+	while(i <= urn_shm_exch_num) {
 		if (urn_shm_exchanges[i][0] == '\0') return -1;
 		if (strcasecmp(urn_shm_exchanges[i], exchange) == 0)
 			return i;
