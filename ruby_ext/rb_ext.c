@@ -352,7 +352,6 @@ VALUE _make_tick_data_if_newer(VALUE v_idx, VALUE v_pair, VALUE v_max_row, bool 
 	unsigned long ts_e6s[max_row];
 	urn_inum p, s;
 
-read_shmem:
 	for (int i = 0; i < max_row; i++) {
 		int rv = urn_tick_get(ticks, i, &(sides[i]), &p, &s, &(ts_e6s[i]));
 		if (rv == ERANGE) {

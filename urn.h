@@ -186,7 +186,9 @@ long parse_timestr_w_e6(struct tm *tmp, const char *s, const char* format) {
 	// timezone global is defined in time.h, reset to GMT
 	URN_DEBUGF("parse_timestr_w_e6 timegm");
 	time_t epoch = timegm(tmp);
+#ifdef __apple__
 	epoch -= timezone;
+#endif
 	if (end == NULL) // no microsecond
 		return epoch*1000000l;
 	// parse microsecond
