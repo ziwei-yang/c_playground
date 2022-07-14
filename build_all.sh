@@ -21,7 +21,7 @@ done
 echo "Checking RVM"
 which rvm
 if [[ $? == 0 ]]; then
-	cd $DIR/ruby_ext
+	cd $DIR/ruby_ext_mktdata
 	echo "rvm use 3.0 ; ruby extconf.rb ; make clean; make"
 	rvm use 3.0 && ruby extconf.rb && make clean && make
 else

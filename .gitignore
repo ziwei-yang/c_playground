@@ -11,9 +11,9 @@ jsmn.h
 yyjson.*
 *.json
 
-ruby_ext/Makefile
-ruby_ext/*.bundle
-ruby_ext/*.o
-ruby_ext/*.so
-ruby_ext/.sitearchdir.time
+ruby_ext*/Makefile
+ruby_ext*/*.bundle
+ruby_ext*/*.o
+ruby_ext*/*.so
+ruby_ext*/.sitearchdir.time
 
