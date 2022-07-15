@@ -117,7 +117,7 @@ VALUE method_format_num(int argc, VALUE *argv, VALUE klass) {
 	decilen = NUM2INT(v_decilen);
 
 	/* INIT string as all spaces */
-	char *str = malloc(fraclen+decilen+2);
+	char *str = RB_ALLOC_N(char, fraclen+decilen+2);
 	memset(str, ' ', fraclen+decilen+2);
 	str[fraclen+decilen+1] = '\0';
 
