@@ -1,10 +1,107 @@
 #include "ruby.h"
+#include "math.h"
 
 #include "../urn.h"
 
-/*
- * Replacement of:
- * bootstrap.rb/
+/* Replacement of:
+ * bootstrap.rb/MathUtil
+ * 	def diff(f1, f2)
+ */
+VALUE method_diff(VALUE self, VALUE v_f1, VALUE v_f2) {
+	// return 9999999 if [f1, f2].min <= 0
+	// (f1 - f2) / [f1, f2].min
+	double f1, f2;
+	if (RB_TYPE_P(v_f1, T_FIXNUM) == 1) {
+		f1 = (double)NUM2INT(v_f1);
+	} else if (RB_TYPE_P(v_f1, T_FLOAT) == 1) {
+		f1 = NUM2DBL(v_f1);
+	} else
+		rb_raise(rb_eTypeError, "invalid type for diff() f1");
+	if (RB_TYPE_P(v_f2, T_FIXNUM) == 1) {
+		f2 = (double)NUM2INT(v_f2);
+	} else if (RB_TYPE_P(v_f2, T_FLOAT) == 1) {
+		f2 = NUM2DBL(v_f2);
+	} else
+		rb_raise(rb_eTypeError, "invalid type for diff() f2");
+	if (f1 <= 0 || f2 <= 0) return INT2NUM(9999999);
+	double min = f1;
+	if (f2 < min) min = f2;
+	return DBL2NUM((f1-f2)/min);
+}
+
+/* Replacement of:
+ * bootstrap.rb/MathUtil
+ * 	def stat_array(array)
+ */
+VALUE method_stat_array(VALUE self, VALUE v_ary) {
+	VALUE r_result = rb_ary_new_capa(4);
+	long sz = RARRAY_LEN(v_ary);
+	double sum = 0;
+	double devi = 0;
+	double mean;
+	double ary[sz];
+
+	if (RB_TYPE_P(v_ary, T_NIL) == 1)
+		goto four_zeros;
+	if (RB_TYPE_P(v_ary, T_ARRAY) != 1)
+		rb_raise(rb_eTypeError, "invalid type for stat_array() array");
+	if (sz == 0)
+		goto four_zeros;
+
+	for (int i=0; i<sz; i++) {
+		ary[i] = NUM2DBL(rb_ary_entry(v_ary, i));
+		sum += ary[i];
+	}
+	mean = sum/sz;
+	for (int i=0; i<sz; i++)
+		devi = devi + (ary[i] - mean)*(ary[i] - mean);
+	devi = sqrt(devi/sz);
+	// return [n, sum, mean, deviation]
+	rb_ary_push(r_result, INT2NUM(sz));
+	rb_ary_push(r_result, DBL2NUM(sum));
+	rb_ary_push(r_result, DBL2NUM(mean));
+	rb_ary_push(r_result, DBL2NUM(devi));
+	return r_result;
+
+four_zeros:
+	rb_ary_push(r_result, INT2NUM(0));
+	rb_ary_push(r_result, INT2NUM(0));
+	rb_ary_push(r_result, INT2NUM(0));
+	rb_ary_push(r_result, INT2NUM(0));
+	return r_result;
+}
+
+/* Replacement of:
+ * bootstrap.rb/MathUtil
+ * 	def rough_num(f)
+ */
+VALUE method_rough_num(VALUE self, VALUE v_f) {
+	double f;
+	if (RB_TYPE_P(v_f, T_FIXNUM) == 1) {
+		f = (double)NUM2INT(v_f);
+	} else if (RB_TYPE_P(v_f, T_FLOAT) == 1) {
+		f = NUM2DBL(v_f);
+	} else
+		rb_raise(rb_eTypeError, "invalid type for rough_num() f");
+
+	double fabs = f;
+	if (f < 0) fabs = 0 - f;
+	if (fabs >= 100)
+		return DBL2NUM(round(f));
+	else if (fabs >= 1)
+		return DBL2NUM(urn_round(f, 2));
+	else if (fabs >= 0.01)
+		return DBL2NUM(urn_round(f, 4));
+	else if (fabs >= 0.0001)
+		return DBL2NUM(urn_round(f, 6));
+	else if (fabs >= 0.000001)
+		return DBL2NUM(urn_round(f, 8));
+	else
+		return v_f;
+}
+
+/* Replacement of:
+ * bootstrap.rb/MathUtil
  * 	def format_num(f, float=8, decimal=8)
  */
 VALUE method_format_num(int argc, VALUE *argv, VALUE klass) {
@@ -75,5 +172,8 @@ VALUE URN_CORE = Qnil;
 
 void Init_urn_core() {
 	URN_CORE = rb_define_module("URN_CORE");
+	rb_define_method(URN_CORE, "diff", method_diff, 2);
+	rb_define_method(URN_CORE, "stat_array", method_stat_array, 1);
+	rb_define_method(URN_CORE, "rough_num", method_rough_num, 1);
 	rb_define_method(URN_CORE, "format_num", method_format_num, -1);
 }

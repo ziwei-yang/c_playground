@@ -166,6 +166,19 @@ typedef struct urn_func_opt {
 typedef void (*urn_ptr_cb)(void *p);
 
 //////////////////////////////////////////
+// Double tools
+//////////////////////////////////////////
+double urn_round(double f, int precision) {
+	if (precision == 0)
+		return (double)(round(f));
+	char str[64];
+	sprintf(str, "%.*lf", precision, f);
+	double newf;
+	sscanf(str, "%lf", &newf);
+	return newf;
+}
+
+//////////////////////////////////////////
 // Diff of timeval
 //////////////////////////////////////////
 long urn_usdiff(struct timeval t1, struct timeval t2) {
