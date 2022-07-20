@@ -8,7 +8,7 @@ HOMEBREW=
 [ -d /opt/homebrew/Cellar ] && HOMEBREW=/opt/homebrew/Cellar # macos 12+
 
 # Change poor 4MB share memory limit on macOS
-[[ $os == Darwin ]] && source $DIR/macos_chg_shmmax.sh
+[[ $os == Darwin ]] && $DIR/macos_chg_shmmax.sh
 
 [[ $os == Darwin ]] && brew install cmake libglib2.0-dev libglib2.9
 [[ $os == Linux ]] && echo sudo apt install cmake && sudo apt install cmake
