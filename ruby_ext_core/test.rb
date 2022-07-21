@@ -1,68 +1,34 @@
 require "urn_core"
+require_relative "../../uranus/common/old"
 
 class RubyNative
-  def diff(f1, f2)
-    f1 = f1.to_f
-    f2 = f2.to_f
-    return 9999999 if [f1, f2].min <= 0
-    (f1 - f2) / [f1, f2].min
+  include URN::MathUtil_RB
+  def initialize
+    @hashmap = {'i'=>'123456'}
+    @i = @hashmap['i']
   end
-
-  def stat_array(array)
-    return [0,0,0,0] if array.nil? || array.empty?
-    n = array.size
-    sum = array.reduce(:+)
-    mean = sum/n
-    deviation = array.map { |p| (p-mean)*(p-mean) }.reduce(:+)/n
-    deviation = Math.sqrt(deviation)
-    [n, sum, mean, deviation]
+  def hashmap_get(key)
+    return @hashmap[key]
   end
-
-  def rough_num(f)
-    f ||= 0
-    if f.abs > 100
-      return f.round
-    elsif f.abs > 1
-      return f.round(2)
-    elsif f.abs > 0.01
-      return f.round(4)
-    elsif f.abs > 0.0001
-      return f.round(6)
-    elsif f.abs > 0.000001
-      return f.round(8)
-    else
-      f
-    end
+  def hashmap_set(key, value)
+    @hashmap[key] = value
   end
-
-  def format_num(f, float=8, decimal=8)
-    return ''.ljust(decimal+float+1) if f.nil?
-    return ' '.ljust(decimal+float+1, ' ') if f == 0
-    return f.rjust(decimal+float+1) if f.is_a? String
-    if float == 0
-      f = f.round
-      return ' '.ljust(decimal+float+1, ' ') if f == 0
-      return f.to_s.rjust(decimal+float+1, ' ')
-    end
-    num = f.to_f
-    f = "%.#{float}f" % f
-    loop do
-      break unless f.include?('.')
-      break unless f.end_with?('0')
-      break if f.end_with?('.0')
-      f = f[0..-2]
-    end
-    segs = f.split('.')
-    if num.to_i == num
-      return "#{segs[0].rjust(decimal)} #{''.ljust(float, ' ')}"
-    else
-      return "#{segs[0].rjust(decimal)}.#{segs[1][0..float].ljust(float, ' ')}"
-    end
+  def i
+    @i
   end
 end
 
 class RubyCExt
   include URN_CORE
+  def initialize
+    @order_c = URN_CORE::Order.new
+  end
+  def hashmap_get(key)
+    return @order_c[key]
+  end
+  def i
+    return @order_c['i']
+  end
 end
 
 class Tester
@@ -123,3 +89,6 @@ t.test(:rough_num, [0.78967986])
 t.test(:rough_num, [0.007896789])
 t.test(:rough_num, [0.000007896789])
 t.test_and_benchmark(:rough_num, [0.000007896789], 1_000_000)
+
+t.test_and_benchmark(:hashmap_get, ['i'], 1_000_000)
+t.test_and_benchmark(:i, [], 1_000_000)
