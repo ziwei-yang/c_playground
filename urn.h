@@ -86,7 +86,7 @@
 // Log, debug and colored printing.
 //////////////////////////////////////////
 
-struct timeval urn_global_tv;
+static struct timeval urn_global_tv;
 char   urn_global_log_buf[1024*1024]; // 64K was small for large log
 #define URN_TIMEZONE 28800 // change this if not in +0800 timezone
 #if __APPLE__
@@ -151,6 +151,7 @@ char   urn_global_log_buf[1024*1024]; // 64K was small for large log
 
 #define URN_MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define URN_MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define URN_ABS(a) ((a) > 0 ? (a) : (0-a))
 #define _URN_RGCAP(a, min, max) ((a<min) ? min : ((a>max) ? max : a)) // internal use
 #define URN_INTCAP(a) (int)(_URN_RGCAP((long long)(a), (long long)INT_MIN, (long long)INT_MAX))
 
