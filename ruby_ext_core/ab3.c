@@ -2,7 +2,6 @@
 #include "math.h"
 #include <stdarg.h>
 
-//#define URN_MAIN_DEBUG // enable URN_DEBUGF
 #include "../urn.h"
 
 double urn_round(double f, int precision);
@@ -25,6 +24,7 @@ ID id_price_ratio_range;
 ID id_object_id;
 ID id_balance_ttl_cash_asset;
 ID id_future_side_for_close;
+ID id_clear;
 VALUE sym_orderbook;
 VALUE sym_own_main_orders;
 VALUE sym_own_spike_main_orders;
@@ -59,7 +59,9 @@ ID id_my_spike_catcher_enabled;
 ID id_my_avg_last;
 ID id_my_need_balance_refresh;
 ID id_my_main_order_min_num_map;
+ID id_my_low_balance_market;
 ID id_my_deviation_map;
+ID id_my_debug;
 void ab3_init() {
 	if (ab3_inited) return;
 	id_valid_markets = rb_intern("valid_markets");
@@ -77,6 +79,7 @@ void ab3_init() {
 	id_object_id = rb_intern("object_id");
 	id_balance_ttl_cash_asset = rb_intern("balance_ttl_cash_asset");
 	id_future_side_for_close = rb_intern("future_side_for_close");
+	id_clear = rb_intern("clear");
 
 	sym_orderbook = ID2SYM(rb_intern("orderbook"));
 	sym_own_main_orders = ID2SYM(rb_intern("own_main_orders"));
@@ -116,7 +119,9 @@ void ab3_init() {
 	id_my_avg_last = rb_intern("@avg_last");
 	id_my_need_balance_refresh = rb_intern("@need_balance_refresh");
 	id_my_main_order_min_num_map = rb_intern("@main_order_min_num_map");
+	id_my_low_balance_market = rb_intern("@low_balance_market");
 	id_my_deviation_map = rb_intern("@deviation_map");
+	id_my_debug = rb_intern("@debug");
 
 	ab3_inited = true;
 	return;
@@ -266,6 +271,7 @@ bool c_is_fut_mkts[MAX_AB3_MKTS] = {false};
 double c_typebc_cap_rate;
 double c_single_vol_ratio;
 VALUE c_aggr_syms[MAX_AGRSV_TYPES] = {Qnil};
+bool c_my_debug = false;
 
 /*
  * Call this after AB3 @deviation_map changed.
@@ -359,6 +365,7 @@ static void cache_trader_attrs(VALUE self) {
 	c_size_precise = NUM2INT(rb_ivar_get(self, rb_intern("@size_precise")));
 	c_typebc_cap_rate = NUM2DBL(rb_ivar_get(self, rb_intern("@typeBC_capacity_rate")));
 	c_single_vol_ratio = NUM2DBL(rb_ivar_get(self, rb_intern("@single_vol_ratio")));
+	c_my_debug = (TYPE(rb_ivar_get(self, id_my_debug)) == T_TRUE) ? true : false;
 
 	const_urn = rb_const_get(rb_cObject, rb_intern("URN"));
 	const_urn_mkt_bull = rb_const_get(const_urn, rb_intern("MKT_BULL"));
@@ -383,6 +390,28 @@ static double _format_price(double p, double step, int type) {
 	double new_p = ((double)(new_price_i)) / toint;
 	return urn_round(new_p, 10);
 }
+
+struct timeval _ab3_dbg_start_t;
+#define _ab3_dbg(...) \
+	if (c_my_debug) { \
+		URN_LOGF( __VA_ARGS__ ); \
+		URN_LOGF("\t\t +%6ldms +%9ldus", \
+			urn_msdiff(_ab3_dbg_start_t, urn_global_tv), \
+			urn_usdiff(_ab3_dbg_start_t, urn_global_tv)); \
+	}
+#define _ab3_dbgc(...) \
+	if (c_my_debug) { \
+		URN_LOGF_C( __VA_ARGS__ ); \
+		URN_LOGF("\t\t +%6ldms +%9ldus", \
+			urn_msdiff(_ab3_dbg_start_t, urn_global_tv), \
+			urn_usdiff(_ab3_dbg_start_t, urn_global_tv)); \
+	}
+#define _ab3_dbg_end \
+	if (c_my_debug) { \
+		gettimeofday(&urn_global_tv, NULL); \
+		_ab3_dbg("detect_arbitrage_pattern_c end, cost usec %ld", \
+			urn_usdiff(_ab3_dbg_start_t, urn_global_tv)); \
+	}
 
 #define _compute_shown_price(p_real, rate, type) \
 	(((type) == BUY) ? ((p_real)*(1-(rate))) : ((p_real)/(1-(rate))))
@@ -418,17 +447,31 @@ static bool _aggressive_arbitrage_orders_c(
 	double vol_max, double vol_min,
 	struct order *buy_order, struct order *sell_order
 ) {
-	VALUE str_buy = rb_str_new2("buy");
-	VALUE str_sell = rb_str_new2("sell");
-
-	double avg_price_max_diff = 0.001;
 	// Scan bids and asks one by one, scan bids first.
 	// [SEL/BUY][finished(0/1), idx, size_sum, price, p_real, avg_price]
 	if ((*bids_map)[0][0] == 0 || (*asks_map)[0][0] == 0)
 		return false;
+	// Do the fast check, compare top p_take, it saves time!
+	double top_bid_p = (*bids_map)[0][0];
+	double top_ask_p = (*asks_map)[0][0];
+	double top_bid_p_take = (*bids_map)[0][2];
+	double top_ask_p_take = (*asks_map)[0][2];
+	double fast_price_diff = diff(top_bid_p_take, top_ask_p_take);
+	if (fast_price_diff <= min_price_diff) {
+		_ab3_dbg("\t bid0:%4.8lf,%4.8lf ask0:%4.8lf,%4.8lf "
+			"fast price diff:%1.5lf < %1.5lf stop",
+			top_bid_p, top_bid_p_take,
+			top_ask_p, top_ask_p_take,
+			fast_price_diff, min_price_diff);
+		return false;
+	}
+
 	double scan_status[2][7] = {0};
 	int _idx_fin=0, _idx_idx=1, _idx_size_sum=2, _idx_p=3, _idx_p_real=4, _idx_avg_p=5, _idx_p_take=6;
 
+	VALUE str_buy = rb_str_new2("buy");
+	VALUE str_sell = rb_str_new2("sell");
+	double avg_price_max_diff = 0.001;
 	bool scan_buy_now = true;
 	bool balance_limited=false, vol_max_reached=false, vol_min_limited=false;
 	int  loop_ct = 0;
@@ -449,7 +492,7 @@ static bool _aggressive_arbitrage_orders_c(
 		int idx = (int)(scan_status[type][_idx_idx]);
 		if ((scan_status[opposite_type][_idx_fin] == 1) &&
 				(scan_status[type][_idx_size_sum] > scan_status[opposite_type][_idx_size_sum])) {
-			URN_DEBUGF("%d side is already finished, "
+			_ab3_dbg("%d side is already finished, "
 				"%d side size_sum is larger than opposite, all finished.",
 				opposite_type, type);
 			scan_status[type][_idx_fin] = 1;
@@ -461,7 +504,7 @@ static bool _aggressive_arbitrage_orders_c(
 
 		if ((scan_status[opposite_type][_idx_fin] == 1) &&
 				((idx >= max_odbk_depth) || (p <= 0))) {
-			URN_DEBUGF("%d side is already finished, "
+			_ab3_dbg("%d side is already finished, "
 				"all %d data is scanned, all finished.",
 				opposite_type, type);
 			scan_status[type][_idx_fin] = 1;
@@ -472,13 +515,13 @@ static bool _aggressive_arbitrage_orders_c(
 		// Scan other side if this orderbook is all checked.
 		if ((scan_status[type][_idx_fin] == 1) ||
 				((idx >= max_odbk_depth) || (p <= 0))) {
-			URN_DEBUGF("-> flip to %d", opposite_type);
+			_ab3_dbg("-> flip to %d", opposite_type);
 			scan_status[type][_idx_fin] = 1;
 			scan_buy_now = !scan_buy_now;
 			continue;
 		}
 
-		// URN_DEBUGF("\tODBK %d %d %lf %lf %lf", type, idx, p, s, p_take);
+		// _ab3_dbg("\tODBK %d %d %lf %lf %lf", type, idx, p, s, p_take);
 		if ((p <= 0) || (s <= 0) || (p_take <= 0)) {
 			rb_raise(rb_eTypeError, "invalid odbk data, p/s/p_take <= 0");
 			break;
@@ -491,7 +534,7 @@ static bool _aggressive_arbitrage_orders_c(
 			s = vol_max - size_sum;
 			vol_max_reached = true;
 			scan_status[type][_idx_fin] = 1;
-			URN_DEBUGF("Max vol reached, vol_max %lf", vol_max);
+			_ab3_dbg("Max vol reached, vol_max %lf", vol_max);
 		}
 		// Cap the size according to maximum order size, again:
 		// mkt_client_bid is the market client of bid orderbook, where ask order should be placed.
@@ -517,7 +560,7 @@ static bool _aggressive_arbitrage_orders_c(
 			s = max_size - size_sum;
 			scan_status[type][_idx_fin] = 1;
 			balance_limited = true;
-			URN_DEBUGF("Balance limited, %d max=%lf p=%lf", type, max_size, p);
+			_ab3_dbg("Balance limited, %d max=%lf p=%lf", type, max_size, p);
 		}
 
 		// Compare this price with opposite price.
@@ -531,17 +574,17 @@ static bool _aggressive_arbitrage_orders_c(
 			scan_status[type][_idx_p] = p;
 			scan_status[type][_idx_p_take] = p_take;
 			scan_status[type][_idx_avg_p] = p;
-			URN_DEBUGF("Scan %d orderbook %d: O p %lf p_tk %lf s %lf init this side.",
+			_ab3_dbg("Scan %d orderbook %d: O p %lf p_tk %lf s %lf init this side.",
 				type, idx, p, p_take, s);
 			scan_buy_now = !scan_buy_now;
 			continue;
 		}
-		URN_DEBUGF("Scan %d orderbook %d: O p %lf p_tk %lf s %lf", type, idx, p, p_take, s);
+		_ab3_dbg("Scan %d orderbook %d: O p %lf p_tk %lf s %lf", type, idx, p, p_take, s);
 
 		// Compare this price with opposite_p
 		double price_diff = scan_buy_now ? diff(p_take, opposite_p_take) : diff(opposite_p_take, p_take);
 		if (price_diff <= min_price_diff) {
-			URN_DEBUGF("\ttype:%d p:%lf,%lf opposite_p:%lf,%lf "
+			_ab3_dbg("\ttype:%d p:%lf,%lf opposite_p:%lf,%lf "
 				"price diff:%lf < %lf side finished",
 				type, p, p_take, opposite_p, opposite_p_take,
 				price_diff, min_price_diff);
@@ -552,10 +595,10 @@ static bool _aggressive_arbitrage_orders_c(
 		// Compare future average price, should not deviate from price too much.
 		if (size_sum + s == 0) continue;
 		double next_avg_price = (avg_price*size_sum + p*s) / (size_sum + s);
-		URN_DEBUGF("\tnext_avg: %8.8lf diff(next_avg, p): %8.8f",
+		_ab3_dbg("\tnext_avg: %8.8lf diff(next_avg, p): %8.8f",
 			next_avg_price, URN_ABS(diff(next_avg_price, p)));
 		if (URN_ABS(diff(next_avg_price, p)) > avg_price_max_diff) {
-			URN_DEBUGF("\tdiff(next_avg, p).abs too large, this side finished");
+			_ab3_dbg("\tdiff(next_avg, p).abs too large, this side finished");
 			scan_status[type][_idx_fin] = 1;
 			continue;
 		}
@@ -567,7 +610,7 @@ static bool _aggressive_arbitrage_orders_c(
 		scan_status[type][_idx_p] = price;
 		scan_status[type][_idx_p_take] = p_take;
 		scan_status[type][_idx_avg_p] = next_avg_price;
-		URN_DEBUGF("\tnow %d size_sum:%lf p:%lf avg_p:%lf", type, size_sum, p, next_avg_price);
+		_ab3_dbg("\tnow %d size_sum:%lf p:%lf avg_p:%lf", type, size_sum, p, next_avg_price);
 		scan_status[type][_idx_idx] += 1;
 		// Compare future size_sum with opposite_s, if this side is fewer, continue scan.
 		if (size_sum < opposite_s) continue;
@@ -697,21 +740,25 @@ int rbv_w_dbl_comparitor(const void *c1, const void *c2) {
  */
 VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	cache_trader_attrs(self);
+	VALUE c_by_cata_m = rb_hash_new();
 	/*
 	 * STEP 0 prepare instance variables.
 	 */
-	URN_DEBUGF("detect_arbitrage_pattern_c");
-	struct timeval start_t;
-	gettimeofday(&start_t, NULL);
-	double now = (double)(start_t.tv_sec) + (double)(start_t.tv_usec)/1000000.0;
+	_ab3_dbg("STEP 0 prepare vars");
+	gettimeofday(&_ab3_dbg_start_t, NULL);
+	_ab3_dbg("detect_arbitrage_pattern_c");
+	double now = (double)(_ab3_dbg_start_t.tv_sec) + (double)(_ab3_dbg_start_t.tv_usec)/1000000.0;
 
 	long idx, max; // for rbary_each()
 	VALUE v_el, v_tmp; // for tmp usage.
 
+	c_my_debug = (TYPE(rb_ivar_get(self, id_my_debug)) == T_TRUE) ? true : false;
+//	c_my_debug = true; // force enable debug
 	VALUE my_vol_max = rb_ivar_get(self, id_my_vol_max);
 	VALUE my_avg_last = rb_ivar_get(self, id_my_avg_last);
 	VALUE my_need_balance_refresh = rb_ivar_get(self, id_my_need_balance_refresh);
 	VALUE my_main_order_min_num_map = rb_ivar_get(self, id_my_main_order_min_num_map);
+	VALUE my_low_balance_market = rb_ivar_get(self, id_my_low_balance_market);
 	int main_order_min_num_map[MAX_AB3_MKTS] = {0};
 	for (int i=0; i < my_markets_sz; i++) {
 		v_tmp = rb_hash_aref(my_main_order_min_num_map, cv_mkts[i]);
@@ -733,7 +780,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 		c_valid_mkts[i] = false;
 	rbary_each(v_valid_mkts, idx, max, v_el) {
 		char *m = RSTRING_PTR(v_el);
-		URN_DEBUGF("P v_valid_mkts %ld %s", idx, m);
+		// _ab3_dbg("P v_valid_mkts %ld %s", idx, m);
 		for (int i=0; i < my_markets_sz; i++) {
 			if (strcmp(m, c_mkts[i]) == 0) {
 				c_valid_mkts[i] = true;
@@ -742,14 +789,16 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 		}
 	}
 	int valid_mkts_sz = max;
-	URN_DEBUGF("P valid markets %d/%d", valid_mkts_sz, my_markets_sz);
+	_ab3_dbg("P valid markets %d/%d", valid_mkts_sz, my_markets_sz);
+	// COST_US 22
 
 	if (valid_mkts_sz < 2) {
 		// @markets.each { |m| @_keep_exist_spike_order[m] = true }
 		for (int i=0; i < MAX_AB3_MKTS; i++) {
 			rb_hash_aset(my_keep_exist_spike_order, cv_mkts[i], Qtrue);
 		}
-		return rb_hash_new();
+		_ab3_dbg_end;
+		return c_by_cata_m;
 	}
 
 	double devi_map_mk_buy[MAX_AB3_MKTS] = {1};
@@ -776,6 +825,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	/*
 	 * STEP 1 organize own orders
 	 */
+	_ab3_dbg("STEP 1 organize orders");
 	// linked order instead of ruby array
 	struct order *own_main_orders[MAX_AB3_MKTS][2] = {NULL};
 	struct order *own_spike_main_orders[MAX_AB3_MKTS][2] = {NULL};
@@ -876,17 +926,19 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			}
 		}
 	}
+	// COST_US 30 - no orders.
 
 	/*
 	 * STEP 2 prepare market data: bids_map and asks_map
 	 * RUBY: bids_map = mkts.map { |m| [m, @market_snapshot.dig(m, :orderbook, 0) || []] }.to_h
 	 * C:    bids_map[m_idx] => [[p, s, p_take], [3], ... ], p<=0 means invalid data.
 	 */
+	_ab3_dbg("STEP 2 market data");
 	double bids_map[MAX_AB3_MKTS][max_odbk_depth][3] = {0};
 	double asks_map[MAX_AB3_MKTS][max_odbk_depth][3] = {0};
 	for (int i=0; i < my_markets_sz; i++) {
 		if (c_valid_mkts[i] != true) continue;
-		URN_DEBUGF("D mkts %d/%d %8s", i, my_markets_sz, c_mkts[i]);
+		_ab3_dbg("D mkts %d/%d %8s", i, my_markets_sz, c_mkts[i]);
 		v_tmp = rb_funcall(my_market_snapshot, id_dig, 3, cv_mkts[i], sym_orderbook, INT2NUM(0));
 		if (TYPE(v_tmp) != T_NIL) { // copy bids_map
 			rbary_each(v_tmp, idx, max, v_el) {
@@ -905,27 +957,46 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				asks_map[i][idx][2] = NUM2DBL(rbhsh_el(v_el, "p_take"));
 			}
 		}
-		URN_DEBUGF("D mkts %d/%d %8s bid0 p %4.6lf p_tk %4.6lf s %8lf ask0 p %4.6lf p_tk %4.6lf s %8lf",
+		_ab3_dbg("D mkts %d/%d %8s bid0 p %4.6lf p_tk %4.6lf s %8lf ask0 p %4.6lf p_tk %4.6lf s %8lf",
 			i, my_markets_sz, c_mkts[i],
 			bids_map[i][0][0], bids_map[i][0][2], bids_map[i][0][1],
 			asks_map[i][0][0], asks_map[i][0][2], asks_map[i][0][1]);
+		// COST_US - each round 10us
 	}
+	// COST_US 84 - 5 markets
 
 	VALUE v_chances = rb_ary_new2(2);
 	VALUE str_buy = rb_str_new2("buy");
 	VALUE str_sell = rb_str_new2("sell");
 
 	/* STEP 3 Detection for case A => "[A] Direct sell and buy" */
-
+	_ab3_dbg("STEP 3 type A detection started");
 	for (int m1_idx=0; m1_idx < my_markets_sz; m1_idx++) {
 		// check m1 bids and m2 asks, sell at m1 and buy at m2
 		if (!c_run_mode_a) break;
 		if (c_valid_mkts[m1_idx] != true) continue;
-		if (bids_map[m1_idx][0][0] <= 0) continue;
+		double top_bid_p = bids_map[m1_idx][0][0];
+		double top_bid_p_take = bids_map[m1_idx][0][2];
+		if (top_bid_p <= 0) continue;
 		for (int m2_idx=0; m2_idx < my_markets_sz; m2_idx++) {
 			if (c_valid_mkts[m2_idx] != true) continue;
 			if (m1_idx == m2_idx) continue;
-			if (asks_map[m2_idx][0][0] <= 0) continue;
+			// Compare first, before call _aggressive_arbitrage_orders_c(0
+			double top_ask_p = asks_map[m2_idx][0][0];
+			double top_ask_p_take = asks_map[m2_idx][0][2];
+			if (top_ask_p <= 0) continue;
+			double fast_price_diff = (top_bid_p_take-top_ask_p_take)/top_ask_p_take;
+			if (fast_price_diff <= c_arbitrage_min)
+				continue;
+
+			_ab3_dbg("\t A fast check passed "
+				"%s bid0:%4.8lf %4.8lf %s ask0:%4.8lf %4.8lf "
+				"fast price diff:%1.5lf >= %1.5lf "
+				"_aggressive_arbitrage_orders_c start",
+				c_mkts[m1_idx], top_bid_p, top_bid_p_take,
+				c_mkts[m2_idx], top_ask_p, top_ask_p_take,
+				fast_price_diff, c_arbitrage_min);
+
 			struct order buy_order, sell_order;
 			bool found = _aggressive_arbitrage_orders_c(
 				&bids_map[m1_idx], &asks_map[m2_idx],
@@ -935,6 +1006,8 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				URN_MAX(single_vol_ratio*vol_max_a, my_vol_min*1.1), my_vol_min,
 				&buy_order, &sell_order
 			);
+			// COST_US 100~200 _aggressive_arbitrage_orders_c()
+			_ab3_dbg("_aggressive_arbitrage_orders_c end");
 			if (!found) continue;
 			buy_order.buy = true;
 			sell_order.buy = false;
@@ -995,6 +1068,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 
 	// If market price higher than lowest_bid_p a lot, dont place spike buy order
 	// If market price lower than highest_ask_p a lot, dont place spike sell order
+	_ab3_dbg("STEP 4 started"
+		"S URN::MKT_BULL %d %d URN::MKT_BEAR %d %d",
+		RB_TYPE_P(const_urn_mkt_bull, T_TRUE),
+		RB_TYPE_P(const_urn_mkt_bull, T_FALSE),
+		RB_TYPE_P(const_urn_mkt_bear, T_TRUE),
+		RB_TYPE_P(const_urn_mkt_bear, T_FALSE));
+	// COST_US 169us
 	double lowest_bid_p=-1, highest_ask_p=-1;
 	for (int m1_idx=0; m1_idx < my_markets_sz; m1_idx++) {
 		if (c_valid_mkts[m1_idx] != true) continue;
@@ -1011,27 +1091,27 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				highest_ask_p = URN_MAX(highest_ask_p, asks_map[m1_idx][0][0]);
 		}
 	}
-	URN_DEBUGF("highest_ask_p %lf lowest_bid_p %lf", highest_ask_p, lowest_bid_p);
+	_ab3_dbg("S highest_ask_p %lf lowest_bid_p %lf", highest_ask_p, lowest_bid_p);
 	if ((TYPE(my_spike_catcher_enabled) == T_TRUE) && (c_run_mode_d || c_run_mode_e)) {
 		for (int m1_idx=0; m1_idx < my_markets_sz; m1_idx++) {
 			if (c_valid_mkts[m1_idx] != true) continue;
 			double bid_p = bids_map[m1_idx][0][0];
 			double ask_p = asks_map[m1_idx][0][0];
 			if ((bid_p <= 0) || (ask_p <= 0)) {
-				URN_LOG("market orderbook invalid, do not cancel spike orders.");
+				URN_LOG("S market orderbook invalid, do not cancel spike orders.");
 				// Should be temporary data incomplete
 				rb_hash_aset(my_keep_exist_spike_order, cv_mkts[m1_idx], Qtrue);
 				continue;
 			}
 			rb_hash_aset(my_keep_exist_spike_order, cv_mkts[m1_idx], Qfalse);
-			URN_DEBUGF("Spike %8s BID %4.8lf %4.8lf ASK %4.8lf %4.8lf", c_mkts[m1_idx],
+			_ab3_dbg("S spike %8s BID %4.8lf %4.8lf ASK %4.8lf %4.8lf", c_mkts[m1_idx],
 				bid_p, bids_map[m1_idx][0][2],
 				ask_p, asks_map[m1_idx][0][2]);
 			// Price should not be far away from @avg_last
 			// bid_p is higher than avg_last, very abonormal
 			// ask_p is lower than avg_last, very abonormal
 			if ((avg_last > 0) && (URN_ABS(diff(bid_p, avg_last)) > 0.01)) {
-				URN_LOGF_C(RED, "%8s price B %4.8lf A %4.8lf is too far away from "
+				URN_LOGF_C(RED, "S %8s price B %4.8lf A %4.8lf is too far away from "
 					"@avg_last %4.8lf, skip spike catching",
 					c_mkts[m1_idx], bid_p, ask_p, avg_last);
 				continue;
@@ -1055,11 +1135,6 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				0.62, 1.0,
 				0.52, 1.0
 			}; // 0.965 might work for those rats in ETH-ADA
-			URN_DEBUGF("URN::MKT_BULL %d %d URN::MKT_BEAR %d %d",
-				RB_TYPE_P(const_urn_mkt_bull, T_TRUE),
-				RB_TYPE_P(const_urn_mkt_bull, T_FALSE),
-				RB_TYPE_P(const_urn_mkt_bear, T_TRUE),
-				RB_TYPE_P(const_urn_mkt_bear, T_FALSE));
 			bool m1_bittrex = (strcmp(c_mkts[m1_idx], "Bittrex") == 0) ? true : false;
 			if (m1_bittrex)
 				memcpy(spike_buy_prices, spike_buy_prices_bittrex, sizeof(spike_buy_prices));
@@ -1119,7 +1194,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				// For buy orders, place X*@vol_max_const when balance >= (15+10X) * @vol_max_const
 				buy_o_quota = ((first_order_size_avail / c_vol_max_const - 15) / 10.0) - 0.1;
 			}
-			URN_DEBUGF("spike_buy first_order_size_avail %8s %4.8lf %4.8lf",
+			_ab3_dbg("S spike_buy first_order_size_avail %8s %4.8lf %4.8lf",
 				c_mkts[m1_idx], first_order_size_avail, buy_o_quota);
 			// Set real size for each spike bid_sizes
 			for (int i=0; i<bid_idx; i++) {
@@ -1205,7 +1280,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			double total_asset_balance = NUM2DBL(rbary_el(v_bal_each, 1));
 			double sell_o_quota_b = ((total_asset_balance - keep_bal) / traders_num / c_vol_max_const) - 0.1;
 			double sell_o_quota = URN_MIN(sell_o_quota_a, sell_o_quota_b);
-			URN_DEBUGF("spike_sell first_order_size_avail %8s %4.8lf, sell_o_quota %4.8lf",
+			_ab3_dbg("S spike_sell first_order_size_avail %8s %4.8lf, sell_o_quota %4.8lf",
 				c_mkts[m1_idx], first_order_size_avail, sell_o_quota);
 			// Set real size for each spike ask_sizes
 			for (int i=0; i<ask_idx; i++) {
@@ -1264,9 +1339,9 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					} else if (now - last_add_spike_t > 30) {
 						// Speed control for placing non-first level.
 						c_my_last_t_suggest_new_spike_prices[m1_idx] = now;
-						URN_DEBUGF("Suggest adding one more %d spike %d order", t, i+1);
+						_ab3_dbg("\tSuggest adding one more %d spike %d order", t, i+1);
 					} else {
-						URN_DEBUGF("Skip adding buy spike %d %d order too fast", t, i+1);
+						_ab3_dbg("\tSkip adding buy spike %d %d order too fast", t, i+1);
 						if (t == BUY) {
 							bid_prices[i] = 0;
 							bid_sizes[i] = 0;
@@ -1277,7 +1352,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 						continue;
 					}
 				} else {
-					URN_DEBUGF("Nearby spike catcher found for %s %4.8lf %4.8lf:\n%s",
+					_ab3_dbg("\tNearby spike catcher found for %s %4.8lf %4.8lf:\n%s",
 						"BUY", p, s, rborder_desc(match_o));
 					if (t == BUY) {
 						bid_prices[i] = match_o->p;
@@ -1321,6 +1396,8 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	}
 
 	/* STEP 5 For type B and C */
+	_ab3_dbg("STEP 5 type B and C");
+	// COST_US 684
 	// if low_balance_market[any] is true,
 	// rb_ivar_set(self, id_my_need_balance_refresh, Qtrue); at last
 	bool low_balance_market[MAX_AB3_MKTS] = {false};
@@ -1357,9 +1434,10 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 		for (int m1_idx=0; m1_idx < my_markets_sz; m1_idx++) {
 			double bid_p = bids_map[m1_idx][0][0];
 			double ask_p = asks_map[m1_idx][0][0];
-			URN_DEBUGF("0 %s %8s valid %d bid_p %4.8f ask_p %4.8f",
+			_ab3_dbg("0.  %s %8s valid %d bid_p %4.8f ask_p %4.8f",
 				(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx],
 				c_valid_mkts[m1_idx], bid_p, ask_p);
+			// COST_US 692 1119
 			if (c_valid_mkts[m1_idx] != true) continue;
 			if ((bid_p <= 0) || (ask_p <= 0)) continue;
 			double (*orders_map)[MAX_AB3_MKTS][max_odbk_depth][3] = (t==BUY ? &bids_map : &asks_map);
@@ -1409,9 +1487,10 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			bool large_price_step = ((p_step/price_1st) >= 0.01) ? true : false;
 
 			for(int agg=0; agg < MAX_AGRSV_TYPES; agg++) {
-				URN_DEBUGF("0 %s %8s agg %d",
-					(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx], agg);
 				// :yes, :no, :active, :retain
+				_ab3_dbg("0.1 %s %8s agg %d",
+					(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx], agg);
+				// COST_US 698 792 1030, 100us for each p in price_candidates
 				int price_candidates_max_ct = 9;
 				double price_candidates[9] = {-1};
 				if (agg == 0) { // yes
@@ -1511,7 +1590,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 							price_candidates[0] = exist_price;
 						}
 					}
-					URN_DEBUGF("active price selection %8s %4.8lf %4.8lf %4.8lf %4.8lf %4.8lf",
+					_ab3_dbg("\t active p select %8s exist %4.8lf ->[%4.8lf %4.8lf %4.8lf %4.8lf]",
 						c_mkts[m1_idx], exist_price,
 						price_candidates[0], price_candidates[1],
 						price_candidates[2], price_candidates[3]);
@@ -1526,26 +1605,19 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				}
 				// # Discard abnormal prices.
 				bool price_choosen = false;
-				URN_DEBUGF("0 %s %8s agg %d %4.8lf %4.8lf %4.8lf %4.8lf %4.8lf",
+				_ab3_dbg("0.2 %s %8s agg %d top_p %4.8lf p_candidates[%4.8lf %4.8lf %4.8lf %4.8lf]",
 					(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx], agg, price_1st,
 					price_candidates[0], price_candidates[1],
 					price_candidates[2], price_candidates[3]);
+				// COST_US 712
+				double rate = (t == BUY ? devi_map_mk_buy[m1_idx] : devi_map_mk_sel[m1_idx]);
 				for(int p_idx=0; p_idx < price_candidates_max_ct; p_idx++) {
 					double price = price_candidates[p_idx];
 					if (price <= 0) continue;
-					price = urn_round(price, c_price_precise+2); // Resolve float precision.
+					// price = urn_round(price, c_price_precise+2); // did this before
 					// Compute real price of main orders as MAKER.
 					// market_client(m1).preprocess_deviation(@pair, t:"maker/#{type}")
-					double rate = (t == BUY ? devi_map_mk_buy[m1_idx] : devi_map_mk_sel[m1_idx]);
 					double p_real = _compute_real_price(price, rate, t);
-					double first_order_size_avail = NUM2DBL(rb_funcall(
-						cv_mkt_clients[m1_idx], id_max_order_size, 3,
-						my_pair, (t==BUY ? str_buy : str_buy), DBL2NUM(price)));
-					if (t == BUY)
-						first_order_size_avail += reserved_bal[m1_idx][t]/price*0.99;
-					else
-						first_order_size_avail += reserved_bal[m1_idx][t];
-					first_order_size_avail = urn_round(first_order_size_avail, c_size_precise);
 					// trigger_order_opt = {}
 					double (*trigger_order_opt)[TRIGGER_OPTS] = &(trigger_order_opt_map[m1_idx][agg]);
 					(*trigger_order_opt)[0] = price;
@@ -1555,57 +1627,68 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					else
 						(*trigger_order_opt)[2] = p_real/(1+c_last_order_arbitrage_min);
 					double child_price_threshold = (*trigger_order_opt)[2];
-					(*trigger_order_opt)[3] = first_order_size_avail;
+					// Do this later, after checked children markets
+					// (*trigger_order_opt)[3] = first_order_size_avail;
 					(*trigger_order_opt)[4] = t;
 					(*trigger_order_opt)[5] = m1_idx;
 					(*trigger_order_opt)[6] = (t==BUY ? SEL : BUY);
 					int child_type = (*trigger_order_opt)[6];
-					URN_DEBUGF("1 %s %8s %4.8lf %d %4.8lf large_p_step "
-						"%d p %4.8lf rate %4.8lf p_real %4.8lf cpt %4.8lf",
+					_ab3_dbg("1.  %s %8s agg %d p %4.8lf exist %4.8lf large_p_step "
+						"%d rate %4.8lf p_real %4.8lf cpt %4.8lf",
 						(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx],
-						first_order_size_avail, agg, exist_price,
-						large_price_step, price, rate, p_real,
-						child_price_threshold);
+						agg, price, exist_price, large_price_step,
+						rate, p_real, child_price_threshold);
 					// All other market ask orders could be target orders.
 					int child_m_choosen = 0;
 					for (int m2_idx=0; m2_idx < my_markets_sz; m2_idx++) {
 						if (c_valid_mkts[m2_idx] != true) continue;
 						if (m1_idx == m2_idx) continue;
-						URN_DEBUGF("1.1 %s %8s %8s %d",
+						/*
+						_ab3_dbg("1.1 %s %8s %8s %d",
 							(t==BUY ? "BUY" : "SEL"),
 							c_mkts[m1_idx], c_mkts[m2_idx], agg);
+						*/
 						double orders[max_odbk_depth][3] = {0};
 						double order_size_sum = 0;
 						for(int d=0; d<max_odbk_depth; d++) {
-							URN_DEBUGF("1.2 %s %8s %8s %d depth %d",
-								(t==BUY ? "BUY" : "SEL"),
-								c_mkts[m1_idx], c_mkts[m2_idx], agg, d);
 							double p_take = (*orders_map)[m2_idx][d][2];
 							bool valid = false;
 							if ((t == SEL) && (p_take <= child_price_threshold))
 								valid = true;
 							if ((t == BUY) && (p_take >= child_price_threshold))
 								valid = true;
+							_ab3_dbg("1.2 %s %8s agg %d %8s px check at %d p_tk %4.8f"
+								" %c= %4.8lf ? %d",
+								(t==BUY ? "BUY" : "SEL"),
+								c_mkts[m1_idx], agg, c_mkts[m2_idx], d,
+								p_take, (t==SEL ? '<' : '>'),
+								child_price_threshold, valid);
 							if (!valid) break; // orders_map sorted already.
 							orders[d][0] = (*orders_map)[m2_idx][d][0]; // p
 							orders[d][1] = (*orders_map)[m2_idx][d][1]; // s
 							orders[d][2] = (*orders_map)[m2_idx][d][2]; // p_take
 							order_size_sum += orders[d][1];
 						}
-						URN_DEBUGF("1.3 %s %8s %8s %d",
+						// Fast check
+						if (order_size_sum < my_vol_min) continue;
+
+						_ab3_dbg("1.3 %s %8s %8s agg %d fast check passed "
+							"o_s_sum %4.8lf p %4.8lf step %4.8lf %4.8lf",
 							(t==BUY ? "BUY" : "SEL"),
-							c_mkts[m1_idx], c_mkts[m2_idx], agg);
+							c_mkts[m1_idx], c_mkts[m2_idx], agg,
+							order_size_sum, price, p_step, my_vol_min);
 						double rate_c = devi_map_mk_buy[m2_idx];
 						if (child_type == SEL)
 							rate_c = devi_map_mk_sel[m2_idx];
 						double ideal_child_p = _compute_shown_price(
 							child_price_threshold, rate_c, child_type);
 						if (ideal_child_p <= 0) continue;
+
 						double bal_avail = rb_funcall(cv_mkt_clients[m2_idx],
 							id_max_order_size, 3, my_pair,
 							(child_type==BUY ? str_buy : str_sell),
 							DBL2NUM(ideal_child_p));
-						URN_DEBUGF("1.5 %s %8s %8s %d (%4.8lf %4.8lf %4.8lf) %4.8lf %4.8lf %4.8lf",
+						_ab3_dbg("1.5 %s %8s %8s %d (%4.8lf %4.8lf %4.8lf) %4.8lf %4.8lf %4.8lf",
 							(t==BUY ? "BUY" : "SEL"),
 							c_mkts[m1_idx], c_mkts[m2_idx], agg,
 							(*orders_map)[m2_idx][0][0],
@@ -1621,20 +1704,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 						// @need_balance_refresh ||= bal_avail < @vol_min
 						if ((bal_avail < my_vol_min) && (TYPE(my_need_balance_refresh) == T_TRUE))
 							low_balance_market[m2_idx] = true;
-						if (order_size_sum > 0)
-							URN_DEBUGF("2 %s %8s %8s %d %4.8lf %4.8lf %4.8lf %4.8lf %4.8lf",
-								(t==BUY ? "BUY" : "SEL"),
-								c_mkts[m1_idx], c_mkts[m2_idx], agg,
-								order_size_sum, price, p_step,
-								my_vol_min, bal_avail);
-						if (order_size_sum < my_vol_min) continue;
 						if (bal_avail < my_vol_min) { //Low balance.
 							// Ignore vol_min when closing position for future markets.
 							// if market_client(m).future_side_for_close(@pair, child_type)
 							if (future_side_for_close[m2_idx][child_type]) {
 								// nothing
 							} else {
-								URN_DEBUGF_C(RED,
+								_ab3_dbgc(RED,
 									"  Low bal %8s: %s back for %8s %4.8lf < %4.8lf",
 									c_mkts[m2_idx],
 									(child_type==BUY ? "BUY" : "SEL"),
@@ -1645,21 +1721,35 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 						}
 						child_mkt_stat[m1_idx][agg][m2_idx][0] = order_size_sum;
 						child_mkt_stat[m1_idx][agg][m2_idx][0] = bal_avail;
-						URN_DEBUGF("2.5 choosen %s %8s %8s %d",
+						_ab3_dbg("2.5 choosen %s %8s %8s %d",
 							(t==BUY ? "BUY" : "SEL"),
 							c_mkts[m1_idx], c_mkts[m2_idx], agg);
 						child_mkt_ct[m2_idx] += 1;
 						child_m_choosen ++;
 					} // For m2_idx
 					// next if trigger_order_opt[:child_mkt_stat].empty?
-					if (child_m_choosen == 0) continue;
+					if (child_m_choosen == 0) {
+						(*trigger_order_opt)[0] = 0; // mark as invalid
+						continue;
+					}
+					// Calculate first_order_size_avail at last, time consuming.
+					double first_order_size_avail = NUM2DBL(rb_funcall(
+						cv_mkt_clients[m1_idx], id_max_order_size, 3,
+						my_pair, (t==BUY ? str_buy : str_buy), DBL2NUM(price)));
+					if (t == BUY)
+						first_order_size_avail += reserved_bal[m1_idx][t]/price*0.99;
+					else
+						first_order_size_avail += reserved_bal[m1_idx][t];
+					first_order_size_avail = urn_round(first_order_size_avail, c_size_precise);
+					(*trigger_order_opt)[3] = first_order_size_avail;
 					// Warn low balance only when chance is appearred.
 					if ((first_order_size_avail < my_vol_min) && !c_is_fut_mkts[m1_idx]) {
-						URN_DEBUGF_C(RED, "  Low bal %8s: %s  %4.8lf < %4.8lf ---",
+						_ab3_dbgc(RED, "  Low bal %8s: %s  %4.8lf < %4.8lf ---",
 							c_mkts[m1_idx],
 							(t==BUY ? "BUY" : "SEL"),
 							first_order_size_avail, my_vol_min);
 						low_balance_market[m1_idx] = true;
+						(*trigger_order_opt)[0] = 0; // mark as invalid
 						continue;
 					}
 					// trigger_order_opt_map[m1][aggressive] = trigger_order_opt
@@ -1731,13 +1821,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					} else if ((capacity < my_vol_omit) && (order_size_sum >= 2*my_vol_omit)) {
 						capacity = vol_min;
 					}
-					URN_DEBUGF("3 %s %8s %8s %d %d %d %4.8lf [%4.8lf %4.8lf]",
+					_ab3_dbg("3 %s %8s %8s %d %d %d %4.8lf [%4.8lf %4.8lf]",
 						(t==BUY ? "BUY" : "SEL"),
 						c_mkts[m1_idx], c_mkts[m2_idx], agg,
 						unprocessed_child_mkt_ct[m2_idx], child_mkt_ct[m2_idx], capacity,
 						order_size_sum, bal_avail);
 					reserved_child_capacity_this_turn[m2_idx] += capacity;
-					URN_DEBUGF("Suppose reserved_child_capacity[%8s]"
+					_ab3_dbg("Suppose reserved_child_capacity[%8s]"
 						" %4.8lf + %4.8lf bal_avail %4.8lf",
 						c_mkts[m2_idx],
 						reserved_child_capacity[m2_idx],
@@ -1764,13 +1854,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					max_size = c_single_vol_ratio*vol_max_cata;
 				if ((max_size < min_size) && (vol_max_cata >= min_size))
 					max_size = min_size;
-				URN_DEBUGF("4.1 %5.8lf %5.8lf %5.8lf %lf %5.8lf",
+				_ab3_dbg("4.1 %5.8lf %5.8lf %5.8lf %lf %5.8lf",
 					first_order_size_avail, suggest_size, max_size,
 					c_single_vol_ratio, vol_max_cata);
 				suggest_size = URN_MIN(first_order_size_avail, suggest_size);
 				suggest_size = URN_MIN(suggest_size, max_size);
 				suggest_size = urn_round(suggest_size, c_size_precise);
-				URN_DEBUGF("4.2 %s %8s %d %4.8lf %4.8lf",
+				_ab3_dbg("4.2 %s %8s %d %4.8lf %4.8lf",
 					(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx], agg,
 					suggest_size, my_vol_min);
 				if ((suggest_size < my_vol_min) && !future_side_for_close[m1_idx][t])
@@ -1804,7 +1894,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				}
 				if ((suggest_size < my_vol_min) && !future_side_for_close[m1_idx][t])
 					continue;
-				URN_DEBUGF("%8s type %s agg:%d suggest:%4.8f %4.8f max: %4.8f",
+				_ab3_dbg("%8s type %s agg:%d suggest:%4.8f %4.8f max: %4.8f",
 					c_mkts[m1_idx], (t==BUY ? "BUY" : "SEL"),
 					agg, exist_main_order_size, suggest_size,
 					typeBC_max_single_main_order_size);
@@ -1815,12 +1905,12 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				if (exist_price_map[t][m1_idx] == price) {
 					double exist_size = main_reserved_bal[m1_idx][t];
 					if (suggest_size < exist_size) continue;
-					URN_DEBUGF("Keep own main orders %8s %s",
+					_ab3_dbg("Keep own main orders %8s %s",
 						c_mkts[m1_idx], (t==BUY ? "BUY" : "SEL"));
 					suggest_size = exist_size;
 				}
 				for (int m2_idx=0; m2_idx < my_markets_sz; m2_idx++) {
-					URN_DEBUGF("Make reserved_child_capacity[%8s]=%4.8f + %4.8f",
+					_ab3_dbg("Make reserved_child_capacity[%8s]=%4.8f + %4.8f",
 						c_mkts[m2_idx], reserved_child_capacity[m2_idx],
 						reserved_child_capacity_this_turn[m2_idx]);
 					reserved_child_capacity[m2_idx] += reserved_child_capacity_this_turn[m2_idx];
@@ -1830,7 +1920,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					double p_step = c_p_steps[m1_idx];
 					double adj_p = _format_price(price, p_step, t);
 					if (price != adj_p) {
-						URN_DEBUGF_C(RED,
+						_ab3_dbgc(RED,
 							"%8s Order price adjusted from %4.8f to %4.8f, "
 							"type %s chance changed",
 							c_mkts[m1_idx], price, adj_p, cata);
@@ -1858,7 +1948,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				VALUE adjusted_mo = rbary_el(all_orders, m1_idx);
 				double adjusted_mo_s = NUM2DBL(rbhsh_el(adjusted_mo, "s"));
 				if (suggest_size != adjusted_mo_s) {
-					URN_DEBUGF("mo -> adjusted_mo %4.8f -> %4.8f",
+					_ab3_dbg("mo -> adjusted_mo %4.8f -> %4.8f",
 						suggest_size, adjusted_mo_s);
 					suggest_size = adjusted_mo_s;
 				}
@@ -1877,11 +1967,18 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	} // For t [SEL BUY]
 	// TODO
 	// @low_balance_market = low_balance_market.uniq.sort
-	if (TYPE(rbary_el(v_chances, 0)) == T_NIL)
-		return rb_hash_new();
+	rb_funcall(my_low_balance_market, id_clear, 0);
+	for (int i=0; i < my_markets_sz; i++) {
+		if (low_balance_market[i])
+			rb_ary_push(my_low_balance_market, cv_mkts[i]);
+	}
+	if (TYPE(rbary_el(v_chances, 0)) == T_NIL) {
+		_ab3_dbg_end;
+		return c_by_cata_m;
+	}
 	// Sort chances by ideal profit, processing them in this order to avoid hitting own orders.
 	int chance_ct = rbary_sz(v_chances);
-	URN_DEBUGF("Sort %d chances by ideal profit", chance_ct);
+	_ab3_dbg("Sort %d chances by ideal profit", chance_ct);
 	struct rbv_w_dbl c_w_ip[chance_ct];
 	rbary_each(v_chances, idx, max, v_el) {
 		c_w_ip[idx].v = &v_el;
@@ -1892,10 +1989,9 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			c_w_ip[idx].d = 0-NUM2DBL(v_tmp); // reverse
 	}
 	qsort(&c_w_ip, max, sizeof(struct rbv_w_dbl), rbv_w_dbl_comparitor);
-	URN_DEBUGF("Group chances by cata then mkt");
+	_ab3_dbg("Group chances by cata then mkt");
 	// return chances by cata then mkt:
 	// 	c_by_cata_m = grouped_chances.map { |r, cs| [r, cs.map { |c| [c[:market], c] }.to_h] }.to_h
-	VALUE c_by_cata_m = rb_hash_new();
 	for (int i=0; i<max; i++) {
 		VALUE c = *(c_w_ip[i].v);
 		VALUE v_cata = rb_hash_aref(c, sym_cata);
@@ -1917,9 +2013,6 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 		rb_ary_push(a_in_cata_in_m, c);
 	}
 
-	URN_DEBUGF("detect_arbitrage_pattern_c end");
-	struct timeval end_t = urn_global_tv;
-	long cost_t_e6 = (end_t.tv_sec - start_t.tv_sec)*1000000 + (end_t.tv_usec-start_t.tv_usec);
-	URN_DEBUGF("detect_arbitrage_pattern_c cost usec %ld", cost_t_e6);
+	_ab3_dbg_end;
 	return c_by_cata_m;
 }
