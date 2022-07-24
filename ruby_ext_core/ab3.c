@@ -2,7 +2,7 @@
 #include "math.h"
 #include <stdarg.h>
 
-#define URN_MAIN_DEBUG // enable URN_DEBUGF
+//#define URN_MAIN_DEBUG // enable URN_DEBUGF
 #include "../urn.h"
 
 double urn_round(double f, int precision);
@@ -729,10 +729,12 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 
 	// Mark c_valid_mkts for this round.
 	VALUE v_valid_mkts = rb_funcall(my_market_data_agt, id_valid_markets, 1, my_markets);
+	for (int i=0; i < my_markets_sz; i++)
+		c_valid_mkts[i] = false;
 	rbary_each(v_valid_mkts, idx, max, v_el) {
 		char *m = RSTRING_PTR(v_el);
+		URN_DEBUGF("P v_valid_mkts %ld %s", idx, m);
 		for (int i=0; i < my_markets_sz; i++) {
-			c_valid_mkts[i] = false;
 			if (strcmp(m, c_mkts[i]) == 0) {
 				c_valid_mkts[i] = true;
 				break;
@@ -740,7 +742,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 		}
 	}
 	int valid_mkts_sz = max;
-	URN_DEBUGF("valid markets %d/%d", valid_mkts_sz, my_markets_sz);
+	URN_DEBUGF("P valid markets %d/%d", valid_mkts_sz, my_markets_sz);
 
 	if (valid_mkts_sz < 2) {
 		// @markets.each { |m| @_keep_exist_spike_order[m] = true }
@@ -884,6 +886,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	double asks_map[MAX_AB3_MKTS][max_odbk_depth][3] = {0};
 	for (int i=0; i < my_markets_sz; i++) {
 		if (c_valid_mkts[i] != true) continue;
+		URN_DEBUGF("D mkts %d/%d %8s", i, my_markets_sz, c_mkts[i]);
 		v_tmp = rb_funcall(my_market_snapshot, id_dig, 3, cv_mkts[i], sym_orderbook, INT2NUM(0));
 		if (TYPE(v_tmp) != T_NIL) { // copy bids_map
 			rbary_each(v_tmp, idx, max, v_el) {
@@ -902,7 +905,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				asks_map[i][idx][2] = NUM2DBL(rbhsh_el(v_el, "p_take"));
 			}
 		}
-		URN_DEBUGF("mkts %d/%d %8s bid0 p %4.6lf p_tk %4.6lf s %8lf ask0 p %4.6lf p_tk %4.6lf s %8lf",
+		URN_DEBUGF("D mkts %d/%d %8s bid0 p %4.6lf p_tk %4.6lf s %8lf ask0 p %4.6lf p_tk %4.6lf s %8lf",
 			i, my_markets_sz, c_mkts[i],
 			bids_map[i][0][0], bids_map[i][0][2], bids_map[i][0][1],
 			asks_map[i][0][0], asks_map[i][0][2], asks_map[i][0][1]);
