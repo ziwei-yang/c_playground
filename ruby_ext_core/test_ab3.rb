@@ -10,3 +10,6 @@ raise "Should be in dry_run mode" unless trader.dry_run
 trader.enable_c_urn_core()
 trader.prepare()
 trader.start()
+
+# Compare C & Ruby version, when error:
+#   Save market snapshot, market balance cache
