@@ -22,7 +22,7 @@ def compare_ab3_chances(cata, m, cr, cc)
   ].each { |k, error|
     if cr[k] == 0 && cc[k] == 0
 #       puts "\t#{k.to_s.ljust(24)} #{cr[k]}"
-    elsif diff(cr[k], cc[k]) < error
+    elsif diff(cr[k], cc[k]) <= error
       puts "\t#{k.to_s.ljust(24)} #{cr[k]} RUBY #{cc[k]} C"
     else
       puts "\t#{k.to_s.ljust(24)} #{cr[k]} RUBY #{cc[k]} C".red
@@ -50,7 +50,9 @@ def compare_ab3_chances(cata, m, cr, cc)
     }
     # Could be slightly different.
     [ ['p', 0], ['s', 0.2] ].each { |ok, error|
-      if diff(o_c[ok], o_r[ok]) < error
+      if diff(o_c[ok], o_r[ok]) == 0
+        puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]}"
+      elsif diff(o_c[ok], o_r[ok]) <= error
         puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]} RUBY #{o_c[ok]} C"
       else
         puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]} RUBY #{o_c[ok]} C".red
@@ -62,8 +64,9 @@ def compare_ab3_chances(cata, m, cr, cc)
 end
 
 mode = 'ABC'
-pair = 'USDT-AAVE'
-markets = ['Binance', 'Bittrex', 'FTX']
+# pair = 'USDT-AAVE'
+pair = 'BTC-LINK'
+markets = ['Binance', 'Bittrex', 'FTX', 'Kraken', 'Gemini']
 mode = mode.chars.uniq
 trader = MarketArbitrageTrader.new run_mode:mode, pair:pair, markets:markets
 raise "Should be in dry_run mode" unless trader.dry_run
@@ -81,10 +84,11 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
     ]))
   }
   puts "F -> #{f}"
-  (chances_by_mkt_r.keys & chances_by_mkt_c.keys).each { |cata|
+  next # skip checking
+  (chances_by_mkt_r.keys | chances_by_mkt_c.keys).each { |cata|
     chances_by_mkt_r[cata] ||= {}
     chances_by_mkt_c[cata] ||= {}
-    (chances_by_mkt_r[cata].keys & chances_by_mkt_c[cata].keys).each { |m|
+    (chances_by_mkt_r[cata].keys | chances_by_mkt_c[cata].keys).each { |m|
       cr = chances_by_mkt_r[cata][m] || {}
       cc = chances_by_mkt_c[cata][m] || {}
       ret = compare_ab3_chances(cata, m, cr, cc)
