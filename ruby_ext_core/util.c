@@ -17,6 +17,8 @@ VALUE method_diff(VALUE self, VALUE v_f1, VALUE v_f2) {
 		f1 = NUM2DBL(v_f1);
 	} else if (RB_TYPE_P(v_f1, T_STRING) == 1) {
 		sscanf(RSTRING_PTR(v_f1), "%lf", &f1);
+	} else if (RB_TYPE_P(v_f1, T_NIL) == 1) {
+		rb_raise(rb_eTypeError, "invalid type for diff() f1: NIL");
 	} else
 		rb_raise(rb_eTypeError, "invalid type for diff() f1");
 	if (RB_TYPE_P(v_f2, T_FIXNUM) == 1) {
@@ -25,6 +27,8 @@ VALUE method_diff(VALUE self, VALUE v_f1, VALUE v_f2) {
 		f2 = NUM2DBL(v_f2);
 	} else if (RB_TYPE_P(v_f2, T_STRING) == 1) {
 		sscanf(RSTRING_PTR(v_f2), "%lf", &f2);
+	} else if (RB_TYPE_P(v_f2, T_NIL) == 1) {
+		rb_raise(rb_eTypeError, "invalid type for diff() f2: NIL");
 	} else
 		rb_raise(rb_eTypeError, "invalid type for diff() f2");
 	if (f1 <= 0 || f2 <= 0) return INT2NUM(9999999);
