@@ -65,6 +65,7 @@ end
 
 mode = 'ABC'
 # pair = 'USDT-AAVE'
+# markets = ['Binance', 'Bittrex', 'FTX']
 pair = 'BTC-LINK'
 markets = ['Binance', 'Bittrex', 'FTX', 'Kraken', 'Gemini']
 mode = mode.chars.uniq
