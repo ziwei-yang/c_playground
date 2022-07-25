@@ -171,6 +171,8 @@ typedef void (*urn_ptr_cb)(void *p);
 // Double tools
 //////////////////////////////////////////
 double urn_round(double f, int precision) {
+	if (f == 0)
+		return 0;
 	if (precision == 0)
 		return (double)(round(f));
 	char str[64];
