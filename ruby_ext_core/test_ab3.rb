@@ -85,6 +85,7 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
   }
   puts "F -> #{f}"
 #   next # skip checking
+  match = true
   (chances_by_mkt_r.keys | chances_by_mkt_c.keys).each { |cata|
     chances_by_mkt_r[cata] ||= {}
     chances_by_mkt_c[cata] ||= {}
@@ -92,17 +93,22 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
       cr = chances_by_mkt_r[cata][m]
       cc = chances_by_mkt_c[cata][m]
       if (cr.nil? && cc != nil)
-        puts "RUBY nil but C has #{cata} at #{m}: #{JSON.pretty_generate(cc)}"
-        raise "Hey check this!"
+        puts "Hey check this!".red
+        puts "RUBY nil but C has cata #{cata} at #{m}: #{JSON.pretty_generate(cc)}"
+        match = false
       elsif (cc.nil? && cr != nil)
-        puts "C nil but Ruby has #{cata} at #{m}: #{JSON.pretty_generate(cr)}"
-        raise "Hey check this!"
+        puts "Hey check this!".red
+        puts "C nil but Ruby has cata #{cata} at #{m}: #{JSON.pretty_generate(cr)}"
+        match = false
       else
         ret = compare_ab3_chances(cata, m, cr, cc)
-        raise "Hey check this!" if ret != true
+        next if ret
+        puts "Hey check above!".red
+        match = false
       end
     }
   }
+  raise "Not match" unless match
 }
 trader.prepare()
 trader.start()
