@@ -505,8 +505,8 @@ static bool _aggressive_arbitrage_orders_c(
 		return false;
 	}
 
-	VALUE mkt_client_bid = cv_mkts[mkt_client_bid_idx];
-	VALUE mkt_client_ask = cv_mkts[mkt_client_ask_idx];
+	VALUE mkt_client_bid = cv_mkt_clients[mkt_client_bid_idx];
+	VALUE mkt_client_ask = cv_mkt_clients[mkt_client_ask_idx];
 	double scan_status[2][7] = {0};
 	int _idx_fin=0, _idx_idx=1, _idx_size_sum=2, _idx_p=3, _idx_p_real=4, _idx_avg_p=5, _idx_p_take=6;
 
@@ -1843,12 +1843,19 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 						}
 						child_mkt_stat[m1_idx][agg][m2_idx][0] = order_size_sum;
 						child_mkt_stat[m1_idx][agg][m2_idx][0] = bal_avail;
-						_ab3_dbg("2.5 choosen %s %8s %8s %d",
+						_ab3_dbg("2.5 choosen %s %8s -> %8s agg %d",
 							(t==BUY ? "BUY" : "SEL"),
 							c_mkts[m1_idx], c_mkts[m2_idx], agg);
 						child_mkt_ct[m2_idx] += 1;
 						child_m_choosen ++;
 					} // For m2_idx
+//					_ab3_dbg("2.7 p_real %4.8lf", p_real); // cause Abort trap 6
+					_ab3_dbg("2.8 %s %8s agg %d p %4.8lf exist %4.8lf large_p_step "
+						"%d rate %4.8lf cpt %4.8lf"
+						"child_m_choosen %d",
+						(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx],
+						agg, price, exist_price, large_price_step,
+						rate, child_price_threshold, child_m_choosen);
 					// next if trigger_order_opt[:child_mkt_stat].empty?
 					if (child_m_choosen == 0) {
 						(*trigger_order_opt)[0] = 0; // mark as invalid
@@ -1878,6 +1885,12 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					// pointer set already.
 					price_choosen = true;
 					// Only choose one price for one aggressive mode.
+					_ab3_dbg("2.9 %s %8s agg %d p %4.8lf exist %4.8lf large_p_step "
+						"%d rate %4.8lf cpt %4.8lf price_chosen",
+						(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx],
+						agg, price, exist_price, large_price_step,
+						rate, child_price_threshold);
+//					_ab3_dbg("2.9 p_real %4.8lf", p_real); // cause Abort trap 6
 					break;
 				} // For price in price_candidate
 				// Only choose one aggressive mode.

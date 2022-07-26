@@ -76,7 +76,6 @@ trader.enable_c_urn_core()
 trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, chances_by_mkt_c|
 #   return
   print "\n"
-#   root = ENV['URANUS_RAMDISK']
   f = "/Volumes/RAMDisk/test_ab3.#{pair}_snapshot.json"
   File.open(f, "w") { |f|
     f.write(JSON.pretty_generate([
@@ -85,15 +84,23 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
     ]))
   }
   puts "F -> #{f}"
-  next # skip checking
+#   next # skip checking
   (chances_by_mkt_r.keys | chances_by_mkt_c.keys).each { |cata|
     chances_by_mkt_r[cata] ||= {}
     chances_by_mkt_c[cata] ||= {}
     (chances_by_mkt_r[cata].keys | chances_by_mkt_c[cata].keys).each { |m|
-      cr = chances_by_mkt_r[cata][m] || {}
-      cc = chances_by_mkt_c[cata][m] || {}
-      ret = compare_ab3_chances(cata, m, cr, cc)
-      raise "Hey check this!" if ret != true
+      cr = chances_by_mkt_r[cata][m]
+      cc = chances_by_mkt_c[cata][m]
+      if (cr.nil? && cc != nil)
+        puts "RUBY nil but C has #{cata} at #{m}: #{JSON.pretty_generate(cc)}"
+        raise "Hey check this!"
+      elsif (cc.nil? && cr != nil)
+        puts "C nil but Ruby has #{cata} at #{m}: #{JSON.pretty_generate(cr)}"
+        raise "Hey check this!"
+      else
+        ret = compare_ab3_chances(cata, m, cr, cc)
+        raise "Hey check this!" if ret != true
+      end
     }
   }
 }
