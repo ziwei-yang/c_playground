@@ -7,7 +7,7 @@ def compare_ab3_chances(cata, m, cr, cc)
   match = true
   [:cata, :price, :type, :market, :child_type].each { |k|
     if cr[k] == cc[k]
-#       puts "\t#{k.to_s.ljust(24)} #{cr[k]}"
+      # puts "\t#{k.to_s.ljust(24)} #{cr[k]}"
     else
       puts "\t#{k.to_s.ljust(24)} #{cr[k]} RUBY #{cc[k]} C XX".red
       match = false
@@ -21,7 +21,7 @@ def compare_ab3_chances(cata, m, cr, cc)
     [:suggest_size, 0.3]
   ].each { |k, error|
     if cr[k] == 0 && cc[k] == 0
-#       puts "\t#{k.to_s.ljust(24)} #{cr[k]}"
+      # puts "\t#{k.to_s.ljust(24)} #{cr[k]}"
     elsif diff(cr[k], cc[k]) <= error
       puts "\t#{k.to_s.ljust(24)} #{cr[k]} RUBY #{cc[k]} C"
     else
@@ -42,7 +42,7 @@ def compare_ab3_chances(cata, m, cr, cc)
     # Must be exactly same
     ['pair', 'market', 'T'].each { |ok|
       if o_c[ok] == o_r[ok]
-#         puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]}"
+        # puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]}"
       else
         puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]} RUBY #{o_c[ok]} C XX".red
         match = false
@@ -72,9 +72,9 @@ mode = mode.chars.uniq
 trader = MarketArbitrageTrader.new run_mode:mode, pair:pair, markets:markets
 raise "Should be in dry_run mode" unless trader.dry_run
 trader.enable_c_urn_core()
-trader.enable_debug()
+# trader.enable_debug()
 trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, chances_by_mkt_c, detect_c_t|
-#   return
+  return unless @debug
   print "\n"
   f = "/Volumes/RAMDisk/test_ab3.#{pair}_snapshot.json"
   File.open(f, "w") { |f|
@@ -84,7 +84,6 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
     ]))
   }
   puts "F -> #{f}"
-#   next # skip checking
   match = true
   (chances_by_mkt_r.keys | chances_by_mkt_c.keys).each { |cata|
     chances_by_mkt_r[cata] ||= {}
