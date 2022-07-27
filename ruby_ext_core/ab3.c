@@ -1496,14 +1496,17 @@ c_my_debug = true; // force enable debug
 					double last_add_spike_t = c_my_last_t_suggest_new_spike_prices[m1_idx];
 					if (i <= 0) {
 						// Always suggest first order.
+						_ab3_dbg("\tAlways suggest %s spike first order, ts %ld",
+							(t==BUY ? "BUY" : "SEL"), (long)last_add_spike_t);
 					} else if (now - last_add_spike_t > 30) {
 						// Speed control for placing non-first level.
 						c_my_last_t_suggest_new_spike_prices[m1_idx] = now;
-						_ab3_dbg("\tSuggest adding one more %s spike %d order",
-							(t==BUY ? "BUY" : "SEL"), i+1);
+						_ab3_dbg("\tSuggest adding one more %s spike %d order, now %ld",
+							(t==BUY ? "BUY" : "SEL"), i+1, (long)now);
 					} else {
-						_ab3_dbg("\tSkip adding %s spike %d order too fast",
-							(t==BUY ? "BUY" : "SEL"), i+1);
+						_ab3_dbg("\tSkip adding %s spike %d order too fast, ts %ld now %ld",
+							(t==BUY ? "BUY" : "SEL"), i+1,
+							(long)last_add_spike_t, (long)now);
 						if (t == BUY) {
 							bid_prices[i] = 0;
 							bid_sizes[i] = 0;
@@ -1552,10 +1555,10 @@ c_my_debug = true; // force enable debug
 				VALUE c = _new_ab3_chance(self, v_orders, m1_idx,
 					false, child_price_threshold, 0, c_spike_catas[t][i]);
 				rb_ary_push(v_chances, c);
-			}
-			}
-		}
-	}
+			} // For spike buy/sell level X
+			} // For type
+		} // For m1
+	}// If spike order enabled.
 
 	/* STEP 5 For type B and C */
 	_ab3_dbg("STEP 5 type B and C");
@@ -1585,7 +1588,7 @@ c_my_debug = true; // force enable debug
 		if (t==SEL) cata[0] = 'C';
 		// Get child market count, split child_capacity.
 		int child_mkt_ct[MAX_AB3_MKTS] = {0};
-		double child_mkt_szsum[MAX_AB3_MKTS] = {0};
+		double main_m_match_szsum[MAX_AB3_MKTS] = {0};
 		// TRIGGER_OPTS : [
 		// 	price, p_real, child_price_threshold,
 		// 	main_bal, type, m_idx,
@@ -1918,7 +1921,7 @@ c_my_debug = true; // force enable debug
 							m1_idx, agg, m2_idx,
 							order_size_sum, bal_avail);
 						child_mkt_ct[m2_idx] += 1;
-						child_mkt_szsum[m2_idx] += order_size_sum;
+						main_m_match_szsum[m1_idx] += order_size_sum;
 						child_m_choosen ++;
 					} // For m2_idx
 //					_ab3_dbg("2.7 p_real %4.8lf", p_real); // cause Abort trap 6
@@ -2005,10 +2008,10 @@ c_my_debug = true; // force enable debug
 		*/
 		// NOW: Sort market descend by its sum(child matched size)
 		// 	to make order exactly same as ruby version.
-		// mkts.sort_by { |m| child_mkt_szsum[m] }.reverse.each { |m1|
+		// mkts.sort_by { |m| main_m_match_szsum[m] }.reverse.each { |m1|
 		struct di mkt_w_child_szsum[my_markets_sz];
 		for (int i=0; i < my_markets_sz; i++) {
-			mkt_w_child_szsum[i].a = 0-child_mkt_szsum[i]; // reverse
+			mkt_w_child_szsum[i].a = 0-main_m_match_szsum[i]; // reverse
 			mkt_w_child_szsum[i].b = i;
 		}
 		qsort(&mkt_w_child_szsum, my_markets_sz, sizeof(struct di), di_comparitor);
