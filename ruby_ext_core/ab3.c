@@ -189,12 +189,18 @@ struct ii { int a; int b; };
 int ii_comparitor(const void *x, const void *y) {
 	if (((struct ii *)x)->a > ((struct ii *)y)->a) return 1;
 	if (((struct ii *)x)->a < ((struct ii *)y)->a) return -1;
+	// x.a == y.a
+	if (((struct ii *)x)->b > ((struct ii *)y)->b) return 1;
+	if (((struct ii *)x)->b < ((struct ii *)y)->b) return -1;
 	return 0;
 }
 struct di { double a; int b; };
 int di_comparitor(const void *x, const void *y) {
 	if (((struct di *)x)->a > ((struct di *)y)->a) return 1;
 	if (((struct di *)x)->a < ((struct di *)y)->a) return -1;
+	// x.a == y.a
+	if (((struct di *)x)->b > ((struct di *)y)->b) return 1;
+	if (((struct di *)x)->b < ((struct di *)y)->b) return -1;
 	return 0;
 }
 
@@ -2007,7 +2013,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 		*/
 		// NOW: Sort market descend by its sum(child matched size)
 		// 	to make order exactly same as ruby version.
-		// mkts.sort_by { |m| main_m_match_szsum[m] }.reverse.each { |m1|
+		// sorted_m1 = mkts.sort_by { |m| [0-main_m_match_szsum[m], mkts.find_index(m)] }
 		struct di mkt_w_child_szsum[my_markets_sz];
 		for (int i=0; i < my_markets_sz; i++) {
 			mkt_w_child_szsum[i].a = 0-main_m_match_szsum[i]; // reverse
@@ -2041,8 +2047,9 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				//
 				// trigger_order_opt[:child_mkt_stat] = trigger_order_opt[:child_mkt_stat].to_a.
 				// 	sort_by { |mv| child_mkt_ct[mv[0]] }.reverse.to_h
-				// to make sure order exactly same to Ruby verion,
-				// sort m2 by order_size_sum descending.
+				// to make sure order exactly same to Ruby verion, NEW:
+				//	sort_by { |mv| [0-mv[1][0], mkts.find_index(mv[0])] }.to_h
+				// sort m2 by [order_size_sum, -idx] descending.
 				struct ii mkt_w_oszsum[my_markets_sz];
 				for (int i=0; i < my_markets_sz; i++) {
 					mkt_w_oszsum[i].b = i;
