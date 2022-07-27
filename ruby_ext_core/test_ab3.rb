@@ -9,23 +9,23 @@ def compare_ab3_chances(cata, m, cr, cc)
     if cr[k] == cc[k]
 #       puts "\t#{k.to_s.ljust(24)} #{cr[k]}"
     else
-      puts "\t#{k.to_s.ljust(24)} #{cr[k]} RUBY #{cc[k]} C".red
+      puts "\t#{k.to_s.ljust(24)} #{cr[k]} RUBY #{cc[k]} C XX".red
       match = false
     end
   }
   # Could be slightly different.
   [
     [:child_price_threshold, 0.001],
-    [:ideal_profit, 0.2],
+    [:ideal_profit, 0.3],
     [:p_real, 0.001],
-    [:suggest_size, 0.2]
+    [:suggest_size, 0.3]
   ].each { |k, error|
     if cr[k] == 0 && cc[k] == 0
 #       puts "\t#{k.to_s.ljust(24)} #{cr[k]}"
     elsif diff(cr[k], cc[k]) <= error
       puts "\t#{k.to_s.ljust(24)} #{cr[k]} RUBY #{cc[k]} C"
     else
-      puts "\t#{k.to_s.ljust(24)} #{cr[k]} RUBY #{cc[k]} C".red
+      puts "\t#{k.to_s.ljust(24)} #{cr[k]} RUBY #{cc[k]} C XX".red
       match = false
     end
   }
@@ -44,7 +44,7 @@ def compare_ab3_chances(cata, m, cr, cc)
       if o_c[ok] == o_r[ok]
 #         puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]}"
       else
-        puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]} RUBY #{o_c[ok]} C".red
+        puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]} RUBY #{o_c[ok]} C XX".red
         match = false
       end
     }
@@ -55,7 +55,7 @@ def compare_ab3_chances(cata, m, cr, cc)
       elsif diff(o_c[ok], o_r[ok]) <= error
         puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]} RUBY #{o_c[ok]} C"
       else
-        puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]} RUBY #{o_c[ok]} C".red
+        puts "\t#{k.to_s.ljust(24)} #{ok.ljust(8)} #{o_r[ok]} RUBY #{o_c[ok]} C XX".red
         match = false
       end
     }
@@ -73,7 +73,7 @@ trader = MarketArbitrageTrader.new run_mode:mode, pair:pair, markets:markets
 raise "Should be in dry_run mode" unless trader.dry_run
 trader.enable_c_urn_core()
 trader.enable_debug()
-trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, chances_by_mkt_c|
+trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, chances_by_mkt_c, detect_c_t|
 #   return
   print "\n"
   f = "/Volumes/RAMDisk/test_ab3.#{pair}_snapshot.json"
@@ -109,6 +109,7 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
     }
   }
   raise "Not match" unless match
+  puts "detect_c_t #{detect_c_t}"
 }
 trader.prepare()
 trader.start()

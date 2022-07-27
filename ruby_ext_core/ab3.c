@@ -185,13 +185,16 @@ static double diff(double d1, double d2) {
 	return (d1-d2)/min;
 }
 
-struct two_i {
-	int a;
-	int b;
-};
-int two_i_comparitor(const void *two_x, const void *two_y) {
-	if (((struct two_i *)two_x)->a > ((struct two_i *)two_y)->a) return 1;
-	if (((struct two_i *)two_x)->a < ((struct two_i *)two_y)->a) return -1;
+struct ii { int a; int b; };
+int ii_comparitor(const void *x, const void *y) {
+	if (((struct ii *)x)->a > ((struct ii *)y)->a) return 1;
+	if (((struct ii *)x)->a < ((struct ii *)y)->a) return -1;
+	return 0;
+}
+struct di { double a; int b; };
+int di_comparitor(const void *x, const void *y) {
+	if (((struct di *)x)->a > ((struct di *)y)->a) return 1;
+	if (((struct di *)x)->a < ((struct di *)y)->a) return -1;
 	return 0;
 }
 
@@ -206,6 +209,8 @@ VALUE my_market_snapshot;
 double c_vol_max_const;
 VALUE my_pair;
 char c_my_pair[32];
+char c_my_pair_asset[16];
+char c_my_pair_currency[16];
 bool c_my_spike_catcher_enabled;
 int my_markets_sz;
 double c_my_last_t_suggest_new_spike_prices[MAX_AB3_MKTS] = {0};
@@ -269,6 +274,17 @@ static void cache_trader_attrs(VALUE self) {
 	c_vol_max_const = NUM2DBL(rb_ivar_get(self, rb_intern("@vol_max_const")));
 	my_pair = rb_ivar_get(self, id_my_pair);
 	strcpy(c_my_pair, RSTRING_PTR(my_pair));
+	// get c_my_pair_asset and c_my_pair_currency
+	for(int p=0; c_my_pair[p]!='\0'; p++) {
+		if (c_my_pair[p] == '-') {
+			strncpy(c_my_pair_currency, c_my_pair, p);
+			c_my_pair_currency[p+1] = '\0';
+			strncpy(c_my_pair_asset, &c_my_pair[p+1], strlen(c_my_pair)-p);
+			c_my_pair_asset[strlen(c_my_pair)-p+1] = '\0';
+			break;
+		}
+	}
+
 	VALUE my_run_mode = rb_ivar_get(self, id_my_run_mode);
 	rbary_each(my_run_mode, idx, max, v_el) {
 		char * mode = RSTRING_PTR(v_el);
@@ -297,7 +313,7 @@ static void cache_trader_attrs(VALUE self) {
 	c_last_order_arbitrage_min = NUM2DBL(rb_ivar_get(self, id_my_last_order_arbitrage_min));
 
 	VALUE my_trader_tasks_by_mkt = rb_ivar_get(self, rb_intern("@trader_tasks_by_mkt"));
-	VALUE my_last_t_suggest_new_spike_price = rb_ivar_get(self, rb_intern("@last_t_suggest_new_spike_price"));
+	VALUE my_last_t_suggest_new_spike_price = rb_ivar_get(self, rb_intern("@last_t_suggest_new_spike_price_c"));
 	for (int i=0; i < my_markets_sz; i++) {
 		c_min_vols[i] = NUM2DBL(rb_funcall(cv_mkt_clients[i], rb_intern("min_vol"), 1, my_pair));
 		c_min_qtys[i] = NUM2DBL(rb_funcall(cv_mkt_clients[i], rb_intern("min_quantity"), 1, my_pair));
@@ -921,7 +937,9 @@ c_my_debug = true; // force enable debug
 	}
 
 	int valid_mkts_sz = max;
-	_ab3_dbg("P valid markets %d/%d", valid_mkts_sz, my_markets_sz);
+	_ab3_dbg("P %s %s-%s valid markets %d/%d",
+		c_my_pair, c_my_pair_currency, c_my_pair_asset,
+		valid_mkts_sz, my_markets_sz);
 	// COST_US 22
 
 	if (valid_mkts_sz < 2) {
@@ -1275,13 +1293,15 @@ c_my_debug = true; // force enable debug
 			double bid_sizes[MAX_SPIKES] = {0};
 			int bid_idx = 0;
 			bool spike_bid = true;
-			if (c_run_mode_d == false) spike_bid = false;
+			int rej_code = -1;
+			if (c_run_mode_d == false) rej_code=1,spike_bid = false;
 			// If market price higher than lowest_bid_p a lot 2%, dont place bids
-			if (bid_p >= 1.02 * lowest_bid_p) spike_bid = false;
+			if (bid_p >= 1.02 * lowest_bid_p) rej_code=2,spike_bid = false;
 			// spike_buy_prices = [] if (@deviation_map.dig(m1, 'maker/buy') || 1) >= 0.03
 			// spike_buy_prices = [] if (@deviation_map.dig(m1, 'taker/buy') || 1) >= 0.03
-			if (devi_map_mk_buy[m1_idx] >= 0.03) spike_bid = false;
-			if (devi_map_tk_buy[m1_idx] >= 0.03) spike_bid = false;
+			if (devi_map_mk_buy[m1_idx] >= 0.03) rej_code=3,spike_bid = false;
+			if (devi_map_tk_buy[m1_idx] >= 0.03) rej_code=4,spike_bid = false;
+			if (!spike_bid) _ab3_dbg("S spike_bid turned off, code %d", rej_code);
 			for (int i=0; spike_bid && (i < MAX_SPIKES); i++) {
 				if ((spike_buy_prices[i][0] >= p_threshold) ||
 						(spike_buy_prices[i][0] <= price_ratio_range_min) ||
@@ -1319,8 +1339,10 @@ c_my_debug = true; // force enable debug
 				// For buy orders, place X*@vol_max_const when balance >= (15+10X) * @vol_max_const
 				buy_o_quota = ((first_order_size_avail / c_vol_max_const - 15) / 10.0) - 0.1;
 			}
-			_ab3_dbg("S spike_buy  %8s f_o_s_avail %4.8lf quota %4.4lf x %4.4f",
-				c_mkts[m1_idx], first_order_size_avail, buy_o_quota, c_vol_max_const);
+			_ab3_dbg("S spike_buy  %8s spike_bid? %d "
+				"f_o_s_avail %4.4lf quota %4.4lf vol_max_cst %4.4f",
+				c_mkts[m1_idx], spike_bid,
+				first_order_size_avail, buy_o_quota, c_vol_max_const);
 			// Set real size for each spike bid_sizes
 			for (int i=0; i<bid_idx; i++) {
 				if (buy_o_quota <= 0) {
@@ -1337,6 +1359,8 @@ c_my_debug = true; // force enable debug
 					bid_sizes[i] *= c_vol_max_const;
 				}
 			}
+			_ab3_dbg("S spike_buy  %8s bid_sizes[0..3]: %4.4f %4.4f %4.4f %4.4f",
+				c_mkts[m1_idx], bid_sizes[0], bid_sizes[1], bid_sizes[2], bid_sizes[3]);
 
 			// Decide the price to catch knives. Use asset quota wisely for sell side.
 			double spike_sell_prices[MAX_SPIKES][2] = {
@@ -1356,15 +1380,18 @@ c_my_debug = true; // force enable debug
 			double ask_sizes[MAX_SPIKES] = {0};
 			int ask_idx = 0;
 			bool spike_ask = true;
-			if (c_run_mode_e == false) spike_ask = false;
+			rej_code = -1;
+			if (c_run_mode_e == false) rej_code=1,spike_ask = false;
 			// If market price lower than highest_ask_p a lot 10%, dont place
-			if (ask_p * 1.1 <= highest_ask_p) spike_ask = false;
+			if (ask_p * 1.1 <= highest_ask_p) rej_code=2,spike_ask = false;
 			// spike_sell_prices = [] if (@deviation_map.dig(m1, 'maker/sell') || 1) >= 0.03
 			// spike_sell_prices = [] if (@deviation_map.dig(m1, 'taker/sell') || 1) >= 0.03
-			if (devi_map_mk_sel[m1_idx] >= 0.03) spike_ask = false;
-			if (devi_map_tk_sel[m1_idx] >= 0.03) spike_ask = false;
-			if (strncmp(c_my_pair, "BTC-", 4) == 0) spike_ask = false;
-			if (strncmp(c_my_pair, "ETH-", 4) == 0) spike_ask = false;
+			if (devi_map_mk_sel[m1_idx] >= 0.03) rej_code=3,spike_ask = false;
+			if (devi_map_tk_sel[m1_idx] >= 0.03) rej_code=4,spike_ask = false;
+			// Skip BTC+ETH pairs, not BTC ETH based pairs
+			if (strcmp(c_my_pair_asset, "BTC") == 0) rej_code=5,spike_ask = false;
+			if (strcmp(c_my_pair_asset, "ETH") == 0) rej_code=6,spike_ask = false;
+			if (!spike_ask) _ab3_dbg("S spike_ask turned off, code %d", rej_code);
 			for (int i=0; spike_ask && (i < MAX_SPIKES); i++) {
 				if ((spike_sell_prices[i][0] <= p_threshold) ||
 						(spike_sell_prices[i][0] <= price_ratio_range_min) ||
@@ -1404,8 +1431,10 @@ c_my_debug = true; // force enable debug
 			double total_asset_balance = NUM2DBL(rbary_el(v_bal_each, 1));
 			double sell_o_quota_b = ((total_asset_balance - keep_bal) / traders_num / c_vol_max_const) - 0.1;
 			double sell_o_quota = URN_MIN(sell_o_quota_a, sell_o_quota_b);
-			_ab3_dbg("S spike_sell %8s f_o_s_avail %4.8lf quota %4.4lf x %4.4f",
-				c_mkts[m1_idx], first_order_size_avail, sell_o_quota, c_vol_max_const);
+			_ab3_dbg("S spike_sell %8s spike_ask? %d "
+				"f_o_s_avail %4.4lf quota %4.4lf vol_max_cst %4.4f",
+				c_mkts[m1_idx], spike_ask,
+				first_order_size_avail, sell_o_quota, c_vol_max_const);
 			// Set real size for each spike ask_sizes
 			for (int i=0; i<ask_idx; i++) {
 				if (sell_o_quota <= 0) {
@@ -1446,8 +1475,9 @@ c_my_debug = true; // force enable debug
 			// Why 0.3 ~ 1.1? spike order size might shrink to 1/2 or enlarged to 2x
 			// Too small size range will make order placing and cancelling too often
 			// Too big size range will make order takes too much balance.
-			for (int t=0; t<2; t++) { // t = [SEL, BUY]
+			for (int t=1; t>=0; t--) { // t = [BUY, SEL]
 			for (int i=0; i<(t==BUY ? bid_idx : ask_idx); i++) {
+				// Notice: i starts from zero, ruby version i starts from one
 				double p = (t==BUY ? bid_prices[i] : ask_prices[i]);
 				double s = (t==BUY ? bid_sizes[i] : ask_sizes[i]);
 				if (p <= 0 || s <= 0) continue;
@@ -1555,6 +1585,7 @@ c_my_debug = true; // force enable debug
 		if (t==SEL) cata[0] = 'C';
 		// Get child market count, split child_capacity.
 		int child_mkt_ct[MAX_AB3_MKTS] = {0};
+		double child_mkt_szsum[MAX_AB3_MKTS] = {0};
 		// TRIGGER_OPTS : [
 		// 	price, p_real, child_price_threshold,
 		// 	main_bal, type, m_idx,
@@ -1806,13 +1837,22 @@ c_my_debug = true; // force enable debug
 							if ((t == BUY) && (p_take >= child_price_threshold))
 								valid = true;
 							// print in GREEN if valid
-							_ab3_dbg("%s1.2 %s %8s agg %d %8s px[%d] chk tk %4.10f"
+							if (valid) {
+							_ab3_dbgc(GREEN,
+								"1.2 %s %8s agg %d %8s px[%d] chk tk %4.10f"
 								" %c= %4.10lf ? %d" CLR_RST,
-								(valid ? CLR_GREEN : ""),
 								(t==BUY ? "BUY" : "SEL"),
 								c_mkts[m1_idx], agg, c_mkts[m2_idx], d,
 								p_take, (t==SEL ? '<' : '>'),
 								child_price_threshold, valid);
+							} else {
+							_ab3_dbg("1.2 %s %8s agg %d %8s px[%d] chk tk %4.10f"
+								" %c= %4.10lf ? %d" CLR_RST,
+								(t==BUY ? "BUY" : "SEL"),
+								c_mkts[m1_idx], agg, c_mkts[m2_idx], d,
+								p_take, (t==SEL ? '<' : '>'),
+								child_price_threshold, valid);
+							}
 							if (!valid) break; // orders_map sorted already.
 							orders[d][0] = (*orders_map)[m2_idx][d][0]; // p
 							orders[d][1] = (*orders_map)[m2_idx][d][1]; // s
@@ -1878,6 +1918,7 @@ c_my_debug = true; // force enable debug
 							m1_idx, agg, m2_idx,
 							order_size_sum, bal_avail);
 						child_mkt_ct[m2_idx] += 1;
+						child_mkt_szsum[m2_idx] += order_size_sum;
 						child_m_choosen ++;
 					} // For m2_idx
 //					_ab3_dbg("2.7 p_real %4.8lf", p_real); // cause Abort trap 6
@@ -1950,19 +1991,37 @@ c_my_debug = true; // force enable debug
 		// unprocessed_child_mkt_ct = child_mkt_ct.clone
 		memcpy(unprocessed_child_mkt_ct, child_mkt_ct, sizeof(child_mkt_ct));
 		double reserved_child_capacity[MAX_AB3_MKTS] = {0};
-		// Sort market descend by its child role count.
 		// Continue building trigger_order_opt
+		// OLD: Sort market descend by its child role count.
 		// mkt_ct, mkt_idx = mkts.size, 0
 		// mkts.sort_by { |m| child_mkt_ct[m] }.reverse.each { |m1| } 
-		struct two_i mkt_w_child_ct[my_markets_sz];
+		/*
+		struct ii mkt_w_child_ct[my_markets_sz];
 		for (int i=0; i < my_markets_sz; i++) {
 			mkt_w_child_ct[i].a = 0-child_mkt_ct[i]; // reverse
 			mkt_w_child_ct[i].b = i;
 		}
-		qsort(&mkt_w_child_ct, my_markets_sz, sizeof(struct two_i), two_i_comparitor);
+		qsort(&mkt_w_child_ct, my_markets_sz, sizeof(struct ii), ii_comparitor);
+		*/
+		// NOW: Sort market descend by its sum(child matched size)
+		// 	to make order exactly same as ruby version.
+		// mkts.sort_by { |m| child_mkt_szsum[m] }.reverse.each { |m1|
+		struct di mkt_w_child_szsum[my_markets_sz];
+		for (int i=0; i < my_markets_sz; i++) {
+			mkt_w_child_szsum[i].a = 0-child_mkt_szsum[i]; // reverse
+			mkt_w_child_szsum[i].b = i;
+		}
+		qsort(&mkt_w_child_szsum, my_markets_sz, sizeof(struct di), di_comparitor);
+		for(int lp_i=0; lp_i < my_markets_sz; lp_i++) {
+			int m1_idx = mkt_w_child_szsum[lp_i].b;
+			_ab3_dbg("3 %s sorted m1 %s by %4.4lf",
+				(t==BUY ? "BUY" : "SEL"),
+				c_mkts[m1_idx], 0-mkt_w_child_szsum[lp_i].a);
+		}
 		_ab3_dbg("3 %s loop start", (t==BUY ? "BUY" : "SEL"));
 		for(int lp_i=0; lp_i < my_markets_sz; lp_i++) {
-			int m1_idx = mkt_w_child_ct[lp_i].b;
+			// int m1_idx = mkt_w_child_ct[lp_i].b;
+			int m1_idx = mkt_w_child_szsum[lp_i].b;
 			if (c_valid_mkts[m1_idx] != true) continue;
 			for(int agg=0; agg < MAX_AGRSV_TYPES; agg++) {
 				// :yes, :no, :active, :retain
@@ -1980,8 +2039,20 @@ c_my_debug = true; // force enable debug
 				//
 				// trigger_order_opt[:child_mkt_stat] = trigger_order_opt[:child_mkt_stat].to_a.
 				// 	sort_by { |mv| child_mkt_ct[mv[0]] }.reverse.to_h
+				// to make sure order exactly same to Ruby verion,
+				// sort m2 by order_size_sum descending.
+				struct ii mkt_w_oszsum[my_markets_sz];
+				for (int i=0; i < my_markets_sz; i++) {
+					mkt_w_oszsum[i].b = i;
+					double order_size_sum = child_mkt_stat[m1_idx][agg][i][0];
+					if (c_valid_mkts[i] != true)
+						mkt_w_oszsum[i].a = 0;
+					else
+						mkt_w_oszsum[i].a = 0-order_size_sum;
+				}
+				qsort(&mkt_w_oszsum, my_markets_sz, sizeof(struct ii), ii_comparitor);
 				for(int lp_j=0; lp_j < my_markets_sz; lp_j++) {
-					int m2_idx = mkt_w_child_ct[lp_j].b; // reverse sorted by child_mkt_ct
+					int m2_idx = mkt_w_oszsum[lp_j].b; // sorted by order_size_sum
 					if (c_valid_mkts[m2_idx] != true) continue;
 					// order_size_sum is sum(size) of target child orders in market m2
 					double order_size_sum = child_mkt_stat[m1_idx][agg][m2_idx][0];
