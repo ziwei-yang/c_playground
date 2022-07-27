@@ -12,7 +12,6 @@ bool ab3_inited = false;
 ID id_valid_markets;
 ID id_size;
 ID id_dig;
-ID id_order_alive_qm;
 ID id_max_order_size;
 ID id_equalize_order_size;
 ID id_object_id;
@@ -60,7 +59,6 @@ void ab3_init() {
 	id_valid_markets = rb_intern("valid_markets");
 	id_size = rb_intern("size");
 	id_dig = rb_intern("dig");
-	id_order_alive_qm = rb_intern("order_alive?");
 	id_max_order_size = rb_intern("max_order_size");
 	id_equalize_order_size = rb_intern("equalize_order_size");
 	id_object_id = rb_intern("object_id");
@@ -145,14 +143,16 @@ struct order {
 	double s;
 	double executed;
 	double remained;
-	bool vol_based;
 	long v;
 	long executed_v;
 	long remained_v;
-	bool buy;
 	long ts_e3;
 	struct order *next;
+
+	char alive; // 1 yes, 0 no, other: unknown
 	bool valid;
+	bool buy;
+	bool vol_based;
 };
 
 static int index_of(int max, char (*strings)[MAX_AB3_MKTS][64], char *s) {
@@ -165,7 +165,32 @@ static int index_of(int max, char (*strings)[MAX_AB3_MKTS][64], char *s) {
 	}
 	return -1;
 }
-static bool is_order_alive(struct order *o) {
+/*
+ * Replacement of common/bootstrap:
+ * 	def order_alive?(t)
+ * 	def order_alive_int?(t)
+ */
+static bool if_order_alive(struct order *o) {
+	if (o->alive == 1) return true;
+	if (o->alive == 0) return false;
+	// status detection, see order_alive_int?()
+	if (o->remained == 0) {
+		o->alive = 0;
+		return false;
+	} else if (strcasecmp(o->status, "filled") == 0) {
+		o->alive = 0;
+		return false;
+	} else if (strcasecmp(o->status, "canceled") == 0) {
+		o->alive = 0;
+		return false;
+	} else if (strcasecmp(o->status, "expired") == 0) {
+		o->alive = 0;
+		return false;
+	} else if (strcasecmp(o->status, "rejected") == 0) {
+		o->alive = 0;
+		return false;
+	}
+	o->alive = 1;
 	return true;
 }
 
@@ -242,7 +267,7 @@ double c_min_qtys[MAX_AB3_MKTS] = {-1};
 double c_qty_steps[MAX_AB3_MKTS] = {-1};
 VALUE str_sell, str_buy, str_T, str_p, str_s, str_pair, str_market;
 VALUE str_p_take, str_i, str_status, str_executed, str_remained;
-VALUE str_v, str_executed_v, str_remained_v, str_t;
+VALUE str_v, str_executed_v, str_remained_v, str_t, str__alive;
 char c_spike_catas[2][MAX_SPIKES][8] = {'\0'};
 
 /*
@@ -379,6 +404,7 @@ static void cache_trader_attrs(VALUE self) {
 	str_remained_v = rb_str_new2("remained_v");
 	str_executed_v = rb_str_new2("executed_v");
 	str_t = rb_str_new2("t");
+	str__alive = rb_str_new2("_alive");
 
 	// char c_spike_catas[2][MAX_SPIKES][8] : [BUY/SELL][X] = "SBX" or "SCX"
 	for (int t = 0; t < 2; t++) {
@@ -390,7 +416,15 @@ static void cache_trader_attrs(VALUE self) {
 	URN_LOGF("cache_trader_attrs() done for trader_obj_id %ld", cache_trader_obj_id);
 }
 
-static void rborder_to_order(VALUE v_o, struct order *o) {
+static struct order *rborder_to_order(
+	VALUE v_o,
+	bool abort_on_dead
+) {
+	VALUE v_alive = rb_hash_aref(v_o, str__alive);
+	if (abort_on_dead && (TYPE(v_alive) == T_FALSE))
+		return NULL;
+
+	struct order *o = malloc(sizeof(struct order));
 	strcpy(o->i, RSTRING_PTR(rb_hash_aref(v_o, str_i)));
 	strcpy(o->m, RSTRING_PTR(rb_hash_aref(v_o, str_market)));
 	strcpy(o->status, RSTRING_PTR(rb_hash_aref(v_o, str_status)));
@@ -412,7 +446,26 @@ static void rborder_to_order(VALUE v_o, struct order *o) {
 	else
 		o->buy = false;
 	o->next = NULL;
+
+	if (TYPE(v_alive) == T_TRUE)
+		o->alive = 1;
+	else if (TYPE(v_alive) == T_FALSE)
+		o->alive = 0;
+	else
+		o->alive = -1;
+
+	if (abort_on_dead) {
+		// decide alive if unknown.
+		if ((o->alive != 1) && (o->alive != 0))
+			if_order_alive(o);
+		if (o->alive == 0) {
+			free(o);
+			return NULL;
+		}
+	}
+
 	o->valid = true;
+	return o;
 }
 static char *rborder_desc(struct order *o) {
 	long sec = o->ts_e3 / 1000;
@@ -1015,14 +1068,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	VALUE v_orders = rb_hash_aref(v_opt, sym_own_main_orders);
 	if (TYPE(v_orders) != T_NIL) {
 		rbary_each(v_orders, idx, max, v_el) {
-			VALUE v_bool = rb_funcall(self, id_order_alive_qm, 1, v_el);
-			if (TYPE(v_bool) != T_TRUE)
-				continue;
 			int m_idx = index_of(my_markets_sz, &c_mkts, RSTRING_PTR(rb_hash_aref(v_el, str_market)));
 			if (m_idx < 0)
 				continue;
-			struct order *o = malloc(sizeof(struct order));
-			rborder_to_order(v_el, o);
+			// VALUE v_bool = rb_funcall(self, id_order_alive_qm, 1, v_el);
+			// if (TYPE(v_bool) != T_TRUE) continue;
+			struct order *o = rborder_to_order(v_el, true);
+			if (o == NULL) continue;
 			// own_main_orders[m][t].push o
 			if (o->buy) {
 				o->next = own_main_orders[m_idx][BUY];
@@ -1042,14 +1094,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	v_orders = rb_hash_aref(v_opt, sym_own_spike_main_orders);
 	if (TYPE(v_orders) != T_NIL) {
 		rbary_each(v_orders, idx, max, v_el) {
-			VALUE v_bool = rb_funcall(self, id_order_alive_qm, 1, v_el);
-			if (TYPE(v_bool) != T_TRUE)
-				continue;
 			int m_idx = index_of(my_markets_sz, &c_mkts, RSTRING_PTR(rb_hash_aref(v_el, str_market)));
 			if (m_idx < 0)
 				continue;
-			struct order *o = malloc(sizeof(struct order));
-			rborder_to_order(v_el, o);
+			// VALUE v_bool = rb_funcall(self, id_order_alive_qm, 1, v_el);
+			// if (TYPE(v_bool) != T_TRUE) continue;
+			struct order *o = rborder_to_order(v_el, true);
+			if (o == NULL) continue;
 			// own_spike_main_orders[m][t].push o
 			if (o->buy) {
 				o->next = own_spike_main_orders[m_idx][BUY];
@@ -1067,14 +1118,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	v_orders = rb_hash_aref(v_opt, sym_own_live_orders);
 	if (TYPE(v_orders) != T_NIL) {
 		rbary_each(v_orders, idx, max, v_el) {
-			VALUE v_bool = rb_funcall(self, id_order_alive_qm, 1, v_el);
-			if (TYPE(v_bool) != T_TRUE)
-				continue;
 			int m_idx = index_of(my_markets_sz, &c_mkts, RSTRING_PTR(rb_hash_aref(v_el, str_market)));
 			if (m_idx < 0)
 				continue;
-			struct order *o = malloc(sizeof(struct order));
-			rborder_to_order(v_el, o);
+			// VALUE v_bool = rb_funcall(self, id_order_alive_qm, 1, v_el);
+			// if (TYPE(v_bool) != T_TRUE) continue;
+			struct order *o = rborder_to_order(v_el, true);
+			if (o == NULL) continue;
 			// own_live_orders[m][t].push o
 			if (o->buy) {
 				o->next = own_live_orders[m_idx][BUY];
@@ -1088,14 +1138,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	v_orders = rb_hash_aref(v_opt, sym_own_legacy_orders);
 	if (TYPE(v_orders) != T_NIL) {
 		rbary_each(v_orders, idx, max, v_el) {
-			VALUE v_bool = rb_funcall(self, id_order_alive_qm, 1, v_el);
-			if (TYPE(v_bool) != T_TRUE)
-				continue;
 			int m_idx = index_of(my_markets_sz, &c_mkts, RSTRING_PTR(rb_hash_aref(v_el, str_market)));
 			if (m_idx < 0)
 				continue;
-			struct order *o = malloc(sizeof(struct order));
-			rborder_to_order(v_el, o);
+			// VALUE v_bool = rb_funcall(self, id_order_alive_qm, 1, v_el);
+			// if (TYPE(v_bool) != T_TRUE) continue;
+			struct order *o = rborder_to_order(v_el, true);
+			if (o == NULL) continue;
 			// own_legacy_orders[m][t].push o
 			if (o->buy) {
 				o->next = own_legacy_orders[m_idx][BUY];
