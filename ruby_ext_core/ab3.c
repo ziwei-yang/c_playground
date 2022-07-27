@@ -13,12 +13,8 @@ ID id_valid_markets;
 ID id_size;
 ID id_dig;
 ID id_order_alive_qm;
-ID id_market_client;
 ID id_max_order_size;
 ID id_equalize_order_size;
-ID id_downgrade_order_size_for_all_market;
-ID id_price_step;
-ID id_price_ratio_range;
 ID id_object_id;
 ID id_balance_ttl_cash_asset;
 ID id_future_side_for_close;
@@ -65,12 +61,8 @@ void ab3_init() {
 	id_size = rb_intern("size");
 	id_dig = rb_intern("dig");
 	id_order_alive_qm = rb_intern("order_alive?");
-	id_market_client = rb_intern("market_client");
 	id_max_order_size = rb_intern("max_order_size");
 	id_equalize_order_size = rb_intern("equalize_order_size");
-	id_downgrade_order_size_for_all_market = rb_intern("downgrade_order_size_for_all_market");
-	id_price_step = rb_intern("price_step");
-	id_price_ratio_range = rb_intern("price_ratio_range");
 	id_object_id = rb_intern("object_id");
 	id_balance_ttl_cash_asset = rb_intern("balance_ttl_cash_asset");
 	id_future_side_for_close = rb_intern("future_side_for_close");
@@ -306,7 +298,8 @@ static void cache_trader_attrs(VALUE self) {
 		rb_raise(rb_eTypeError, "MAX_AB3_MKTS too small, rise it now");
 	for (int i=0; i < my_markets_sz; i++) {
 		cv_mkts[i] = rbary_el(my_markets, i);
-		cv_mkt_clients[i] = rb_funcall(self, id_market_client, 1, cv_mkts[i]);
+		cv_mkt_clients[i] = rb_funcall(self,
+			rb_intern("market_client"), 1, cv_mkts[i]);
 		strcpy(c_mkts[i], RSTRING_PTR(cv_mkts[i]));
 	}
 	for (int i=my_markets_sz; i < MAX_AB3_MKTS; i++) {
@@ -321,11 +314,15 @@ static void cache_trader_attrs(VALUE self) {
 	VALUE my_trader_tasks_by_mkt = rb_ivar_get(self, rb_intern("@trader_tasks_by_mkt"));
 	VALUE my_last_t_suggest_new_spike_price = rb_ivar_get(self, rb_intern("@last_t_suggest_new_spike_price_c"));
 	for (int i=0; i < my_markets_sz; i++) {
-		c_min_vols[i] = NUM2DBL(rb_funcall(cv_mkt_clients[i], rb_intern("min_vol"), 1, my_pair));
-		c_min_qtys[i] = NUM2DBL(rb_funcall(cv_mkt_clients[i], rb_intern("min_quantity"), 1, my_pair));
-		c_qty_steps[i] = NUM2DBL(rb_funcall(cv_mkt_clients[i], rb_intern("quantity_step"), 1, my_pair));
+		c_min_vols[i] = NUM2DBL(rb_funcall(cv_mkt_clients[i],
+			rb_intern("min_vol"), 1, my_pair));
+		c_min_qtys[i] = NUM2DBL(rb_funcall(cv_mkt_clients[i],
+			rb_intern("min_quantity"), 1, my_pair));
+		c_qty_steps[i] = NUM2DBL(rb_funcall(cv_mkt_clients[i],
+			rb_intern("quantity_step"), 1, my_pair));
 
-		VALUE v_price_ratio_range = rb_funcall(cv_mkt_clients[i], id_price_ratio_range, 1, my_pair);
+		VALUE v_price_ratio_range = rb_funcall(cv_mkt_clients[i],
+			rb_intern("price_ratio_range"), 1, my_pair);
 		c_price_ratio_ranges[i][0] = NUM2DBL(rbary_el(v_price_ratio_range, 0));
 		c_price_ratio_ranges[i][1] = NUM2DBL(rbary_el(v_price_ratio_range, 1));
 		if (c_price_ratio_ranges[i][0] >= c_price_ratio_ranges[i][1]) {
@@ -334,7 +331,7 @@ static void cache_trader_attrs(VALUE self) {
 			rb_raise(rb_eTypeError, "price_ratio_range should be [min, max]");
 		}
 		c_p_steps[i] = NUM2DBL(rb_funcall(cv_mkt_clients[i],
-			id_price_step, 1, my_pair));
+			rb_intern("price_step"), 1, my_pair));
 
 		VALUE _trader_tasks_by_m = rb_hash_aref(my_trader_tasks_by_mkt, cv_mkts[i]);
 		if (TYPE(_trader_tasks_by_m) == T_NIL)
@@ -433,9 +430,11 @@ static char *rborder_desc(struct order *o) {
 
 /*
  * for method_detect_arbitrage_pattern() usage only
- * Replacement of:
- * p = market_client(m1).format_price_str(@pair, 'buy', p, adjust:true, verbose:false).to_f
+ * Replacement of common/mkt.rb:
+ * 	format_price_str(@pair, 'buy', p, adjust:true, verbose:false).to_f
  */
+// Use _format_price() to set adjusted size, SEL means ceil
+// Use _format_price() to set adjusted size, BUY means floor
 static double _format_price(double p, double step, int type) {
 	long toint = 10000000000; // 10^11 is precise enough.
 	long step_i = lround(step * toint);
@@ -457,9 +456,36 @@ static double _min_order_size(int m_idx, double p, int type) {
 	double adj_p = _format_price(p, c_p_steps[m_idx], type);
 	if (adj_p <= 0) return c_min_qtys[m_idx];
 	double s = c_min_vols[m_idx] / adj_p;
-	// Use _format_price() to set adjusted size
+	// Use _format_price() to set adjusted size, SEL means ceil
 	double adj_s = _format_price(s, c_qty_steps[m_idx], SEL);
 	return URN_MAX(adj_s, c_min_qtys[m_idx]);
+}
+
+/*
+ * Replacement of common/mkt.rb
+ * 	def downgrade_order_size_for_all_market(order, clients)
+ */
+static void _downgrade_order_size_for_all_market(
+	struct order *o,
+	int ct,
+	int *mkt_indices
+) {
+	double min_s = -1;
+	double s = o->s;
+	for (int i=0; i < ct; i++) {
+		int m_idx = mkt_indices[i];
+		// next nil if c.quantity_in_orderbook() != :asset
+		// Dont need to worry about vol based market:
+		// 	vol based qty_step always be minimum float.
+		// Use _format_price() to set adjusted size, BUY means floor
+		double adj_s = _format_price(s, c_qty_steps[m_idx], BUY);
+		if (min_s < 0)
+			min_s = adj_s;
+		else
+			min_s = URN_MIN(min_s, adj_s);
+	}
+	o->s = min_s;
+	return;
 }
 
 struct timeval _ab3_dbg_start_t;
@@ -1187,8 +1213,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			// equalize_order_size(orders, clients) # might break min_order_size
 			rb_funcall(self, id_equalize_order_size, 2, v_orders, v_clients);
 			// orders.each { |o| downgrade_order_size_for_all_market(o, all_clients) }
-			rb_funcall(self, id_downgrade_order_size_for_all_market, 2, v_os, v_clients);
-			rb_funcall(self, id_downgrade_order_size_for_all_market, 2, v_ob, v_clients);
+			// rb_funcall(self, id_downgrade_order_size_for_all_market, 2, v_os, v_clients);
+			// rb_funcall(self, id_downgrade_order_size_for_all_market, 2, v_ob, v_clients);
+			int mkt_indices[2] = {m1_idx, m2_idx};
+			_downgrade_order_size_for_all_market(&sell_order, 2, mkt_indices);
+			_downgrade_order_size_for_all_market(&buy_order, 2, mkt_indices);
+			rb_hash_aset(v_ob, str_s, DBL2NUM(buy_order.s));
+			rb_hash_aset(v_os, str_s, DBL2NUM(sell_order.s));
 			URN_LOGF("After equalize_order_size(), downgrade_order_size_for_all_market()\n"
 				"BUY  p %8.8f s %8.8f %s \n"
 				"SELL p %8.8f s %8.8f %s \n",

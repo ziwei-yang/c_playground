@@ -88,12 +88,16 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
   puts "F -> #{f}"
   match = true
   missing_spike_ct = 0 # Freq control: Allow <= market.size*2 missing spikes
-  (chances_by_mkt_r.keys | chances_by_mkt_c.keys).each { |cata|
+  all_catas = (chances_by_mkt_r.keys | chances_by_mkt_c.keys)
+  cata_by_m = {}
+  all_catas.each { |cata|
     chances_by_mkt_r[cata] ||= {}
     chances_by_mkt_c[cata] ||= {}
     (chances_by_mkt_r[cata].keys | chances_by_mkt_c[cata].keys).each { |m|
       cr = chances_by_mkt_r[cata][m]
       cc = chances_by_mkt_c[cata][m]
+      cata_by_m[m] ||= {}
+      cata_by_m[m][cata] = 1
       if (cr.nil? && cc != nil)
         puts "Hey check this!".red
         puts "RUBY nil but C has cata #{cata} at #{m}: #{JSON.pretty_generate(cc)}"
@@ -123,7 +127,7 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
     match = false
   end
   raise "Not match" unless match
-  puts "detect_c_t #{detect_c_t}"
+  puts "detect_c_t #{detect_c_t} cata #{cata_by_m.map { |m_cv| "#{m_cv[0]}/#{m_cv[1].keys.join(',')}" }.join(' ')}"
 }
 trader.prepare()
 trader.start()
