@@ -819,7 +819,7 @@ static long sprintf_ab3_chance(char *s, VALUE c) {
 	s += sprintf(s, "%3s\n\tINFO: ", rbstr(v));
 	v = rb_hash_aref(c, sym_type);
 	s += sprintf(s, "%4s ", rbstr(v));
-	v = rb_hash_aref(c, sym_size);
+	v = rb_hash_aref(c, sym_suggest_size);
 	s += sprintf(s, "%4.4f ", rbdbl(v));
 	v = rb_hash_aref(c, sym_price);
 	s += sprintf(s, "at %4.8f ", rbdbl(v));
@@ -827,9 +827,11 @@ static long sprintf_ab3_chance(char *s, VALUE c) {
 	v = rb_hash_aref(c, sym_p_real);
 	s += sprintf(s, "p_real %4.8f ", rbdbl(v));
 	v = rb_hash_aref(c, sym_child_type);
-	s += sprintf(s, ", %4s ", rbstr(v));
+	s += sprintf(s, "%4s ", rbstr(v));
 	v = rb_hash_aref(c, sym_child_price_threshold);
-	s += sprintf(s, "than %4.8f\n\tExpl: ", rbdbl(v));
+	s += sprintf(s, "than %4.8f ", rbdbl(v));
+	v = rb_hash_aref(c, sym_ideal_profit);
+	s += sprintf(s, "ideal_pf %4.8f\n\tExpl: ", rbdbl(v));
 	v = rb_hash_aref(c, sym_explain);
 	s += sprintf(s, "%s", rbstr(v));
 
@@ -846,7 +848,7 @@ static long sprintf_ab3_chance(char *s, VALUE c) {
 		s += sprintf(s, "T %4s ", rbstr(v));
 		v = rb_hash_aref(v_el, str_s);
 		s += sprintf(s, "s %4.4f ", rbdbl(v));
-		v = rb_hash_aref(v_el, str_s);
+		v = rb_hash_aref(v_el, str_p);
 		s += sprintf(s, "at p %4.8f ", rbdbl(v));
 	}
 	return s-original_s;
@@ -1187,7 +1189,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			// orders.each { |o| downgrade_order_size_for_all_market(o, all_clients) }
 			rb_funcall(self, id_downgrade_order_size_for_all_market, 2, v_os, v_clients);
 			rb_funcall(self, id_downgrade_order_size_for_all_market, 2, v_ob, v_clients);
-			URN_LOGF("After equalize_order_size() and downgrade_order_size_for_all_market()"
+			URN_LOGF("After equalize_order_size(), downgrade_order_size_for_all_market()\n"
 				"BUY  p %8.8f s %8.8f %s \n"
 				"SELL p %8.8f s %8.8f %s \n",
 				NUM2DBL(rb_hash_aref(v_ob, str_p)), NUM2DBL(rb_hash_aref(v_ob, str_s)), buy_order.m,
@@ -1207,8 +1209,12 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			// Shit exchanges allow old and new price precision in same orderbook.
 			// TODO
 
+			double rate_sum = devi_map_tk_sel[m1_idx] + devi_map_tk_buy[m2_idx];
 			double suggest_size = NUM2DBL(rb_hash_aref(v_ob, str_s));
-			double ideal_profit = (sell_order.p - buy_order.p)*suggest_size;
+			double ideal_profit = (sell_order.p - buy_order.p)*suggest_size*(1-rate_sum);
+			URN_LOGF("ideal_profit %4.10lf = p_diff %4.10lf * s %4.4lf * (1-%1.10lf)",
+				ideal_profit, (sell_order.p-buy_order.p),
+				suggest_size, rate_sum);
 			rb_ary_push(v_chances, _new_ab3_chance(self, v_orders, m1_idx, true, -1, ideal_profit, "A"));
 		}
 	}
@@ -1719,18 +1725,16 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					// Maker order should be easy to hit.
 					// Dont change order too frequently.
 					//
-					// Choose [2nd_p+step, 3rd_p+step, 5th_p+step, 9th_p+step] & [valid_range]
+					// Choose [[1], [2], [4], [9]] & [valid_range]
 					//
-					// valid_range = [price_1st, price_1st/(1+@arbitrage_min)] if type == 'buy'
+					// valid_range = [price_1st/(1+@arbitrage_min), price_1st] if type == 'buy'
 					// valid_range = [price_1st, price_1st/(1-@arbitrage_min)] if type == 'sell'
-					double valid_range[2] = {price_1st, price_1st/(1+c_arbitrage_min)};
-					valid_range[1] = price_1st/(1-c_arbitrage_min);
-					if (valid_range[0] > valid_range[1]) {
-						double tmp = valid_range[0];
-						valid_range[0] = valid_range[1];
-						valid_range[1] = tmp;
+					double valid_range[2] = {price_1st/(1+c_arbitrage_min), price_1st};
+					if (t == SEL) {
+						valid_range[0] = price_1st;
+						valid_range[1] = price_1st/(1-c_arbitrage_min);
 					}
-					int p_idx_candidates[4] = {1, 2, 4, 8};
+					int p_idx_candidates[4] = {1, 2, 4, 9};
 					double p_candidates_last = -1;
 					int price_candidates_next_idx = 0;
 					for (int p_idx=0; p_idx < 4; p_idx++) {
@@ -1764,10 +1768,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 							price_candidates[0] = exist_price;
 						}
 					}
-					_ab3_dbg("\t active p select %8s exist %4.8lf ->[%4.8lf %4.8lf %4.8lf %4.8lf]",
+					_ab3_dbg("\t active p select %8s exist %4.8lf "
+						"->[%4.8lf %4.8lf %4.8lf %4.8lf] "
+						"in range [%4.10lf %4.10lf]",
 						c_mkts[m1_idx], exist_price,
 						price_candidates[0], price_candidates[1],
-						price_candidates[2], price_candidates[3]);
+						price_candidates[2], price_candidates[3],
+						valid_range[0], valid_range[1]);
 				} else if (agg == 3) { // No chance, maybe keep exist main orders.
 					if (exist_price <= 0) // No exist main order.
 						continue;
@@ -2036,10 +2043,10 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				double (*trigger_order_opt)[TRIGGER_OPTS] = &(trigger_order_opt_map[m1_idx][agg]);
 				double price = (*trigger_order_opt)[0];
 				double p_real = (*trigger_order_opt)[1];
+				if (price <= 0) continue;
 				_ab3_dbg("3 %s %8s [%d] agg %d price %4.8lf",
 					(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx],
 					m1_idx, agg, price);
-				if (price <= 0) continue;
 				double suggest_size = 0;
 				double reserved_child_capacity_this_turn[MAX_AB3_MKTS] = {0};
 				// Abort generating explains in C version
