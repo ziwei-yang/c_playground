@@ -1501,7 +1501,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					double last_add_spike_t = c_my_last_t_suggest_new_spike_prices[m1_idx];
 					if (i <= 0) {
 						// Always suggest first order.
-						_ab3_dbg("\tAlways suggest %s spike first order, ts %ld",
+						_ab3_dbg("\tAlways suggest %s spike first order, last_ts %ld",
 							(t==BUY ? "BUY" : "SEL"), (long)last_add_spike_t);
 					} else if (now - last_add_spike_t > 30) {
 						// Speed control for placing non-first level.
@@ -1509,7 +1509,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 						_ab3_dbg("\tSuggest adding one more %s spike %d order, now %ld",
 							(t==BUY ? "BUY" : "SEL"), i+1, (long)now);
 					} else {
-						_ab3_dbg("\tSkip adding %s spike %d order too fast, ts %ld now %ld",
+						_ab3_dbg("\tSkip adding %s spike %d order too fast, last_ts %ld now %ld",
 							(t==BUY ? "BUY" : "SEL"), i+1,
 							(long)last_add_spike_t, (long)now);
 						if (t == BUY) {

@@ -85,6 +85,7 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
   }
   puts "F -> #{f}"
   match = true
+  missing_spike_ct = 0 # Freq control: Allow <= market.size*2 missing spikes
   (chances_by_mkt_r.keys | chances_by_mkt_c.keys).each { |cata|
     chances_by_mkt_r[cata] ||= {}
     chances_by_mkt_c[cata] ||= {}
@@ -94,10 +95,18 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
       if (cr.nil? && cc != nil)
         puts "Hey check this!".red
         puts "RUBY nil but C has cata #{cata} at #{m}: #{JSON.pretty_generate(cc)}"
+        if cata =~ /^S(B|C)[2-9]$/
+          missing_spike_ct += 1 # maybe it is okay
+          next
+        end
         match = false
       elsif (cc.nil? && cr != nil)
         puts "Hey check this!".red
         puts "C nil but Ruby has cata #{cata} at #{m}: #{JSON.pretty_generate(cr)}"
+        if cata =~ /^S(B|C)[2-9]$/
+          missing_spike_ct += 1 # maybe it is okay
+          next
+        end
         match = false
       else
         ret = compare_ab3_chances(cata, m, cr, cc)
@@ -107,6 +116,10 @@ trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, cha
       end
     }
   }
+  if missing_spike_ct > 2*(markets.size*2)
+    puts "Too many missing spikes #{missing_spike_ct}"
+    match = false
+  end
   raise "Not match" unless match
   puts "detect_c_t #{detect_c_t}"
 }
