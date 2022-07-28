@@ -94,7 +94,7 @@ if [[ ! -f $DIR/3rd/map.h || ! -f $DIR/3rd/map.c ]]; then
 	cd $HOME/Proj
 	rm -rf $HOME/Proj/hashmap_c
 	mkdir $HOME/Proj/hashmap_c
-	cd $HOME/Proj/c_hashmap
+	cd $HOME/Proj/hashmap_c
 	wget -O map.h 'https://github.com/Mashpoe/c-hashmap/raw/main/map.h'
 	wget -O map.c 'https://github.com/Mashpoe/c-hashmap/raw/main/map.c'
 	if [[ ! -f ./map.c || ! -f ./map.h ]]; then
