@@ -92,8 +92,9 @@ fi
 cd $DIR
 if [[ ! -f $DIR/3rd/map.h || ! -f $DIR/3rd/map.c ]]; then
 	cd $HOME/Proj
-	rmdir c-hashmap && mkdir c-hashmap
-	cd c-hashmap
+	rm -rf $HOME/Proj/hashmap_c
+	mkdir $HOME/Proj/hashmap_c
+	cd $HOME/Proj/c_hashmap
 	wget -O map.h 'https://github.com/Mashpoe/c-hashmap/raw/main/map.h'
 	wget -O map.c 'https://github.com/Mashpoe/c-hashmap/raw/main/map.c'
 	if [[ ! -f ./map.c || ! -f ./map.h ]]; then
@@ -103,11 +104,12 @@ if [[ ! -f $DIR/3rd/map.h || ! -f $DIR/3rd/map.c ]]; then
 	git init && git add map.* && \
 		git apply $DIR/patch/hashmap.diff
 	if [[ $? != 0 ]]; then
-		echo "Apply patch/hashmap.diff to Proj/c-hashmap failed"
+		echo "Apply patch/hashmap.diff to Proj/hashmap_c failed"
 		exit 1
 	fi
 	mkdir -p $DIR/3rd
 	cp -v ./map.* $DIR/3rd
+	rm -rf $HOME/Proj/hashmap_c
 fi
 if [[ ! -f $DIR/3rd/map.h || ! -f $DIR/3rd/map.c ]]; then
 	echo "3rd/map.c 3rd/map.h not found"
