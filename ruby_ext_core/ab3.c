@@ -1818,7 +1818,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					double p_candidates_last = -1;
 					int price_candidates_next_idx = 0;
 					for (int p_idx=0; p_idx < 4; p_idx++) {
-						int idx = p_idx_candidates[p_idx];
+						int idx = p_idx_candidates[p_idx]; // 1 2 4 9
 						double p_candi = (*orders_map)[m1_idx][idx][0];
 						if (p_candi <= 0) continue;
 						if (p_candi != exist_price) {
