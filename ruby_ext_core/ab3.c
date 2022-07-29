@@ -351,7 +351,7 @@ static void cache_trader_attrs(VALUE self) {
 		c_price_ratio_ranges[i][0] = NUM2DBL(rbary_el(v_price_ratio_range, 0));
 		c_price_ratio_ranges[i][1] = NUM2DBL(rbary_el(v_price_ratio_range, 1));
 		if (c_price_ratio_ranges[i][0] >= c_price_ratio_ranges[i][1]) {
-			URN_WARNF("c_price_ratio_ranges %8s %lf %lf", c_mkts[i],
+			URN_WARNF("c_price_ratio_ranges %8s %4.4lf %4.4lf", c_mkts[i],
 				c_price_ratio_ranges[i][0], c_price_ratio_ranges[i][1]);
 			rb_raise(rb_eTypeError, "price_ratio_range should be [min, max]");
 		}
@@ -479,6 +479,29 @@ static char *rborder_desc(struct order *o) {
 		(sec % 3600)/60,
 		(sec % 60), msec);
 	return o->desc;
+}
+
+static void order_init(struct order *o) {
+	o->m[0] = '\0';
+	o->status[0] = '\0';
+	o->desc[0] = '\0';
+	o->i[0] = '\0';
+
+	o->p = -1;
+	o->s = -1;
+	o->executed = -1;
+	o->remained = -1;
+
+	o->v = -1;
+	o->executed_v = -1;
+	o->remained_v = -1;
+	o->ts_e3 = -1;
+	o->next = NULL;
+
+	o->alive = -1;
+	o->valid = false;
+	o->buy = true;
+	o->vol_based = false;
 }
 
 /*
@@ -640,9 +663,9 @@ static bool _aggressive_arbitrage_orders_c(
 		double (*odbk)[max_odbk_depth][3] = scan_buy_now ? bids_map : asks_map;
 		int idx = (int)(scan_status[type][_idx_idx]);
 		if ((scan_status[opposite_type][_idx_fin] == 1) &&
-				(scan_status[type][_idx_size_sum] > scan_status[opposite_type][_idx_size_sum])) {
+				(scan_status[type][_idx_size_sum] >= scan_status[opposite_type][_idx_size_sum])) {
 			_ab3_dbg("%d side is already finished, "
-				"%d side size_sum is larger than opposite, all finished.",
+				"%d side size_sum >= opposite, all finished.",
 				opposite_type, type);
 			scan_status[type][_idx_fin] = 1;
 			break;
@@ -670,20 +693,24 @@ static bool _aggressive_arbitrage_orders_c(
 			continue;
 		}
 
-		// _ab3_dbg("\tODBK %d %d %lf %lf %lf", type, idx, p, s, p_take);
+		_ab3_dbg("\tODBK %d %d %4.8lf %4.4lf %4.10lf", type, idx, p, s, p_take);
 		if ((p <= 0) || (s <= 0) || (p_take <= 0)) {
 			rb_raise(rb_eTypeError, "invalid odbk data, p/s/p_take <= 0");
 			break;
 		}
 		double size_sum = scan_status[type][_idx_size_sum];
 		double avg_price = scan_status[type][_idx_avg_p];
+		_ab3_dbg("Scanning %s p %4.8lf s %4.4lf p_tk %4.10lf "
+			"status sz_sum %4.4lf avg_p %4.8lf",
+			(type == BUY ? "BUY" : "SEL"),
+			p, s, p_take, size_sum, avg_price);
 		bool   vol_max_reached = false;
 		// Scan always stop at this side when max vol is reached.
 		if (s + size_sum > vol_max) {
 			s = vol_max - size_sum;
 			vol_max_reached = true;
 			scan_status[type][_idx_fin] = 1;
-			_ab3_dbg("Max vol reached, vol_max %lf", vol_max);
+			_ab3_dbg("Max vol reached, vol_max %4.4lf", vol_max);
 		}
 		// Cap the size according to maximum order size, again:
 		// mkt_client_bid is the market client of bid orderbook, where ask order should be placed.
@@ -709,7 +736,7 @@ static bool _aggressive_arbitrage_orders_c(
 			s = max_size - size_sum;
 			scan_status[type][_idx_fin] = 1;
 			balance_limited = true;
-			_ab3_dbg("Balance limited, %d max=%lf p=%lf", type, max_size, p);
+			_ab3_dbg("Balance limited, %d max=%4.4lf p=%4.8lf", type, max_size, p);
 		}
 
 		// Compare this price with opposite price.
@@ -723,18 +750,27 @@ static bool _aggressive_arbitrage_orders_c(
 			scan_status[type][_idx_p] = p;
 			scan_status[type][_idx_p_take] = p_take;
 			scan_status[type][_idx_avg_p] = p;
-			_ab3_dbg("Scan %d orderbook %d: O p %lf p_tk %lf s %lf init this side.",
-				type, idx, p, p_take, s);
+			_ab3_dbg("Scan %s orderbook %d: O "
+				"p %4.8lf p_tk %4.10lf s %4.4lf init this side.",
+				(type == BUY ? "BUY" : "SEL"),
+				idx, p, p_take, s);
 			scan_buy_now = !scan_buy_now;
 			continue;
 		}
-		_ab3_dbg("Scan %d orderbook %d: O p %lf p_tk %lf s %lf", type, idx, p, p_take, s);
+		_ab3_dbg("Scan %s orderbook %d: O "
+			"p %4.8lf p_tk %4.10lf s %4.4lf",
+			(type == BUY ? "BUY" : "SEL"),
+			idx, p, p_take, s);
 
 		// Compare this price with opposite_p
 		double price_diff = scan_buy_now ? diff(p_take, opposite_p_take) : diff(opposite_p_take, p_take);
+		_ab3_dbg("\ttype:%d p:%4.8lf,%4.10lf opposite_p:%4.8lf,%4.10lf "
+			"price diff:%4.8lf cmp %4.8lf",
+			type, p, p_take, opposite_p, opposite_p_take,
+			price_diff, min_price_diff);
 		if (price_diff <= min_price_diff) {
-			_ab3_dbg("\ttype:%d p:%lf,%lf opposite_p:%lf,%lf "
-				"price diff:%lf < %lf side finished",
+			_ab3_dbg("\ttype:%d p:%4.8lf,%4.10lf opposite_p:%4.8lf,%4.10lf "
+				"price diff:%4.8lf < %4.8lf side finished",
 				type, p, p_take, opposite_p, opposite_p_take,
 				price_diff, min_price_diff);
 			scan_status[type][_idx_fin] = 1;
@@ -759,7 +795,8 @@ static bool _aggressive_arbitrage_orders_c(
 		scan_status[type][_idx_p] = price;
 		scan_status[type][_idx_p_take] = p_take;
 		scan_status[type][_idx_avg_p] = next_avg_price;
-		_ab3_dbg("\tnow %d size_sum:%lf p:%lf avg_p:%lf", type, size_sum, p, next_avg_price);
+		_ab3_dbg("\tnow %d size_sum:%4.4lf p:%4.8lf avg_p:%4.8lf",
+			type, size_sum, p, next_avg_price);
 		scan_status[type][_idx_idx] += 1;
 		// Compare future size_sum with opposite_s, if this side is fewer, continue scan.
 		if (size_sum < opposite_s) continue;
@@ -779,15 +816,21 @@ static bool _aggressive_arbitrage_orders_c(
 	);
 	buy_order->s  = URN_MIN(scan_status[SEL][_idx_size_sum], max_bid_sz); // Buy  at ASKS
 	sell_order->s = URN_MIN(scan_status[BUY][_idx_size_sum], max_ask_sz); // Sell at BIDS
+	// Make pair orders have same size.
+	// orders = orders.map { |o| o['s'] = size; o }
 	double size = URN_MIN(buy_order->s, sell_order->s);
 	size = urn_round(size, c_size_precise);
 	buy_order->s  = size;
 	sell_order->s = size;
+	_ab3_dbg("buy_order  %s", rborder_desc(buy_order));
+	_ab3_dbg("sell_order %s", rborder_desc(sell_order));
+	_ab3_dbg("size %4.4lf vol_min %4.8lf", size, vol_min);
 
 	if (size < vol_min)
 		return false;
 	double min_bid_sz = _min_order_size(mkt_client_ask_idx,  buy_order->p, BUY); // Buy  at ASKS
 	double min_ask_sz = _min_order_size(mkt_client_bid_idx, sell_order->p, SEL); // Sell at BIDS
+	_ab3_dbg("min_bid_sz %4.4lf min_ask_sz %4.8lf", min_bid_sz, min_ask_sz);
 	if ((size < min_bid_sz) || (size < min_ask_sz))
 		return false;
 
@@ -1229,6 +1272,8 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				fast_price_diff, c_arbitrage_min);
 
 			struct order buy_order, sell_order;
+			order_init(&buy_order);
+			order_init(&sell_order);
 			bool found = _aggressive_arbitrage_orders_c(
 				&bids_map[m1_idx], &asks_map[m2_idx],
 				c_arbitrage_min,
@@ -1283,10 +1328,10 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			double min_bid_sz = _min_order_size(m2_idx, buy_order.p, BUY);
 			double min_ask_sz = _min_order_size(m1_idx, sell_order.p, SEL);
 			if (NUM2DBL(rb_hash_aref(v_os, str_s)) < min_ask_sz) {
-				URN_LOGF("\t Sell order break min_order_size %lf", min_ask_sz);
+				URN_LOGF("\t Sell order break min_order_size %4.4lf", min_ask_sz);
 				continue;
 			} else if (NUM2DBL(rb_hash_aref(v_ob, str_s)) < min_bid_sz) {
-				URN_LOGF("\t Buy  order break min_order_size %lf", min_bid_sz);
+				URN_LOGF("\t Buy  order break min_order_size %4.4lf", min_bid_sz);
 				continue;
 			}
 
@@ -1330,7 +1375,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				highest_ask_p = URN_MAX(highest_ask_p, asks_map[m1_idx][0][0]);
 		}
 	}
-	_ab3_dbg("S highest_ask_p %lf lowest_bid_p %lf", highest_ask_p, lowest_bid_p);
+	_ab3_dbg("S highest_ask_p %4.8lf lowest_bid_p %4.8lf", highest_ask_p, lowest_bid_p);
 	if (c_my_spike_catcher_enabled && (c_run_mode_d || c_run_mode_e)) {
 		for (int m1_idx=0; m1_idx < my_markets_sz; m1_idx++) {
 			if (c_valid_mkts[m1_idx] != true) continue;
@@ -1454,6 +1499,8 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					bid_sizes[i] *= c_vol_max_const;
 				}
 			}
+			_ab3_dbg("S spike_buy  %8s bid_price[0..3]: %4.8f %4.8f %4.8f %4.8f",
+				c_mkts[m1_idx], bid_prices[0], bid_prices[1], bid_prices[2], bid_prices[3]);
 			_ab3_dbg("S spike_buy  %8s bid_sizes[0..3]: %4.4f %4.4f %4.4f %4.4f",
 				c_mkts[m1_idx], bid_sizes[0], bid_sizes[1], bid_sizes[2], bid_sizes[3]);
 
@@ -1547,6 +1594,8 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				}
 			}
 			// print size details
+			_ab3_dbg("S spike_sell %8s ask_price[0..3]: %4.8f %4.8f %4.8f %4.8f",
+				c_mkts[m1_idx], ask_prices[0], ask_prices[1], ask_prices[2], ask_prices[3]);
 			_ab3_dbg("S spike_sell %8s ask_sizes[0..3]: %4.4f %4.4f %4.4f %4.4f",
 				c_mkts[m1_idx], ask_sizes[0], ask_sizes[1], ask_sizes[2], ask_sizes[3]);
 			// If sell_o_quota still has some, apply to first items in spike_sell_prices_in_use
@@ -2221,12 +2270,12 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				if ((max_size < min_size) && (vol_max_cata >= min_size))
 					max_size = min_size;
 				_ab3_dbg("4.1 f_o_s_avail %5.8lf sug_s %5.8lf max_s %5.8lf "
-					"s_v_ratio %lf vol_max_cata %5.8lf",
+					"s_v_ratio %4.4lf vol_max_cata %5.8lf",
 					first_order_size_avail, suggest_size, max_size,
 					c_single_vol_ratio, vol_max_cata);
 				suggest_size = URN_MIN(first_order_size_avail, suggest_size);
 				suggest_size = URN_MIN(suggest_size, max_size);
-				_ab3_dbgc(RED, "urn_round %lf to %d", suggest_size, c_size_precise);
+				_ab3_dbgc(RED, "urn_round %4.4lf to %d", suggest_size, c_size_precise);
 				suggest_size = urn_round(suggest_size, c_size_precise);
 				_ab3_dbg("4.2 %s %8s %d %4.8lf@%4.4lf vol_min %4.4lf fsfc %d",
 					(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx], agg,
