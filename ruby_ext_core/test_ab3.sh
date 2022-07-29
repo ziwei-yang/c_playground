@@ -12,12 +12,18 @@ cp $DIR/../../uranus/conf/env2.sh $DIR/conf/
 source $DIR/conf/env.sh KEY
 export URANUS_DRYRUN=1
 
-cd $DIR
 rvm use 3.0
-ruby $DIR/extconf.rb && \
+
+cd $DIR/../ruby_ext_mktdata/
+ruby ./extconf.rb && \
+	pwd &&
+	make clean && make install && \
+	cd $DIR \
+	pwd &&
+	ruby ./extconf.rb && \
 	make clean && make install && \
 	ruby ./test_ab3.rb
 
-rm $DIR/conf/key.sh.gpg
-rm $DIR/conf/env.sh
-rm $DIR/conf/env2.sh
+# rm $DIR/conf/key.sh.gpg
+# rm $DIR/conf/env.sh
+# rm $DIR/conf/env2.sh

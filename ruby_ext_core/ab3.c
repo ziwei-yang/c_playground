@@ -1186,10 +1186,14 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				asks_map[i][idx][2] = rbdbl(rb_hash_aref(v_el, str_p_take));
 			}
 		}
-		_ab3_dbg("D mkts %d/%d %8s bid0 p %4.6lf p_tk %4.6lf s %8lf ask0 p %4.6lf p_tk %4.6lf s %8lf",
-			i, my_markets_sz, c_mkts[i],
-			bids_map[i][0][0], bids_map[i][0][2], bids_map[i][0][1],
-			asks_map[i][0][0], asks_map[i][0][2], asks_map[i][0][1]);
+		for (int d=0; d < max_odbk_depth; d++) {
+			_ab3_dbg("D mkts %d/%d %8s "
+				"bid%d p %4.8lf p_tk %4.8lf s %4.4lf "
+				"ask%d p %4.8lf p_tk %4.8lf s %4.4lf",
+				i, my_markets_sz, c_mkts[i],
+				d, bids_map[i][d][0], bids_map[i][d][2], bids_map[i][d][1],
+				d, asks_map[i][d][0], asks_map[i][d][2], asks_map[i][d][1]);
+		}
 		// COST_US - each round 10us
 	}
 	// COST_US 84 - 5 markets
@@ -1819,7 +1823,11 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					int price_candidates_next_idx = 0;
 					for (int p_idx=0; p_idx < 4; p_idx++) {
 						int idx = p_idx_candidates[p_idx]; // 1 2 4 9
+						if (idx >= max_odbk_depth)
+							continue;
 						double p_candi = (*orders_map)[m1_idx][idx][0];
+						_ab3_dbg("\t active p %8s %d %4.8lf ",
+							c_mkts[m1_idx], idx, p_candi);
 						if (p_candi <= 0) continue;
 						if (p_candi != exist_price) {
 							if (t == BUY)
