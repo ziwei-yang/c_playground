@@ -963,8 +963,8 @@ VALUE _new_ab3_chance(
 	} else
 		rb_raise(rb_eTypeError, "invalid cata in _new_ab3_chance()");
 	_ab3_dbg("\tnew %s chance %s", cata, explain);
-	// rb_hash_aset(c, sym_explain, rb_str_new2(explain));
-	rb_hash_aset(c, sym_explain, str_empty);
+	rb_hash_aset(c, sym_explain, rb_str_new2(explain));
+	// rb_hash_aset(c, sym_explain, str_empty);
 	return c;
 }
 #define rbstr(v) ((TYPE(v)==T_STRING) ? RSTRING_PTR(v) : ((TYPE(v)==T_NIL) ? "(N)" : "(?)"))
@@ -2393,7 +2393,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					}
 				}
 				VALUE mo = rborder_new(m1_idx, price, suggest_size, t);
-				rb_hash_aset(mo, str_p_real, p_real);
+				rb_hash_aset(mo, str_p_real, DBL2NUM(p_real));
 				// Main order size of type B/C should be choosen wisely,
 				// according to rules of other markets,
 				// to avoid tiny remain orders.

@@ -1,6 +1,39 @@
 require "urn_core"
 require_relative "../../uranus/trader/ab3"
 
+def check_c_data(res)
+  # Check data is valid to use
+  if res.is_a?(Hash)
+    puts "check_c_data hash"
+    res.each { |k, v|
+      check_c_data(k)
+      check_c_data(v)
+    }
+  elsif res.is_a?(Array)
+    puts "check_c_data array"
+    res.each { |r| check_c_data(r) }
+  elsif res.is_a?(String)
+    puts "check_c_data string"
+    puts res
+    res_d = res.dup
+  elsif res.is_a?(Symbol)
+    puts "check_c_data symbol"
+    res_d = res.to_s.dup
+  elsif res.nil?
+    ;
+  elsif res == true
+    ;
+  elsif res == false
+    ;
+  else
+    puts "check_c_data number"
+    puts res
+    res_d = res+1 # check number functions
+  end
+  res_j = res.to_json # Check data structure
+  puts res_j
+end
+
 def compare_ab3_chances(cata, m, cr, cc)
   puts "chances_by_mkt   #{cata} / #{m} /:"
   # Must be exactly same.
@@ -78,15 +111,20 @@ end
 mode = 'ABC'
 # pair = 'USDT-BAL'
 # markets = ['Binance', 'Bittrex', 'FTX']
-pair = 'BTC-LINK'
-markets = ['Binance', 'Bittrex', 'FTX', 'Kraken', 'Gemini']
-# pair = 'USD-ETH'
+# pair = 'BTC-LINK'
 # markets = ['Binance', 'Bittrex', 'FTX', 'Kraken', 'Gemini']
+pair = 'USD-ETH'
+markets = ['Binance', 'Bittrex', 'FTX', 'Kraken', 'Gemini']
 mode = mode.chars.uniq
 trader = MarketArbitrageTrader.new run_mode:mode, pair:pair, markets:markets
 raise "Should be in dry_run mode" unless trader.dry_run
 
 trader.enable_debug()
+trader.define_singleton_method(:inspect_c_data) { |data|
+  puts "check_c_data called"
+  check_c_data(data)
+}
+
 trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, chances_by_mkt_c, detect_c_t|
   return unless @debug
   print "\n"
