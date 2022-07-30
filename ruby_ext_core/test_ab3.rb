@@ -85,7 +85,6 @@ markets = ['Binance', 'Bittrex', 'FTX', 'Kraken', 'Gemini']
 mode = mode.chars.uniq
 trader = MarketArbitrageTrader.new run_mode:mode, pair:pair, markets:markets
 raise "Should be in dry_run mode" unless trader.dry_run
-trader.enable_c_urn_core()
 
 trader.enable_debug()
 trader.define_singleton_method(:compare_urncore_result) { |chances_by_mkt_r, chances_by_mkt_c, detect_c_t|
