@@ -87,6 +87,7 @@ ID id_my_debug;
 VALUE str_sell, str_buy, str_T, str_p, str_s, str_pair, str_market;
 VALUE str_p_take, str_i, str_status, str_executed, str_remained;
 VALUE str_v, str_executed_v, str_remained_v, str_t, str__alive;
+VALUE str_empty, str_p_real;
 
 /* Init Object.STR_abc = "abc" for persistence usage, stop being recycled by GC */
 static VALUE init_str_const(const char *s) {
@@ -179,6 +180,8 @@ void ab3_init() {
 	str_executed_v = init_str_const("executed_v");
 	str_t = init_str_const("t");
 	str__alive = init_str_const("_alive");
+	str_empty = init_str_const("empty");
+	str_p_real = init_str_const("p_real");
 
 	ab3_inited = true;
 	return;
@@ -923,7 +926,7 @@ VALUE _new_ab3_chance(
 	rb_hash_aset(c, sym_price, rb_hash_aref(mo, str_p));
 	rb_hash_aset(c, sym_type, rb_hash_aref(mo, str_T));
 	rb_hash_aset(c, sym_market, v_m);
-	rb_hash_aset(c, sym_child_type, mo_buy ? rb_str_new2("sell") : rb_str_new2("buy"));
+	rb_hash_aset(c, sym_child_type, mo_buy ? str_sell : str_buy);
 	if (child_price_threshold <= 0) {
 		child_price_threshold = mo_buy ?
 		       (p_real*(1+c_last_order_arbitrage_min)) :
@@ -931,7 +934,7 @@ VALUE _new_ab3_chance(
 	}
 	rb_hash_aset(c, sym_child_price_threshold, DBL2NUM(child_price_threshold));
 	rb_hash_aset(c, sym_ideal_profit, DBL2NUM(ideal_profit));
-	rb_hash_aset(c, sym_cata, rb_str_new2(cata));
+	rb_hash_aset(c, sym_cata, init_str_const(cata));
 	rb_hash_aset(c, sym_suggest_size, rb_hash_aref(mo, str_s));
 	char explain[256];
 	if (strcmp("A", cata) == 0) {
@@ -960,7 +963,8 @@ VALUE _new_ab3_chance(
 	} else
 		rb_raise(rb_eTypeError, "invalid cata in _new_ab3_chance()");
 	_ab3_dbg("\tnew %s chance %s", cata, explain);
-	rb_hash_aset(c, sym_explain, rb_str_new2(explain));
+	// rb_hash_aset(c, sym_explain, rb_str_new2(explain));
+	rb_hash_aset(c, sym_explain, str_empty);
 	return c;
 }
 #define rbstr(v) ((TYPE(v)==T_STRING) ? RSTRING_PTR(v) : ((TYPE(v)==T_NIL) ? "(N)" : "(?)"))
@@ -2389,7 +2393,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					}
 				}
 				VALUE mo = rborder_new(m1_idx, price, suggest_size, t);
-				rb_hash_aset(mo, rb_str_new2("p_real"), p_real);
+				rb_hash_aset(mo, str_p_real, p_real);
 				// Main order size of type B/C should be choosen wisely,
 				// according to rules of other markets,
 				// to avoid tiny remain orders.
@@ -2440,7 +2444,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	for (int i=0; i < my_markets_sz; i++) {
 		if (low_balance_market[i]) {
 			_ab3_dbg("E mark %d %s as low balance", i, c_mkts[i]);
-			rb_ary_push(my_low_balance_market, rb_str_new2(c_mkts[i]));
+			rb_ary_push(my_low_balance_market, cv_mkts[i]);
 		}
 	}
 	rb_ivar_set(self, id_my_low_balance_market, my_low_balance_market);
