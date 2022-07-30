@@ -6,6 +6,33 @@
 
 double urn_round(double f, int precision);
 
+struct timeval _ab3_dbg_start_t;
+#define _ab3_dbg(...) \
+	if (c_my_debug) { \
+		URN_LOGF( __VA_ARGS__ ); \
+		URN_LOGF("\t\t +%6ldms +%9ldus", \
+			urn_msdiff(_ab3_dbg_start_t, urn_global_tv), \
+			urn_usdiff(_ab3_dbg_start_t, urn_global_tv)); \
+	}
+#define _ab3_dbgc(...) \
+	if (c_my_debug) { \
+		URN_LOGF_C( __VA_ARGS__ ); \
+		URN_LOGF("\t\t +%6ldms +%9ldus", \
+			urn_msdiff(_ab3_dbg_start_t, urn_global_tv), \
+			urn_usdiff(_ab3_dbg_start_t, urn_global_tv)); \
+	}
+#define _ab3_dbg_end \
+	if (c_my_debug) { \
+		gettimeofday(&urn_global_tv, NULL); \
+		_ab3_dbg("detect_arbitrage_pattern_c end, cost usec %ld", \
+			urn_usdiff(_ab3_dbg_start_t, urn_global_tv)); \
+	}
+
+#define _compute_shown_price(p_real, rate, type) \
+	(((type) == BUY) ? ((p_real)*(1-(rate))) : ((p_real)/(1-(rate))))
+#define _compute_real_price(p, rate, type) \
+	(((type) == BUY) ? ((p)/(1-(rate))) : ((p)*(1-(rate))))
+
 /* pre-calculate String -> SymID */
 bool ab3_inited = false;
 #define max_odbk_depth 9
@@ -17,6 +44,7 @@ ID id_equalize_order_size;
 ID id_object_id;
 ID id_balance_ttl_cash_asset;
 ID id_future_side_for_close;
+ID id_inspect;
 VALUE sym_orderbook;
 VALUE sym_own_main_orders;
 VALUE sym_own_spike_main_orders;
@@ -89,6 +117,7 @@ void ab3_init() {
 	id_object_id = rb_intern("object_id");
 	id_balance_ttl_cash_asset = rb_intern("balance_ttl_cash_asset");
 	id_future_side_for_close = rb_intern("future_side_for_close");
+	id_inspect = rb_intern("inspect");
 
 	sym_orderbook = ID2SYM(rb_intern("orderbook"));
 	sym_own_main_orders = ID2SYM(rb_intern("own_main_orders"));
@@ -169,6 +198,8 @@ void ab3_init() {
 	((double)((TYPE(v) == T_FIXNUM) ? NUM2LONG(v) : NUM2DBL(v)))
 #define rbnum_to_long(v) \
 	((long)((TYPE(v) == T_FIXNUM) ? NUM2LONG(v) : NUM2DBL(v)))
+#define rbinspect_cstr(v) \
+	RSTRING_PTR(rb_funcall(v, id_inspect, 0))
 
 #define BUY 1
 #define SEL 0
@@ -438,57 +469,6 @@ static void cache_trader_attrs(VALUE self) {
 	URN_LOGF("cache_trader_attrs() done for trader_obj_id %ld", cache_trader_obj_id);
 }
 
-static struct order *rborder_to_order(
-	VALUE v_o,
-	bool abort_on_dead
-) {
-	VALUE v_alive = rb_hash_aref(v_o, str__alive);
-	if (abort_on_dead && (TYPE(v_alive) == T_FALSE))
-		return NULL;
-
-	struct order *o = malloc(sizeof(struct order));
-	strcpy(o->i, RSTRING_PTR(rb_hash_aref(v_o, str_i)));
-	strcpy(o->m, RSTRING_PTR(rb_hash_aref(v_o, str_market)));
-	strcpy(o->status, RSTRING_PTR(rb_hash_aref(v_o, str_status)));
-	o->p = rbnum_to_dbl(rb_hash_aref(v_o, str_p));
-	o->s = rbnum_to_dbl(rb_hash_aref(v_o, str_s));
-	o->executed = rbnum_to_dbl(rb_hash_aref(v_o, str_executed));
-	o->remained = rbnum_to_dbl(rb_hash_aref(v_o, str_remained));
-	if (TYPE(rb_hash_aref(v_o, str_v)) == T_NIL) {
-		o->vol_based = true;
-		o->v = rbnum_to_long(rb_hash_aref(v_o, str_v));
-		o->executed_v = rbnum_to_long(rb_hash_aref(v_o, str_executed_v));
-		o->remained_v = rbnum_to_long(rb_hash_aref(v_o, str_remained_v));
-	} else
-		o->vol_based = false;
-	o->ts_e3 = rbnum_to_long(rb_hash_aref(v_o, str_t));
-	char *type = RSTRING_PTR(rb_hash_aref(v_o, str_T));
-	if (strcmp("buy", type) == 0)
-		o->buy = true;
-	else
-		o->buy = false;
-	o->next = NULL;
-
-	if (TYPE(v_alive) == T_TRUE)
-		o->alive = 1;
-	else if (TYPE(v_alive) == T_FALSE)
-		o->alive = 0;
-	else
-		o->alive = -1;
-
-	if (abort_on_dead) {
-		// decide alive if unknown.
-		if ((o->alive != 1) && (o->alive != 0))
-			if_order_alive(o);
-		if (o->alive == 0) {
-			free(o);
-			return NULL;
-		}
-	}
-
-	o->valid = true;
-	return o;
-}
 static char *rborder_desc(struct order *o) {
 	long sec = o->ts_e3 / 1000;
 	long msec = o->ts_e3 - sec*1000;
@@ -525,6 +505,61 @@ static void order_init(struct order *o) {
 	o->valid = false;
 	o->buy = true;
 	o->vol_based = false;
+}
+
+static struct order *rborder_to_order(
+	VALUE v_o,
+	bool abort_on_dead
+) {
+	VALUE v_alive = rb_hash_aref(v_o, str__alive);
+	if (abort_on_dead && (TYPE(v_alive) == T_FALSE))
+		return NULL;
+
+	struct order *o = malloc(sizeof(struct order));
+	strcpy(o->i, RSTRING_PTR(rb_hash_aref(v_o, str_i)));
+	strcpy(o->m, RSTRING_PTR(rb_hash_aref(v_o, str_market)));
+	strcpy(o->status, RSTRING_PTR(rb_hash_aref(v_o, str_status)));
+	// _ab3_dbg("\t i %s m %s status %s", o->i, o->m, o->status);
+	o->p = rbnum_to_dbl(rb_hash_aref(v_o, str_p));
+	o->s = rbnum_to_dbl(rb_hash_aref(v_o, str_s));
+	o->executed = rbnum_to_dbl(rb_hash_aref(v_o, str_executed));
+	o->remained = rbnum_to_dbl(rb_hash_aref(v_o, str_remained));
+	// _ab3_dbg("\t p %4.8lf s %4.4lf e %4.4lf r %4.4lf", o->p, o->s, o->executed, o->remained);
+	if (TYPE(rb_hash_aref(v_o, str_v)) != T_NIL) {
+		o->vol_based = true;
+		o->v = rbnum_to_long(rb_hash_aref(v_o, str_v));
+		o->executed_v = rbnum_to_long(rb_hash_aref(v_o, str_executed_v));
+		o->remained_v = rbnum_to_long(rb_hash_aref(v_o, str_remained_v));
+	} else
+		o->vol_based = false;
+	o->ts_e3 = rbnum_to_long(rb_hash_aref(v_o, str_t));
+	char *type = RSTRING_PTR(rb_hash_aref(v_o, str_T));
+	if (strcmp("buy", type) == 0)
+		o->buy = true;
+	else
+		o->buy = false;
+	o->next = NULL;
+
+	if (TYPE(v_alive) == T_TRUE)
+		o->alive = 1;
+	else if (TYPE(v_alive) == T_FALSE)
+		o->alive = 0;
+	else
+		o->alive = -1;
+
+	if (abort_on_dead) {
+		// decide alive if unknown.
+		if ((o->alive != 1) && (o->alive != 0))
+			if_order_alive(o);
+		if (o->alive == 0) {
+			free(o);
+			return NULL;
+		}
+	}
+
+	o->valid = true;
+	_ab3_dbg("\tO %s", rborder_desc(o));
+	return o;
 }
 
 /*
@@ -587,32 +622,6 @@ static void _downgrade_order_size_for_all_market(
 	return;
 }
 
-struct timeval _ab3_dbg_start_t;
-#define _ab3_dbg(...) \
-	if (c_my_debug) { \
-		URN_LOGF( __VA_ARGS__ ); \
-		URN_LOGF("\t\t +%6ldms +%9ldus", \
-			urn_msdiff(_ab3_dbg_start_t, urn_global_tv), \
-			urn_usdiff(_ab3_dbg_start_t, urn_global_tv)); \
-	}
-#define _ab3_dbgc(...) \
-	if (c_my_debug) { \
-		URN_LOGF_C( __VA_ARGS__ ); \
-		URN_LOGF("\t\t +%6ldms +%9ldus", \
-			urn_msdiff(_ab3_dbg_start_t, urn_global_tv), \
-			urn_usdiff(_ab3_dbg_start_t, urn_global_tv)); \
-	}
-#define _ab3_dbg_end \
-	if (c_my_debug) { \
-		gettimeofday(&urn_global_tv, NULL); \
-		_ab3_dbg("detect_arbitrage_pattern_c end, cost usec %ld", \
-			urn_usdiff(_ab3_dbg_start_t, urn_global_tv)); \
-	}
-
-#define _compute_shown_price(p_real, rate, type) \
-	(((type) == BUY) ? ((p_real)*(1-(rate))) : ((p_real)/(1-(rate))))
-#define _compute_real_price(p, rate, type) \
-	(((type) == BUY) ? ((p)/(1-(rate))) : ((p)*(1-(rate))))
 //static double _compute_real_price(double p, double rate, int type) {
 //	if (type == BUY) {
 //		return (p/(1-rate));
@@ -1114,6 +1123,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	VALUE v_orders = rb_hash_aref(v_opt, sym_own_main_orders);
 	if (TYPE(v_orders) != T_NIL) {
 		rbary_each(v_orders, idx, max, v_el) {
+			_ab3_dbg("O parsing main %ld/%lu %s", idx, max, rbinspect_cstr(v_el));
 			int m_idx = index_of(my_markets_sz, &c_mkts, RSTRING_PTR(rb_hash_aref(v_el, str_market)));
 			if (m_idx < 0)
 				continue;
@@ -1140,6 +1150,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	v_orders = rb_hash_aref(v_opt, sym_own_spike_main_orders);
 	if (TYPE(v_orders) != T_NIL) {
 		rbary_each(v_orders, idx, max, v_el) {
+			_ab3_dbg("O parsing spik %ld/%lu %s", idx, max, rbinspect_cstr(v_el));
 			int m_idx = index_of(my_markets_sz, &c_mkts, RSTRING_PTR(rb_hash_aref(v_el, str_market)));
 			if (m_idx < 0)
 				continue;
@@ -1164,6 +1175,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	v_orders = rb_hash_aref(v_opt, sym_own_live_orders);
 	if (TYPE(v_orders) != T_NIL) {
 		rbary_each(v_orders, idx, max, v_el) {
+			_ab3_dbg("O parsing live %ld/%lu %s", idx, max, rbinspect_cstr(v_el));
 			int m_idx = index_of(my_markets_sz, &c_mkts, RSTRING_PTR(rb_hash_aref(v_el, str_market)));
 			if (m_idx < 0)
 				continue;
@@ -1184,6 +1196,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	v_orders = rb_hash_aref(v_opt, sym_own_legacy_orders);
 	if (TYPE(v_orders) != T_NIL) {
 		rbary_each(v_orders, idx, max, v_el) {
+			_ab3_dbg("O parsing lgcy %ld/%lu %s", idx, max, rbinspect_cstr(v_el));
 			int m_idx = index_of(my_markets_sz, &c_mkts, RSTRING_PTR(rb_hash_aref(v_el, str_market)));
 			if (m_idx < 0)
 				continue;
@@ -1779,7 +1792,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			long own_live_orders_at_first_age = -1;
 			bool own_live_orders_at_first = false;
 			double exist_price = -1;
-			for (struct order *o = own_live_orders[m1_idx][t]; o != NULL; o=o->next) {
+			for (struct order *o = own_main_orders[m1_idx][t]; o != NULL; o=o->next) {
 				if (o->p == price_1st) {
 					own_live_orders_at_first = true;
 					own_live_orders_at_first_size += (o->remained);
@@ -1792,7 +1805,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				if (exist_price < 0) {
 					exist_price = o->p;
 				} else if (exist_price != (o->p)) {
-					for (struct order *o2 = own_live_orders[m1_idx][t]; o2 != NULL; o2=o2->next)
+					for (struct order *o2 = own_main_orders[m1_idx][t]; o2 != NULL; o2=o2->next)
 						URN_LOG(rborder_desc(o2));
 					rb_raise(rb_eTypeError, "Own main orders prices should be coinsistent.");
 				}
