@@ -368,7 +368,6 @@ static void cache_trader_attrs(VALUE self) {
 	my_markets = rb_ivar_get(self, id_my_markets);
 	my_keep_exist_spike_order = rb_ivar_get(self, id_my_keep_exist_spike_order);
 	my_market_snapshot = rb_ivar_get(self, id_my_market_snapshot);
-	c_vol_max_const = NUM2DBL(rb_ivar_get(self, rb_intern("@vol_max_const")));
 	my_pair = rb_ivar_get(self, id_my_pair);
 	strcpy(c_my_pair, RSTRING_PTR(my_pair));
 	// get c_my_pair_asset and c_my_pair_currency
@@ -1046,6 +1045,8 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 	long idx, max; // for rbary_each()
 	VALUE v_el, v_tmp; // for tmp usage.
 
+	// These instances variables are NOT constants.
+	c_vol_max_const = NUM2DBL(rb_ivar_get(self, rb_intern("@vol_max_const")));
 	c_my_debug = (TYPE(rb_ivar_get(self, id_my_debug)) == T_TRUE) ? true : false;
 	VALUE my_vol_max = rb_ivar_get(self, id_my_vol_max);
 	VALUE my_avg_last = rb_ivar_get(self, id_my_avg_last);
@@ -1057,7 +1058,6 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 		if (TYPE(v_tmp) == T_NIL) continue;
 		main_order_min_num_map[i] = NUM2INT(v_tmp);
 	}
-
 	double single_vol_ratio = NUM2DBL(rb_ivar_get(self, id_my_single_vol_ratio));
 	double my_vol_min = NUM2DBL(rb_ivar_get(self, id_my_vol_min));
 	double my_vol_omit = NUM2DBL(rb_ivar_get(self, id_my_vol_omit));
