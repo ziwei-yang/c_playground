@@ -1833,6 +1833,9 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			// known best price that does not work:
 			// 	lowest price for BIDS, highest for ASKS
 			double last_tried_p = -1;
+			// Save best result for m2 in AGG loop
+			// Add to child_mkt_stat and child_mkt_ct after loop
+			double child_mkt_stat_for_m2[MAX_AB3_MKTS] = {0};
 			for(int agg=0; agg < MAX_AGRSV_TYPES; agg++) {
 				// :yes, :no, :active, :retain
 				_ab3_dbg("0.1 %s %8s agg %d",
@@ -2103,8 +2106,11 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 							c_mkts[m1_idx], c_mkts[m2_idx], agg,
 							m1_idx, agg, m2_idx,
 							order_size_sum, bal_avail);
-						child_mkt_ct[m2_idx] += 1;
-						main_m_match_szsum[m1_idx] += order_size_sum;
+						// !! Dup if multiple Agg hits, count best one.
+						// child_mkt_ct[m2_idx] += 1;
+						// main_m_match_szsum[m1_idx] += order_size_sum;
+						child_mkt_stat_for_m2[m2_idx] = URN_MAX(
+							child_mkt_stat_for_m2[m2_idx], order_size_sum);
 						child_m_choosen ++;
 					} // For m2_idx
 //					_ab3_dbg("2.7 p_real %4.8lf", p_real); // cause Abort trap 6
@@ -2170,6 +2176,15 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				// TODO so a bad aggressive choice would omit other good ones.
 				if (price_choosen) break;
 			} // For agg in [yes no active retain]
+			// Add child_mkt_stat_for_m2 into child_mkt_stat and child_mkt_ct
+			for (int m2_idx=0; m2_idx < my_markets_sz; m2_idx++) {
+				double order_size_sum = child_mkt_stat_for_m2[m2_idx];
+				if (order_size_sum <= 0) continue;
+				child_mkt_ct[m2_idx] += 1;
+				main_m_match_szsum[m1_idx] += order_size_sum;
+				_ab3_dbg("Best match_sz for %8s - %8s %4.4lf",
+					c_mkts[m1_idx], c_mkts[m2_idx], order_size_sum);
+			}
 		} // For m1_idx
 		// Below should be done out of the loop:
 		// @low_balance_market = low_balance_market.uniq.sort
