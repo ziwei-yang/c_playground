@@ -1139,15 +1139,15 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			if (o->buy) {
 				o->next = own_main_orders[m_idx][BUY];
 				own_main_orders[m_idx][BUY] = o;
-				// reserved_bal[m][t] += o['remained']
-				reserved_bal[m_idx][BUY] += o->remained;
-				main_reserved_bal[m_idx][BUY] += o->remained;
-			} else {
-				o->next = own_main_orders[m_idx][SEL];
-				own_main_orders[m_idx][SEL] = o;
 				// reserved_bal[m][t] += (o['p']*o['remained'])
 				reserved_bal[m_idx][BUY] += ((o->p) * (o->remained));
 				main_reserved_bal[m_idx][BUY] += ((o->p) * (o->remained));
+			} else {
+				o->next = own_main_orders[m_idx][SEL];
+				own_main_orders[m_idx][SEL] = o;
+				// reserved_bal[m][t] += o['remained']
+				reserved_bal[m_idx][SEL] += (o->remained);
+				main_reserved_bal[m_idx][SEL] += (o->remained);
 			}
 		}
 	}
@@ -1166,13 +1166,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			if (o->buy) {
 				o->next = own_spike_main_orders[m_idx][BUY];
 				own_spike_main_orders[m_idx][BUY] = o;
-				// reserved_bal[m][t] += o['remained']
-				reserved_bal[m_idx][BUY] += o->remained;
+				// reserved_bal[m][t] += (o['p']*o['remained'])
+				reserved_bal[m_idx][BUY] += ((o->p) * (o->remained));
 			} else {
 				o->next = own_spike_main_orders[m_idx][SEL];
 				own_spike_main_orders[m_idx][SEL] = o;
-				// reserved_bal[m][t] += (o['p']*o['remained'])
-				reserved_bal[m_idx][BUY] += ((o->p) * (o->remained));
+				// reserved_bal[m][t] += o['remained']
+				reserved_bal[m_idx][SEL] += (o->remained);
 			}
 		}
 	}
