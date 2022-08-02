@@ -1265,6 +1265,8 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 
 	/* STEP 3 Detection for case A => "[A] Direct sell and buy" */
 	_ab3_dbg("STEP 3 type A detection started");
+	double best_ideal_profit = 0; // only keep highest chance.
+	VALUE best_a_chance;
 	for (int m1_idx=0; m1_idx < my_markets_sz; m1_idx++) {
 		// check m1 bids and m2 asks, sell at m1 and buy at m2
 		if (!c_run_mode_a) break;
@@ -1272,8 +1274,6 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 		double top_bid_p = bids_map[m1_idx][0][0];
 		double top_bid_p_take = bids_map[m1_idx][0][2];
 		if (top_bid_p <= 0) continue;
-		double best_ideal_profit = 0; // only keep highest chance.
-		VALUE best_chance;
 		for (int m2_idx=0; m2_idx < my_markets_sz; m2_idx++) {
 			if (c_valid_mkts[m2_idx] != true) continue;
 			if (m1_idx == m2_idx) continue;
@@ -1371,15 +1371,14 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				suggest_size, rate_sum);
 			if (ideal_profit > best_ideal_profit) {
 				URN_LOGF("ideal_profit %4.10lf is largest for now "
-					"keep as best_chance for %s",
-					ideal_profit, c_mkts[m1_idx]);
-				best_chance = _new_ab3_chance(self, v_orders, m1_idx, true, -1, ideal_profit, "A");
+					"keep it as best_a_chance", ideal_profit);
+				best_a_chance = _new_ab3_chance(self, v_orders, m1_idx, true, -1, ideal_profit, "A");
 				best_ideal_profit = ideal_profit;
 			}
-		}
-		if (best_ideal_profit > 0)
-			rb_ary_push(v_chances, best_chance);
-	}
+		} // For m2_idx
+	} // For m1_idx
+	if (best_ideal_profit > 0)
+		rb_ary_push(v_chances, best_a_chance);
 
 	/* STEP 4 Detection for case waiting Spike buy/sell */
 
