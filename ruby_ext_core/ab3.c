@@ -751,17 +751,17 @@ static bool _aggressive_arbitrage_orders_c(
 		// mkt_client_ask is the market client of ask orderbook, where bid order should be placed.
 		double max_size = 0;
 		if (type == BUY) {
-			// max_size = mkt_client_ask.max_order_size(pair, type, p)
+			// max_size = mkt_client_ask.max_order_size(pair, opposite_type, p)
 			max_size = NUM2DBL(rb_funcall(
 				mkt_client_ask, id_max_order_size, 3,
-				my_pair, str_buy, DBL2NUM(p))
+				my_pair, str_sell, DBL2NUM(p))
 			);
 		} else if (type == SEL) {
-			// max_size = mkt_client_bid.max_order_size(pair, type, p)
+			// max_size = mkt_client_bid.max_order_size(pair, opposite_type, p)
 			if (max_ask_sz < 0) {
 				max_ask_sz = NUM2DBL(rb_funcall(
 					mkt_client_bid, id_max_order_size, 3,
-					my_pair, str_sell, DBL2NUM(p))
+					my_pair, str_buy, DBL2NUM(p))
 				);
 			}
 			max_size = max_ask_sz;
