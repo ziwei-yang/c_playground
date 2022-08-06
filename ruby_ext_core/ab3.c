@@ -2368,7 +2368,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 					"min_s %4.4lf "
 					"min_bar %4.4lf",
 					(t==BUY ? "BUY" : "SEL"), c_mkts[m1_idx], agg,
-					price, suggest_size, exist_main_order_size,
+					suggest_size, price, exist_main_order_size,
 					c_vol_max_const/main_order_min_num_map[m1_idx],
 					typeBC_max_single_main_order_size,
 					main_order_min_num_map[m1_idx],
@@ -2382,10 +2382,19 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 						suggest_size = exist_main_order_size;
 				if (exist_price_map[t][m1_idx] == price) {
 					double exist_size = main_reserved_bal[m1_idx][t];
-					if (suggest_size < exist_size) continue;
-					_ab3_dbg("Keep own main orders %8s %s",
-						c_mkts[m1_idx], (t==BUY ? "BUY" : "SEL"));
-					suggest_size = exist_size;
+					_ab3_dbg("Found own main orders %8s %s %4.4lf@%4.8lf",
+						c_mkts[m1_idx], (t==BUY ? "BUY" : "SEL"),
+						exist_size, price);
+					/*
+					 * Don't adjust size according to exist main orders.
+					 * Trust adjust_main_orders() could get things done.
+					 */
+					/*
+					if (suggest_size > exist_size) {
+						_ab3_dbg("Keep own main orders size %8s %s",
+							c_mkts[m1_idx], (t==BUY ? "BUY" : "SEL"));
+						suggest_size = exist_size;
+					}*/
 				}
 				for (int m2_idx=0; m2_idx < my_markets_sz; m2_idx++) {
 					_ab3_dbg("Make reserved_child_capacity[%8s]=%4.8f + %4.8f",
@@ -2432,6 +2441,8 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				}
 				// equalize_order_size() and downgrade_order_size_for_all_market()
 				// would shrink order size a little smaller than vol_min
+				_ab3_dbg("adjusted_mo_s %4.4f vol_min %4.4f fsfc %d",
+					adjusted_mo_s, my_vol_min, !future_side_for_close[m1_idx][t]);
 				if (adjusted_mo_s <= 0) continue;
 				if ((adjusted_mo_s < 0.8*my_vol_min) && !future_side_for_close[m1_idx][t])
 					continue;
