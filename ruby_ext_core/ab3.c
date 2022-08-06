@@ -1427,7 +1427,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			// bid_p is higher than avg_last, very abonormal
 			// ask_p is lower than avg_last, very abonormal
 			if ((avg_last > 0) && (URN_ABS(diff(bid_p, avg_last)) > 0.01)) {
-				URN_LOGF_C(RED, "S %8s price B %4.8lf A %4.8lf is too far away from "
+				_ab3_dbgc(RED, "S %8s price B %4.8lf A %4.8lf is too far away from "
 					"@avg_last %4.8lf, skip spike catching",
 					c_mkts[m1_idx], bid_p, ask_p, avg_last);
 				continue;
