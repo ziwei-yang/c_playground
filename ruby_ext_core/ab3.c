@@ -751,26 +751,35 @@ static bool _aggressive_arbitrage_orders_c(
 		// mkt_client_ask is the market client of ask orderbook, where bid order should be placed.
 		double max_size = 0;
 		if (type == BUY) {
-			// max_size = mkt_client_ask.max_order_size(pair, opposite_type, p)
-			max_size = NUM2DBL(rb_funcall(
-				mkt_client_ask, id_max_order_size, 3,
-				my_pair, str_sell, DBL2NUM(p))
-			);
-		} else if (type == SEL) {
 			// max_size = mkt_client_bid.max_order_size(pair, opposite_type, p)
 			if (max_ask_sz < 0) {
 				max_ask_sz = NUM2DBL(rb_funcall(
 					mkt_client_bid, id_max_order_size, 3,
-					my_pair, str_buy, DBL2NUM(p))
+					my_pair, str_sell, DBL2NUM(p))
 				);
 			}
 			max_size = max_ask_sz;
+		} else if (type == SEL) {
+			// max_size = mkt_client_ask.max_order_size(pair, opposite_type, p)
+			max_size = NUM2DBL(rb_funcall(
+				mkt_client_ask, id_max_order_size, 3,
+				my_pair, str_buy, DBL2NUM(p))
+			);
+		}
+		if (max_size < vol_min) {
+			// fall quick, if opposite capacity small
+			_ab3_dbg("max_size %s %4.4lf < %4.4f vol_min, fail quick",
+				(opposite_type == BUY ? "BUY" : "SEL"),
+				max_size, vol_min);
+			return false;
 		}
 		if (s + size_sum >= max_size) {
 			s = max_size - size_sum;
 			scan_status[type][_idx_fin] = 1;
 			balance_limited = true;
-			_ab3_dbg("\tBalance limited, %d max=%4.4lf p=%4.8lf", type, max_size, p);
+			_ab3_dbg("\tBalance limited, %s max=%4.4lf p=%4.8lf",
+				(opposite_type == BUY ? "BUY" : "SEL"),
+				max_size, p);
 		}
 
 		// Compare this price with opposite price.
@@ -848,6 +857,7 @@ static bool _aggressive_arbitrage_orders_c(
 		mkt_client_ask, id_max_order_size, 3,
 		my_pair, str_buy, DBL2NUM(buy_order->p))
 	);
+	_ab3_dbg("\tmax_bid_sz %4.4lf max_ask_sz %4.4lf", max_bid_sz, max_ask_sz);
 	buy_order->s  = URN_MIN(scan_status[SEL][_idx_size_sum], max_bid_sz); // Buy  at ASKS
 	sell_order->s = URN_MIN(scan_status[BUY][_idx_size_sum], max_ask_sz); // Sell at BIDS
 	// Make pair orders have same size.
@@ -967,7 +977,10 @@ VALUE _new_ab3_chance(
 	return c;
 }
 #define rbstr(v) ((TYPE(v)==T_STRING) ? RSTRING_PTR(v) : ((TYPE(v)==T_NIL) ? "(N)" : "(?)"))
-#define rbdbl(v) ((TYPE(v)==T_FLOAT || TYPE(v)==T_FIXNUM || TYPE(v)==T_BIGNUM) ? NUM2DBL(v) : ((TYPE(v)==T_NIL) ? -1 : -1))
+// T_DATA <-> BigDecimal since ruby 2.7+
+#define rbdbl(v) (TYPE(v)==T_FLOAT ? NUM2DBL(v) : \
+			((TYPE(v)==T_FIXNUM || TYPE(v)==T_BIGNUM || TYPE(v)==T_DATA) ? (double)(NUM2LONG(v)) : \
+			((TYPE(v)==T_NIL) ? -1 : -2)))
 static long sprintf_ab3_chance(char *s, VALUE c) {
 	char *original_s = s;
 	VALUE v = rb_hash_aref(c, sym_market);
@@ -1249,6 +1262,7 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				asks_map[i][idx][2] = rbdbl(rb_hash_aref(v_el, str_p_take));
 			}
 		}
+		int error_d = -1;
 		for (int d=0; d < max_odbk_depth; d++) {
 			_ab3_dbg("D mkts %d/%d %8s "
 				"bid%d p %4.8lf p_tk %4.8lf s %4.4lf "
@@ -1256,6 +1270,21 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				i, my_markets_sz, c_mkts[i],
 				d, bids_map[i][d][0], bids_map[i][d][2], bids_map[i][d][1],
 				d, asks_map[i][d][0], asks_map[i][d][2], asks_map[i][d][1]);
+			if (bids_map[i][d][0] < 0 || bids_map[i][d][2] < 0 || bids_map[i][d][1] < 0)
+				error_d = d;
+			if (asks_map[i][d][0] < 0 || asks_map[i][d][2] < 0 || asks_map[i][d][1] < 0)
+				error_d = d;
+		}
+		if (error_d >= 0) {
+			for (int d=0; d < max_odbk_depth; d++) {
+				URN_LOGF("D mkts %d/%d %8s "
+					"bid%d p %4.8lf p_tk %4.8lf s %4.4lf "
+					"ask%d p %4.8lf p_tk %4.8lf s %4.4lf",
+					i, my_markets_sz, c_mkts[i],
+					d, bids_map[i][d][0], bids_map[i][d][2], bids_map[i][d][1],
+					d, asks_map[i][d][0], asks_map[i][d][2], asks_map[i][d][1]);
+			}
+			rb_raise(rb_eTypeError, "ODBK data error");
 		}
 		// COST_US - each round 10us
 	}

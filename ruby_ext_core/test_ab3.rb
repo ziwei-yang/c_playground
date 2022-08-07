@@ -109,8 +109,10 @@ end
 }
 
 mode = 'ABC'
-pair = 'USDT-BAL'
-markets = ['Binance', 'Bittrex', 'FTX']
+# pair = 'USDT-BAL'
+# markets = ['Binance', 'Bittrex', 'FTX']
+pair = 'USDT-1INCH'
+markets = ['Binance', 'Bittrex']
 # pair = 'BTC-LINK'
 # markets = ['Binance', 'Bittrex', 'FTX', 'Kraken', 'Gemini']
 # pair = 'ETH-ZEC'
