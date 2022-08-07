@@ -111,12 +111,10 @@ end
 mode = 'ABC'
 # pair = 'USDT-BAL'
 # markets = ['Binance', 'Bittrex', 'FTX']
-pair = 'USDT-1INCH'
-markets = ['Binance', 'Bittrex']
-# pair = 'BTC-LINK'
-# markets = ['Binance', 'Bittrex', 'FTX', 'Kraken', 'Gemini']
-# pair = 'ETH-ZEC'
-# markets = ['Binance', 'Bittrex', 'Gemini']
+pair = 'BTC-LINK'
+markets = ['Binance', 'Bittrex', 'FTX', 'Kraken', 'Gemini']
+# pair = 'USDT-1INCH'
+# markets = ['Binance', 'Bittrex']
 mode = mode.chars.uniq
 trader = MarketArbitrageTrader.new run_mode:mode, pair:pair, markets:markets
 raise "Should be in dry_run mode" unless trader.dry_run
