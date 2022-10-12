@@ -1041,10 +1041,12 @@ int rbv_w_dbl_comparitor(const void *c1, const void *c2) {
 }
 
 static void _free_order_chain(struct order *o) {
+	struct order *nxt_o = NULL;
 	while(1) {
 		if (o == NULL) return;
-		o = o->next;
+		nxt_o = o->next;
 		free(o);
+		o = nxt_o;
 	}
 }
 
