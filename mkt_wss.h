@@ -623,36 +623,39 @@ static void print_odbk(int pairid) {
 	URN_DEBUGF("orderbook[%3d] %20s bids %p->%p asks %p->%p", pairid, pair, bids, bids->data, asks, asks->data);
 	urn_porder *a = NULL;
 	urn_porder *b = NULL;
+	void *ap=NULL, *bp=NULL;
 	do {
 		if (asks != NULL) {
+			ap = asks;
 			a = (urn_porder *)(asks->data);
 			asks = asks->next;
 		} else
 			a = NULL;
 		if (bids != NULL) {
+			bp = bids;
 			b = (urn_porder *)(bids->data);
 			bids = bids->next;
 		} else
 			b = NULL;
 
 		if (b != NULL && a != NULL) {
-			printf("%2d %20s %20s  -  %20s %20s\n",
-				idx,
+			printf("%2d %p %20s %20s  -  %20s %20s %p\n",
+				idx, bp,
 				urn_inum_str(b->p), urn_inum_str(b->s),
-				urn_inum_str(a->p), urn_inum_str(a->s)
+				urn_inum_str(a->p), urn_inum_str(a->s), ap
 			);
 		} else if (b != NULL) {
-			URN_DEBUGF("orderbook[%3d] %20s %3d bid %p ask %p", pairid, pair, idx, b, a);
-			printf("%2d %20s %20s  -  %20s %20s\n",
-				idx,
+			// URN_DEBUGF("orderbook[%3d] %20s %3d bid %p ask %p", pairid, pair, idx, b, a);
+			printf("%2d %p %20s %20s  -  %20s %20s\n",
+				idx, bp,
 				urn_inum_str(b->p), urn_inum_str(b->s),
 				"", ""
 			);
 		} else if (a != NULL) {
-			URN_DEBUGF("orderbook[%3d] %20s %3d bid %p ask %p", pairid, pair, idx, b, a);
-			printf("%2d %20s %20s  -  %20s %20s\n",
-				idx, "", "",
-				urn_inum_str(a->p), urn_inum_str(a->s)
+			// URN_DEBUGF("orderbook[%3d] %20s %3d bid %p ask %p", pairid, pair, idx, b, a);
+			printf("%2d %p %20s %20s  -  %20s %20s %p\n",
+				idx, NULL, "", "",
+				urn_inum_str(a->p), urn_inum_str(a->s), ap
 			);
 		} else
 			printf("%2d NULL - NULL \n", idx);
@@ -875,6 +878,115 @@ void mkt_wss_odbk_insert(int pairid, urn_inum *p, urn_inum *s, bool buy) {
 			askct_arr[pairid]++;
 		asks_arr[pairid] = asks;
 		asks->prev = NULL;
+	}
+}
+
+/* update new top order, trim records with price out of bound */
+void mkt_wss_odbk_update_top(int pairid, urn_inum *p, urn_inum *s, bool buy) {
+	GList *bids = bids_arr[pairid];
+	GList *asks = asks_arr[pairid];
+	GList *node = buy ? bids : asks;
+	newodbk_arr[pairid] ++;
+	if (buy)
+		newodbk_b_arr[pairid] ++;
+	else
+		newodbk_a_arr[pairid] ++;
+
+	// Find node outside or on the price
+	int check_idx = -1;
+	GList *last_valid_n = NULL;
+	int removed_ct = 0;
+	// bids from low to high, reversed
+	// asks from high to low, reversed
+	URN_DEBUGF("node bids[0] %p asks[0] %p", bids_arr[pairid], asks_arr[pairid]);
+	while(true) {
+		if (node == NULL)
+			break;
+		if (node->next == NULL && node->data == NULL)
+			break;
+		if (node->next != NULL && node->data == NULL)
+			URN_FATAL("GList->next is not NULL but ->data is NULL", EINVAL);
+
+		check_idx++;
+		URN_DEBUGF("check  node %p", node);
+
+		int cmpv = urn_inum_cmp(p, ((urn_porder *)(node->data))->p);
+		URN_DEBUGF("cmp %s %s %s = %d",
+				(buy ? "BUY" : "SEL"),
+				urn_inum_str(p),
+				urn_inum_str(((urn_porder *)(node->data))->p),
+				cmpv
+			  );
+		bool outbound = false;
+		if (buy && (cmpv <= 0)) outbound = true;
+		if ((!buy) && (cmpv >= 0)) outbound = true;
+		if (!outbound) {
+			last_valid_n = node;
+			node = node->next;
+			continue;
+		}
+		URN_DEBUG("outbound is true, remove from here to the end.");
+		last_valid_n = node->prev;
+		if (last_valid_n != NULL)
+			last_valid_n->next = NULL;
+		while(true) {
+			if (node->data != NULL) {
+				URN_DEBUGF("remove node %p", node);
+				urn_porder_free(node->data);
+				removed_ct ++;
+			}
+			GList *next = node->next;
+			g_list_free_1(node);
+			if(next == NULL)
+				break;
+			node = next;
+		}
+		break;
+	}
+	if (buy) {
+		bidct_arr[pairid] -= removed_ct;
+		if (bidct_arr[pairid] == 0)
+			bids_arr[pairid] = NULL;
+	} else {
+		askct_arr[pairid] -= removed_ct;
+		if (askct_arr[pairid] == 0)
+			asks_arr[pairid] = NULL;
+	}
+
+	urn_porder *o = urn_porder_alloc(NULL, p, s, buy, 0);
+	GList* n = g_list_alloc();
+	n->data = o;
+	n->prev = NULL;
+	n->next = NULL;
+	URN_DEBUGF("Add top node %p at pos %d/%d, %d removed",
+		n, check_idx,
+		(buy ? bidct_arr[pairid] : askct_arr[pairid]),
+		removed_ct);
+	// Add current o at the prev->next (pos: check_idx)
+	if (buy) {
+		if (bidct_arr[pairid] == 0)
+			bids_arr[pairid] = n;
+		else {
+			last_valid_n->next = n;
+			n->prev = last_valid_n;
+		}
+		bidct_arr[pairid] ++;
+		if (bidct_arr[pairid] > MAX_DEPTH) {
+			bids_arr[pairid] = remove_top_porder(bids);
+			bidct_arr[pairid] --;
+		}
+	} else {
+		if (askct_arr[pairid] == 0)
+			asks_arr[pairid] = n;
+		else {
+			last_valid_n->next = n;
+			n->prev = last_valid_n;
+		}
+		askct_arr[pairid] ++;
+		if (askct_arr[pairid] > MAX_DEPTH) {
+			asks_arr[pairid] = remove_top_porder(asks);
+			askct_arr[pairid] --;
+		}
 	}
 }
 
