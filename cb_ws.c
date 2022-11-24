@@ -213,7 +213,7 @@ int on_wss_msg(char *msg, size_t len) {
 		urn_hmap_getptr(trade_chn_to_pairid, product_id, &pairid);
 		if (pairid != 0) {
 			char *trade_pair = pair_arr[pairid];
-			URN_DEBUGF("\t -> odbk pair ticker   %lu %s", pairid, trade_pair, ts_e6);
+			URN_DEBUGF("\t -> odbk pair ticker   %lu %s %ld", pairid, trade_pair, ts_e6);
 			URN_GO_FINAL_ON_RV(on_tick(pairid, ts_e6, jroot), "Err in tick_updated()")
 			URN_GO_FINAL_ON_RV(tick_updated(pairid), "Err in tick_updated()")
 			goto final;
