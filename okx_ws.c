@@ -51,7 +51,7 @@ void mkt_data_tick_channel(char *sym, char *chn) { sprintf(chn, "%s", sym); }
 
 int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_snpsht_chns, const char**tick_chns) {
 	// Command includes header, instrument(4), [odbk(2), trade(1)] x chn_ct
-	char *cmd = malloc(64*(6+chn_ct));
+	char *cmd = malloc(64*(4+3*chn_ct));
 	int ct = 0;
 	ct += sprintf(cmd+ct, "{\"op\":\"subscribe\",\"args\":[\n");
 	ct += sprintf(cmd+ct, "  {\"channel\":\"instruments\",\"instType\":\"SWAP\"},\n");
