@@ -164,7 +164,7 @@ int parse_n_insert_odbk_porder(int pairid, bool buy, double lot, yyjson_val *v, 
 			urn_inum_alloc(&p, yyjson_get_str(v_el));
 		} else if (el_ct == 1) { // size
 			urn_inum_alloc(&s, yyjson_get_str(v_el));
-			if (lot != 1)
+			if ((lot != 0) && (lot != 1))
 				urn_inum_from_db(s, lot * urn_inum_to_db(s));
 		}
 		el_ct ++;
@@ -259,7 +259,7 @@ int on_tick(int pairid, double lot, yyjson_val *jdata) {
 		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "sz"), "No sz", EINVAL);
 		URN_RET_ON_NULL(szstr = yyjson_get_str(jval), "No sz str", EINVAL);
 		urn_inum_parse(&s, szstr);
-		if (lot != 1)
+		if ((lot != 0) && (lot != 1))
 			urn_inum_from_db(&s, lot * urn_inum_to_db(&s));
 
 		urn_tick_append(&(odbk_shmptr->ticks[pairid]), buy, &p, &s, ts_e6);
