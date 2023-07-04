@@ -582,8 +582,9 @@ static struct order *rborder_to_order(
  */
 // Use _format_price() to set adjusted size, SEL means ceil
 // Use _format_price() to set adjusted size, BUY means floor
+// testcase: _format_price(p=0.00000249*0.955=0.00000237795, step=1e-9, type=BUY) == 0.000002377
 static double _format_price(double p, double step, int type) {
-	long toint = 10000000000; // 10^11 is precise enough.
+	long toint = 1000000000000; // 10^12 is precise enough.
 	long step_i = lround(step * toint);
 	long price_i = lround(p * toint);
 	long new_price_i = price_i / step_i * step_i;
