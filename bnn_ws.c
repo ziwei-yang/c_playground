@@ -21,12 +21,14 @@ char *preprocess_pair(char *pair) {
 	if (pair == NULL) URN_FATAL("pair is NULL", EINVAL);
 	int slen = strlen(pair);
 	if (bnn_wss_mode == 0) { // SPOT mode
-		// BUSD-ASSET -> USD-ASSET
-		if (slen > 5 && pair[0] == 'B' && pair[1] == 'U' &&
-				pair[2] == 'S' && pair[3] == 'D' && pair[4] == '-') {
-			// move 1 forward, strcpy(n, n+1) crashes on macos
-			for (int i=0; i<slen; i++)
-				pair[i] = pair[i+1];
+		// FDUSD-ASSET -> USD-ASSET
+		if (slen > 6 && pair[0] == 'F' && pair[1] == 'D' &&
+				pair[2] == 'U' && pair[3] == 'S' && pair[4] == 'D' && pair[5] == '-') {
+			// move 2 forward, strcpy(n, n+1) crashes on macos
+			for (int i=0; i<=slen-2; i++)
+				pair[i] = pair[i+2];
+			pair[slen-1] = 0;
+			pair[slen] = 0;
 			return pair;
 		}
 		return pair;
@@ -35,8 +37,8 @@ char *preprocess_pair(char *pair) {
 }
 
 int exchange_sym_alloc(urn_pair *pair, char **str) {
-	int slen = strlen(pair->name);
-	*str = malloc(slen+2);
+	int slen = strlen(pair->name) + 8; // Enough space for tranforming
+	*str = malloc(slen);
 	if ((*str) == NULL) return ENOMEM;
 	if (bnn_wss_mode == 0) { // SPOT mode
 		if (pair->expiry != NULL)
@@ -45,7 +47,7 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 		// USD-BTC   ->  btcbusd
 		if (strcmp(pair->currency, "USD") == 0) {
 			// see preprocess_pair()
-			sprintf(*str, "%sBUSD", pair->asset);
+			sprintf(*str, "%sFDUSD", pair->asset);
 		} else
 			sprintf(*str, "%s%s", pair->asset, pair->currency);
 		urn_s_downcase(*str, slen);
