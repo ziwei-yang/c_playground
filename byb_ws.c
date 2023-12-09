@@ -29,13 +29,13 @@ void mkt_data_set_exchange(char *s) {
 	char *exch = getenv("uranus_spider_exchange");
 	if (exch == NULL) {
 		byb_wss_mode = 1;
-		sprintf(s, "BybitU");
-	} else if (strcasecmp(exch, "bybitu") == 0) {
+		sprintf(s, "BybitL"); // Linear
+	} else if (strcasecmp(exch, "bybitl") == 0) {
 		byb_wss_mode = 1;
-		sprintf(s, "BybitU");
-	} else if (strcasecmp(exch, "bybit") == 0) {
+		sprintf(s, "BybitL"); // Linear
+	} else if (strcasecmp(exch, "bybiti") == 0) {
 		byb_wss_mode = 0;
-		sprintf(s, "Bybit");
+		sprintf(s, "BybitI"); // Inverse
 	} else
 		URN_FATAL(exch, EINVAL);
 }
