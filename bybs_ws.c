@@ -78,16 +78,7 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	return 0;
 }
 
-void bybits_req_heartbeat() {
-	wss_req_s[wss_req_i] = malloc(16);
-	strcpy(wss_req_s[wss_req_i], "{\"op\": \"ping\"}");
-	URN_DEBUGF("set req heartbeat %d : %s", wss_req_i, wss_req_s[wss_req_i]);
-}
-
 int on_wss_msg(char *msg, size_t len) {
-	// stat every few seconds
-	if ((wss_stat_ct >> wss_stat_per_e) > 0)
-		bybits_req_heartbeat();
 	int rv = 0;
 	yyjson_doc *jdoc = NULL;
 	yyjson_val *jroot = NULL;
