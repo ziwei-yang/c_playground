@@ -574,6 +574,31 @@ int urn_tick_get(urn_ticks *ticks, int idx, bool *buy, urn_inum *p, urn_inum *s,
 	// URN_LOGF("read urn_ticks %hu %hhu %lu", i, *buy, *ts_e6);
 	return 0;
 }
+int urn_tick_get_ts_e6(urn_ticks *ticks, int idx, unsigned long *ts_e6) {
+	if (idx >= URN_TICK_LENTH) return ERANGE;
+	unsigned short i = (ticks->latest_idx + URN_TICK_LENTH - idx) % URN_TICK_LENTH;
+	if (i > ticks->latest_idx && i < ticks->oldest_idx) return ERANGE;
+	if (ticks->tickts_e6[i] == 0) return ERANGE;
+	*ts_e6 = ticks->tickts_e6[i];
+	return 0;
+}
+int urn_sprintf_tick_json(urn_ticks *ticks, int idx, char *s) {
+	if (idx >= URN_TICK_LENTH) return 0;
+	unsigned short i = (ticks->latest_idx + URN_TICK_LENTH - idx) % URN_TICK_LENTH;
+	if (i > ticks->latest_idx && i < ticks->oldest_idx) return 0;
+	if (ticks->tickts_e6[i] == 0) return 0;
+	int ct = 0;
+	ct += sprintf(s+ct, "{\"p\":");
+	ct += urn_inum_sprintf(&(ticks->tickp[i]), s+ct);
+	ct += sprintf(s+ct, ",\"s\":");
+	ct += urn_inum_sprintf(&(ticks->ticks[i]), s+ct);
+	if (ticks->tickB[i])
+		ct += sprintf(s+ct, ",\"T\":\"buy\"");
+	else
+		ct += sprintf(s+ct, ",\"T\":\"sell\"");
+	ct += sprintf(s+ct, ",\"t\":%lu}", ticks->tickts_e6[i] / 1000);
+	return ct;
+}
 
 // First data is a 512 pair name index
 // For each pair, repeatly swap writing in 2 caches [ready, dirty] <-> [dirty, ready]

@@ -141,6 +141,8 @@ unsigned int  brdcst_max_speed = 1000;
 unsigned int  brdcst_stat_rd_ct;
 unsigned int  brdcst_stat_ct;
 unsigned int  brdcst_stat_t;
+// Last tick ts_e6 broadcast
+unsigned long brdcst_tick_ts_e6[MAX_PAIRS];
 
 // BybitU or Bybit
 char         exchange[32];
@@ -190,6 +192,7 @@ int main(int argc, char **argv) {
 		pub_odbk_key_arr[i] = NULL;
 		pub_tick_chn_arr[i] = NULL;
 		pub_tick_key_arr[i] = NULL;
+		brdcst_tick_ts_e6[i] = 0;
 #ifdef PUB_LESS_ON_ZERO_LISTENER
 		brdcst_listener_arr[i] = 0;
 		brdcst_t_arr[i].tv_sec = 0;
@@ -370,19 +373,29 @@ int wss_connect() {
 struct timeval brdcst_start_t;
 struct timeval brdcst_end_t;
 /* every time broadcast() only sends async req and collect replies from last time*/
-int    brdcst_last_data_ct=0;
+int    brdcst_odbk_data_ct=0;
+int    brdcst_tick_data_ct=0;
 bool   brdcst_last_w_snapshot=false;
-// build broadcast json
+// build broadcast json for orderbook
 // [bids, asks, t, mkt_t]
 // for each order:
 // 	strlen({"p":X.X,"s":X.X}) = 13+4X
 // total orderbook len:
 // 	2 * DEPTH * (13 + 4X)
-// timestamp len = 1655250053846 = 13
+// timestamp len(1655250053846) = 13
 // [bids, asks, ts, ts] len:
-// 	2 * DEPTH * (13 + 4X) + 26
-#define MAX_BRDCST_LEN (2 * MAX_DEPTH * (13 + 4*URN_INUM_PRECISE) + 26)
+// 	2 * DEPTH * (13 + 4X + 1) + 13 + 9
+#define MAX_BRDCST_LEN (2 * MAX_DEPTH * (13 + 4*URN_INUM_PRECISE + 1) + 32)
 char   brdcst_str[MAX_BRDCST_LEN];
+// build broadcast json for new trades
+// [trades, t]
+// for each trade:
+// 	strlen({"T":"sell","p":X.X,"s":X.X,"t":1705295278394542}) = 45+4X
+// timestamp len(1655250053846) = 13
+// [trades, t] len:
+//      TICK_LEN * (45+4X+1) + 13 + 5
+#define MAX_BRDCST_TICKJSON_LEN (URN_TICK_LENTH * (45 + 4*URN_INUM_PRECISE + 1) + 32)
+char   brdcst_tick_str[MAX_BRDCST_TICKJSON_LEN];
 int    brdcst_pairs[MAX_PAIRS];
 static int broadcast() {
 	// less than Xms = X*1_000_000 ns, return
@@ -400,14 +413,16 @@ static int broadcast() {
 	// Every stat round, 1/8 chance to write full snapshot.
 	bool write_snapshot = false;
 	long long listener_ttl_ct = 0;
+	int odbk_pub_ct = 0;
+	int tick_pub_ct = 0;
 
 if (pub_redis) {
 	URN_GO_FINAL_ON_RV(redis->err, "redis context err");
 	/* only collect replies from last time */
 	long long listener_ct = 0;
 	redisReply *reply = NULL;
-	URN_DEBUGF("Checking replies last time %d %d", brdcst_last_data_ct, brdcst_last_w_snapshot);
-	for (int i=0; i<brdcst_last_data_ct; i++) {
+	URN_DEBUGF("Checking replies last time %d %d %d", brdcst_odbk_data_ct, brdcst_last_w_snapshot, brdcst_tick_data_ct);
+	for (int i=0; i<brdcst_odbk_data_ct; i++) {
 		rv = redisGetReply(redis, (void**)&reply);
 		URN_GO_FINAL_ON_RV(rv, "Redis get reply code error");
 		int pairid = brdcst_pairs[i];
@@ -424,6 +439,12 @@ if (pub_redis) {
 	#endif
 		listener_ttl_ct += listener_ct;
 	}
+	brdcst_odbk_data_ct = 0;
+	for (int i=0; i<brdcst_tick_data_ct; i++) {
+		rv = redisGetReply(redis, (void**)&reply);
+		URN_GO_FINAL_ON_RV(rv, "Redis get reply code error");
+	}
+	brdcst_tick_data_ct = 0;
 
 	write_snapshot = do_stat && ((_tmp_clock.tv_nsec & 8) < 1);
 	if (write_snapshot)
@@ -433,9 +454,10 @@ if (pub_redis) {
 }
 
 	/* broadcast this time */
-	int data_ct = 0;
+	short odbk_pub_redis[MAX_PAIRS];
 	char *s = brdcst_str;
 	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
+		odbk_pub_redis[pairid] = 0;
 		if ((!write_snapshot) && (newodbk_arr[pairid] <= 0))
 			continue;
 
@@ -476,16 +498,51 @@ if (pub_redis) {
 			URN_DEBUGF("also snapshot to %s", pub_odbk_key_arr[pairid]);
 			redisAppendCommand(redis, "SET %s %s", pub_odbk_key_arr[pairid], s);
 		}
+
+		odbk_pub_redis[pairid] = 1;
 }
+
 		newodbk_arr[pairid] = 0; // reset new odbk ct;
 		newodbk_a_arr[pairid] = 0; // reset new odbk ct;
 		newodbk_b_arr[pairid] = 0; // reset new odbk ct;
-		brdcst_pairs[data_ct] = pairid;
-		data_ct ++;
+		brdcst_pairs[odbk_pub_ct] = pairid;
+		odbk_pub_ct ++;
 	}
-	URN_DEBUGF("broadcast check full=%d stat=%d data_ct=%d", write_snapshot, do_stat, data_ct);
-	if (data_ct == 0)
+	URN_DEBUGF("broadcast check full=%d stat=%d odbk_pub_ct=%d", write_snapshot, do_stat, odbk_pub_ct);
+	if (odbk_pub_ct == 0)
 		goto final;
+
+	// If orderbook is pub to redis, do same to new ticks.
+if (pub_redis) {
+	for (int pairid = 1; pairid <= max_pair_id; pairid ++) { // The 0 pairid is NULL
+		if (odbk_pub_redis[pairid] <= 0) continue;
+		char *s = brdcst_tick_str;
+		int ct = 0;
+		*(s+ct) = '['; ct++;
+		*(s+ct) = '['; ct++;
+		unsigned long tick_ts_e6 = 0;
+		int new_tick_num = 0;
+		for (int i = 0; i < URN_TICK_LENTH; i++) {
+			int rv = urn_tick_get_ts_e6(&(odbk_shmptr->ticks[pairid]), i, &tick_ts_e6);
+			if (rv != 0) break; // ERANGE
+			if (tick_ts_e6 <= brdcst_tick_ts_e6[pairid]) continue;
+			URN_DEBUGF("prepare str for ts_e6: %lu > %lu", tick_ts_e6, brdcst_tick_ts_e6[pairid]);
+			new_tick_num ++;
+			ct += urn_sprintf_tick_json(&(odbk_shmptr->ticks[pairid]), i, s+ct);
+			brdcst_tick_ts_e6[pairid] = tick_ts_e6;
+			*(s+ct) = ','; ct++;
+		}
+		if (new_tick_num <= 0) continue;
+
+		*(s+ct-1) = ']'; // Overwrite last comma with
+		ct += sprintf(s+ct, ",%ld%03ld]",
+			brdcst_start_t.tv_sec,
+			(long)(brdcst_start_t.tv_usec/1000));
+		URN_DEBUG("broadcast trades: %s", s);
+		redisAppendCommand(redis, "PUBLISH %s %s", pub_tick_chn_arr[pairid], s);
+		tick_pub_ct ++;
+	}
+}
 
 	brdcst_stat_rd_ct ++;
 
@@ -525,7 +582,7 @@ if (pub_redis) {
 if (pub_redis) {
 		URN_LOGF_C(GREEN, "--> %d/s %dr/s in %d, every %ldms, %4.2fms > %d chn, last: %lld ears %s",
 			speed, brdcst_stat_rd_ct/diff, diff, brdcst_interval_ms,
-			(float)cost_us/1000.f, data_ct, listener_ttl_ct,
+			(float)cost_us/1000.f, odbk_pub_ct, listener_ttl_ct,
 			(write_snapshot ? "FULL" : ""));
 } else {
 		URN_LOGF_C(GREEN, "--> %d/s %dr/s in %d, every %ldms",
@@ -537,7 +594,8 @@ if (pub_redis) {
 	}
 
 final:
-	brdcst_last_data_ct = data_ct;
+	brdcst_odbk_data_ct = odbk_pub_ct;
+	brdcst_tick_data_ct = tick_pub_ct;
 	brdcst_last_w_snapshot = write_snapshot;
 	return rv;
 }
