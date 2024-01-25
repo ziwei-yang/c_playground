@@ -77,8 +77,6 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 }
 
 // Gemini wss json message might be sliced.
-char wss_msg_buffer[4*1024*1024];
-size_t wss_msg_sz = 0;
 int on_wss_msg(char *msg, size_t len) {
 	int rv = 0;
 	yyjson_doc *jdoc = NULL;
@@ -87,39 +85,9 @@ int on_wss_msg(char *msg, size_t len) {
 
 	URN_DEBUGF("on_wss_msg %zu %.*s", len, URN_MIN(1024, ((int)len)), msg);
 
-	if (wss_msg_sz == 0) {
-		if (msg[0] != '{') {
-			URN_WARNF("Not start with {\n%s", msg);
-			wss_msg_sz = 0; // clear buffer size
-			goto error;
-		} else if (msg[len-1] != '}') {
-			// Stack msg into wss_msg_buffer
-			URN_LOGF("Stack wss msg sz %lu into buffer for whole json %lu", len, wss_msg_sz);
-			strncpy(wss_msg_buffer+wss_msg_sz, msg, len);
-			wss_msg_sz += len;
-			wss_msg_buffer[wss_msg_sz] = '\0';
-			goto final;
-		} else {
-			wss_msg_sz = 0; // clear buffer size
-			// Parsing key values from json
-			jdoc = yyjson_read(msg, len, 0);
-			jroot = yyjson_doc_get_root(jdoc);
-		}
-	} else {
-		// Stack msg into wss_msg_buffer first, decide later
-		strncpy(wss_msg_buffer+wss_msg_sz, msg, len);
-		wss_msg_sz += len;
-		wss_msg_buffer[wss_msg_sz] = '\0';
-		if (msg[len-1] != '}') {
-			goto final;
-		} else {
-			// Parsing key values from buffer
-			jdoc = yyjson_read(wss_msg_buffer, wss_msg_sz, 0);
-			jroot = yyjson_doc_get_root(jdoc);
-			wss_msg_sz = 0; // clear buffer size
-		}
-	}
-
+	// Parsing key values from json
+	jdoc = yyjson_read(msg, len, 0);
+	jroot = yyjson_doc_get_root(jdoc);
 
 	URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "type"), "No type", EINVAL);
 	const char *type = yyjson_get_str(jval);

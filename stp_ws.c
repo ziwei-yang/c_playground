@@ -132,15 +132,12 @@ int bitstamp_wss_cancel_channel(const char *channel) {
 	return 0;
 }
 
-char *last_half_msg = NULL;
 int on_wss_msg(char *msg, size_t len) {
 	int rv = 0;
 	yyjson_doc *jdoc = NULL;
 	yyjson_val *jroot = NULL;
 	yyjson_val *jval = NULL;
 	yyjson_val *jdata = NULL;
-	bool        keep_last_half_msg = false;
-	bool        half_msg_matched = false;
 
 	URN_DEBUGF("on_wss_msg %zu %.*s", len, URN_MIN(1024, ((int)len)), msg);
 
@@ -150,46 +147,8 @@ int on_wss_msg(char *msg, size_t len) {
 
 	jval = yyjson_obj_get(jroot, "event");
 	if (jval == NULL) {
-		// Bitstamp msg might be split into 2 msg, save first half.
-		if (msg[0] == '{') {
-			if (last_half_msg != NULL) {
-				URN_WARNF("on_wss_msg discard half json msg %s", last_half_msg);
-				free(last_half_msg);
-				last_half_msg = NULL;
-			}
-			keep_last_half_msg = true;
-			last_half_msg = malloc(len+1);
-			strncpy(last_half_msg, msg, len);
-			last_half_msg[len] = '\0';
-			URN_LOGF("on_wss_msg save half json msg %lu", len);
-			goto final;
-		} else if (msg[len-1] == '}' && last_half_msg != NULL) {
-			// match last half msg and parse again.
-			size_t last_len = strlen(last_half_msg);
-			char *full_msg = malloc(len + last_len + 1);
-			strncpy(full_msg, last_half_msg, last_len);
-			strncpy(full_msg+last_len, msg, len);
-			full_msg[last_len+len] = '\0';
-			if (jdoc != NULL) yyjson_doc_free(jdoc);
-			jdoc = yyjson_read(full_msg, len+last_len, 0);
-			jroot = yyjson_doc_get_root(jdoc);
-			jval = yyjson_obj_get(jroot, "event");
-			// free last_half_msg and replace it with full_msg
-			// So full_msg could be free at last;
-			free(last_half_msg);
-			last_half_msg = full_msg;
-			if (jval == NULL) {
-				URN_WARNF("on_wss_msg combine msg failed\n%s\n%s\n-->\n%s",
-					last_half_msg, msg, full_msg);
-				goto final;
-			} else {
-				URN_LOG("on_wss_msg combine msg matched");
-				half_msg_matched = true;
-			}
-		} else {
-			URN_WARNF("on_wss_msg unexpect no event\n%s", msg);
-			goto final;
-		}
+		URN_WARNF("on_wss_msg unexpect no event\n%s", msg);
+		goto final;
 	}
 	const char *event = yyjson_get_str(jval);
 	URN_RET_ON_NULL(event, "Has event but no str val", EINVAL);
@@ -263,14 +222,6 @@ error:
 	URN_GO_FINAL_ON_RV(EINVAL, msg);
 
 final:
-	if ((!keep_last_half_msg) && last_half_msg != NULL) {
-		if (!half_msg_matched) {
-			URN_WARNF("on_wss_msg discard half json msg, %s\ncurrent one:\n%s",
-				last_half_msg, msg);
-		}
-		free(last_half_msg);
-		last_half_msg = NULL;
-	}
 	if (jdoc != NULL) yyjson_doc_free(jdoc);
 	return rv;
 }

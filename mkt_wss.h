@@ -34,6 +34,9 @@
 #endif
 #endif
 
+#define URN_WSS_AUTO_CONCAT_JSON
+#define partial_msg_sz_max (4*1024*1024) // 4MB as message chunk cache
+
 ///////////// Interface //////////////
 // To use mkt_data.h, must implement below methods:
 
@@ -249,6 +252,15 @@ if (pub_redis) {
 	return 0;
 }
 
+#ifdef URN_WSS_AUTO_CONCAT_JSON
+int parse_n_check_valid_json(char* str, int len) {
+	yyjson_doc *jdoc = yyjson_read(str, len, 0);
+	if (jdoc == NULL) return EINVAL;
+	yyjson_doc_free(jdoc);
+	return 0;
+}
+#endif
+
 int wss_req_next(nng_stream *stream) {
 	// reset timer no matter did req or not.
 	// Don't come here every round.
@@ -294,6 +306,8 @@ int wss_connect() {
 	nng_stream *stream = NULL;
 
 	// coinbase snapshot msg larger than 256KB, 4MB is better
+	int partial_msg_sz = 0;
+	char *partial_msg = malloc(partial_msg_sz_max);
 	int recv_buflen = 4*1024*1024;
 	char *recv_buf = malloc(recv_buflen);
 	if (recv_buf == NULL)
@@ -345,7 +359,47 @@ int wss_connect() {
 		// only 0..recv_bytes is message received this time.
 		// terminate it, some message does not have '\0\ at last
 		recv_buf[recv_bytes] = '\0';
+#ifdef URN_WSS_AUTO_CONCAT_JSON
+		if (recv_bytes % 1024 == 0) { // Bitstamp:1024 Gemini:4096 Coinbase:>1MB
+			// Very likely to be a chunk, concat into buffer first, check later.
+			strncpy(partial_msg+partial_msg_sz, recv_buf, recv_bytes);
+			URN_LOGF("cache partial json %8d + %5lu then wait", partial_msg_sz, recv_bytes);
+			partial_msg_sz += recv_bytes;
+			partial_msg[partial_msg_sz] = '\0';
+			// Of course this is a chunk with no proper tail char.
+			if (recv_buf[recv_bytes-1] != '}' && recv_buf[recv_bytes-1] != ']')
+				continue;
+			// Need deeper grammar check
+			URN_LOGF("cache partial json - checking validity, additional lags");
+			if (parse_n_check_valid_json(partial_msg, partial_msg_sz) != 0)
+				continue;
+
+			// partial_msg now is a valid json. Process and reset cache.
+			rv = on_wss_msg(partial_msg, partial_msg_sz);
+			partial_msg_sz = 0;
+		} else if (partial_msg_sz > 0) {
+			// Must be the tail chunk when size is fractional.
+			if (partial_msg_sz + recv_bytes > partial_msg_sz_max) {
+				URN_WARNF("cache partial json %8d + %5lu overload, abort", partial_msg_sz, recv_bytes);
+				partial_msg_sz = 0; // Reset cache
+				partial_msg[0] = '\0';
+				continue;
+			}
+			// Concat this recv_buf into partial_msg then process the whole message.
+			strncpy(partial_msg+partial_msg_sz, recv_buf, recv_bytes);
+			URN_LOGF("cache partial json %8d + %5lu then process", partial_msg_sz, recv_bytes);
+			partial_msg_sz += recv_bytes;
+			partial_msg[partial_msg_sz] = '\0';
+
+			// Process and reset cache.
+			rv = on_wss_msg(partial_msg, partial_msg_sz);
+			partial_msg_sz = 0;
+		} else {
+#endif
 		rv = on_wss_msg(recv_buf, recv_bytes);
+#ifdef URN_WSS_AUTO_CONCAT_JSON
+		}
+#endif
 		if (rv != 0) {
 			URN_WARNF("Error in processing wss msg len(%lu) %.*s", recv_bytes, (int)recv_bytes, recv_buf);
 			return rv;
