@@ -37,10 +37,10 @@ source $DIR/install_nng_wolftls.sh # TLS for NNG
 # YYJSON: get yyjson.h yyjson.c
 cd $DIR
 if [ ! -f $DIR/yyjson.h ]; then
-	wget -O yyjson.tar.gz https://github.com/ibireme/yyjson/archive/refs/tags/0.5.0.tar.gz
+	wget -O yyjson.tar.gz https://github.com/ibireme/yyjson/archive/refs/tags/0.5.1.tar.gz
 	tar xf yyjson.tar.gz
-	cp -rv yyjson-0.5.0/src/yyjson.* ./
-	rm -rf yyjson-0.5.0 yyjson.tar.gz
+	cp -rv yyjson-0.5.1/src/yyjson.* ./
+	rm -rf yyjson-0.5.1 yyjson.tar.gz
 fi
 if [ ! -f $DIR/yyjson.h ]; then
 	echo "yyjson extract failed"
