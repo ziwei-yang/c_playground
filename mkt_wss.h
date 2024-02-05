@@ -261,6 +261,20 @@ int parse_n_check_valid_json(char* str, int len) {
 }
 #endif
 
+int wss_req_append(char *cmd) {
+	int ct = 0;
+	while(ct <= MAX_WSS_REQ_BUFF) {
+		int idx = (wss_req_i + ct) % MAX_WSS_REQ_BUFF;
+		if (wss_req_s[idx] == NULL) {
+			wss_req_s[idx] = cmd;
+			URN_DEBUGF("req %d : %s", idx, cmd);
+			return 0;
+		}
+		ct ++;
+	}
+	return ENOMEM;
+}
+
 int wss_req_next(nng_stream *stream) {
 	// reset timer no matter did req or not.
 	// Don't come here every round.
@@ -592,7 +606,7 @@ if (pub_redis) {
 		ct += sprintf(s+ct, ",%ld%03ld]",
 			brdcst_start_t.tv_sec,
 			(long)(brdcst_start_t.tv_usec/1000));
-		URN_DEBUG("broadcast trades: %s", s);
+		URN_DEBUGF("broadcast trades: %s", s);
 		redisAppendCommand(redis, "PUBLISH %s %s", pub_tick_chn_arr[pairid], s);
 		tick_pub_ct ++;
 	}
