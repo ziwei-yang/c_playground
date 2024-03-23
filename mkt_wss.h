@@ -107,7 +107,7 @@ struct timespec wss_stat_t;
 int wss_stat_per_e = 3; // wss_stat() freq control.
 long wss_mkt_ts = 0;
 long mkt_latency_ms = 0;
-long wss_stat_max_msg_t = 120; // odbk_t_arr[] > 120 then KILL, -1: disabled
+long wss_stat_max_msg_t = 120; // if odbk_t_arr[] > this then KILL, -1: disabled
 const int max_msg_interval = 60; // any msg interval > 60 then kill
 
 struct timespec _tmp_clock;
