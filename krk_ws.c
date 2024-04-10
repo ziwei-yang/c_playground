@@ -437,6 +437,7 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *asks, yyjson_val *b
 			URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, &ask_or_bid, v, 4),
 				"Error in parse_n_mod_odbk_porder() for bids");
 		}
+		mkt_wss_odbk_trim_abnormal_px(pairid, false);
 	}
 
 	if (asks != NULL) {
@@ -445,6 +446,7 @@ int on_odbk_update(int pairid, const char *type, yyjson_val *asks, yyjson_val *b
 			URN_RET_ON_RV(parse_n_mod_odbk_porder(pairid, &ask_or_bid, v, 4),
 					"Error in parse_n_mod_odbk_porder() for asks");
 		}
+		mkt_wss_odbk_trim_abnormal_px(pairid, true);
 	}
 	return 0;
 }

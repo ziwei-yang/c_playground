@@ -1116,6 +1116,46 @@ void mkt_wss_odbk_update_top(int pairid, urn_inum *p, urn_inum *s, bool buy) {
 	}
 }
 
+// Some markets WSS don't remove price that was invalid. Trim overlapped bids/asks
+bool mkt_wss_odbk_trim_abnormal_px(int pairid, bool trim_bids) {
+	urn_porder *top = (urn_porder *)(bids_arr[pairid]->data); // Trim asks with bid0
+	if (trim_bids)
+		top = (urn_porder *)(asks_arr[pairid]->data);   // Trim bids with ask0
+	if (top == NULL) return false;
+	urn_inum *px = top->p;
+
+	bool trimmed = false;
+	while(true) {
+		GList *node = trim_bids ? bids_arr[pairid] : asks_arr[pairid];
+		if (node == NULL)
+			return trimmed;
+		if (node->next == NULL && node->data == NULL)
+			return trimmed;
+		if (node->next != NULL && node->data == NULL)
+			URN_FATAL("GList->next is not NULL but ->data is NULL", EINVAL);
+
+		int cmpv = urn_inum_cmp(px, ((urn_porder *)(node->data))->p);
+		bool trim = false;
+		if (trim_bids) {
+			trim = (cmpv <= 0);
+		} else {
+			trim = (cmpv >= 0);
+		}
+
+		if (!trim) return trimmed;
+
+		// Trim head.
+		urn_inum *trimmed_px = ((urn_porder *)(node->data))->p;
+		URN_WARNF("trim top %4s for abnormal px %20s %20s",
+				(trim_bids ? "bids" : "asks"),
+				urn_inum_str(trimmed_px), urn_inum_str(px));
+		if (trim_bids)  bids_arr[pairid] = node->next;
+		if (!trim_bids) asks_arr[pairid] = node->next;
+		g_list_free_1(node);
+		trimmed = true;
+	}
+}
+
 // return if any odbk operation did
 // manage to free p and s by yourself if false is returned.
 bool mkt_wss_odbk_update_or_delete(int pairid, urn_inum *p, urn_inum *s, bool buy, bool update) {
