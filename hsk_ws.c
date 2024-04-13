@@ -24,9 +24,28 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 	return 0;
 }
 
-void mkt_data_set_exchange(char *s) { sprintf(s, "Hashkey"); }
+int hsk_wss_mode = -1; // 0: hashkey hong kong, 1: hashkey global
+void mkt_data_set_exchange(char *s) {
+	char *exch = getenv("uranus_spider_exchange");
+	if (strcasecmp(exch, "hashkey") == 0) {
+		hsk_wss_mode = 0;
+		sprintf(s, "Hashkey");
+	} else if (strcasecmp(exch, "hashkeyg") == 0) {
+		hsk_wss_mode = 1;
+		sprintf(s, "HashkeyG");
+	} else {
+		URN_FATAL("check uranus_spider_exchange ENV VAL", EINVAL);
+	}
+}
 
-void mkt_data_set_wss_url(char *s) { sprintf(s, "wss://stream-pro.hashkey.com/quote/ws/v1"); }
+void mkt_data_set_wss_url(char *s) {
+	if (hsk_wss_mode == 0)
+		sprintf(s, "wss://stream-pro.hashkey.com/quote/ws/v1");
+	else if (hsk_wss_mode == 1)
+		sprintf(s, "wss://zwyang.xyz/hashkeyglobal_quote/ws/v1");
+	else
+		URN_FATAL("Unexpected hsk_wss_mode", EINVAL);
+}
 
 void mkt_data_odbk_channel(char *sym, char *chn) { sprintf(chn, "%s", sym); }
 

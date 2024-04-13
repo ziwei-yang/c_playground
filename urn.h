@@ -625,7 +625,7 @@ typedef urn_odbk_clients urn_tick_clients;
 #define urn_shm_exch_list \
 	"Binance","BNCM","BNUM","Bybit", \
 	"BybitL","Coinbase","FTX","Kraken", \
-	"Bittrex","Gemini","Bitstamp","BybitI", \
+	"HashkeyG","Gemini","Bitstamp","BybitI", \
 	"OKX","Hashkey","\0" // preset index for exchanges, SHMEM_KEY relies on this, rename and append only.
 const char *urn_shm_exchanges[] = { urn_shm_exch_list };
 
