@@ -42,7 +42,7 @@ void mkt_data_set_wss_url(char *s) {
 	if (hsk_wss_mode == 0)
 		sprintf(s, "wss://stream-pro.hashkey.com/quote/ws/v1");
 	else if (hsk_wss_mode == 1)
-		sprintf(s, "wss://zwyang.xyz/hashkeyglobal_quote/ws/v1");
+		sprintf(s, "wss://stream-glb.hashkey.com/quote/ws/v1");
 	else
 		URN_FATAL("Unexpected hsk_wss_mode", EINVAL);
 }
