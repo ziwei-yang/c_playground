@@ -17,3 +17,5 @@ ruby_ext*/*.o
 ruby_ext*/*.so
 ruby_ext*/.sitearchdir.time
 ruby_ext*/conf
+ruby_ext*/urn.c
+ruby_ext*/urn.h

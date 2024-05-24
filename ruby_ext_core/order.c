@@ -1,31 +1,9 @@
 #include "ruby.h"
 
+#include "order.h"
+#include "urn.h"
+
 static VALUE URN_CORE_Order = Qnil;
-
-typedef struct Order {
-	char i[128];                 // 128 bytes
-	char client_oid[128];        // 128 bytes
-	char pair[32];               // 32 bytes
-	char asset[16];              // 16 bytes
-	char currency[16];           // 16 bytes
-	char status[16];             // 16 bytes
-	char market[16];             // 16 bytes
-	char T[8];                   // 8 bytes
-
-	double p;                    // 8 bytes
-	double s;                    // 8 bytes
-	double remained;             // 8 bytes
-	double executed;             // 8 bytes
-	double avg_price;            // 8 bytes
-	double fee;                  // 8 bytes
-	double maker_size;           // 8 bytes
-	unsigned long t;             // 8 bytes
-
-	bool _status_cached;         // 1 byte
-	bool _buy;                   // 1 byte
-	bool _alive;                 // 1 byte
-	bool _cancelled;             // 1 byte
-} Order; // Total: 408 bytes
 
 // Pre-calculate all static rb_str_new_cstr()
 static VALUE s_i = Qnil;
@@ -110,14 +88,10 @@ struct Order* order_cdata(VALUE order) {
 }
 
 // Importing Order from Hash values.
-VALUE rb_new_order_from_hash(VALUE klass, VALUE hash) {
-	VALUE obj = rb_obj_alloc(klass);
-	rb_funcall(obj, rb_intern("initialize"), 0);
-
-	Order *o = order_cdata(obj);
-
-	// Set fields from hash if present
+void order_from_hash(VALUE hash, Order* o) {
+	memset(o, 0, sizeof(Order));
 	VALUE temp;
+	// Set fields from hash if present
 	if ((temp = rb_hash_aref(hash, s_i)) != Qnil) strncpy(o->i, RSTRING_PTR(temp), sizeof(o->i) - 1);
 	if ((temp = rb_hash_aref(hash, s_client_oid)) != Qnil) strncpy(o->client_oid, RSTRING_PTR(temp), sizeof(o->client_oid) - 1);
 	if ((temp = rb_hash_aref(hash, s_pair)) != Qnil) strncpy(o->pair, RSTRING_PTR(temp), sizeof(o->pair) - 1);
@@ -136,10 +110,18 @@ VALUE rb_new_order_from_hash(VALUE klass, VALUE hash) {
 	if ((temp = rb_hash_aref(hash, s_maker_size)) != Qnil) o->maker_size = NUM2DBL(temp);
 	if ((temp = rb_hash_aref(hash, s_t)) != Qnil) o->t = NUM2ULONG(temp);
 
-	if ((temp = rb_hash_aref(hash, s__buy)) != Qnil) o->_buy = RTEST(temp);
 	if ((temp = rb_hash_aref(hash, s__status_cached)) != Qnil) o->_status_cached = RTEST(temp);
+	if ((temp = rb_hash_aref(hash, s__buy)) != Qnil) o->_buy = RTEST(temp);
 	if ((temp = rb_hash_aref(hash, s__alive)) != Qnil) o->_alive = RTEST(temp);
 	if ((temp = rb_hash_aref(hash, s__cancelled)) != Qnil) o->_cancelled = RTEST(temp);
+	return;
+}
+VALUE rb_new_order_from_hash(VALUE klass, VALUE hash) {
+	VALUE obj = rb_obj_alloc(klass);
+	rb_funcall(obj, rb_intern("initialize"), 0);
+
+	Order *o = order_cdata(obj);
+	order_from_hash(hash, o);
 
 	// rest fields will be stored in @_data
 	VALUE data_hash = rb_iv_get(obj, "@_data");
@@ -274,10 +256,12 @@ VALUE rb_order_to_hash(VALUE self) {
 	rb_hash_aset(hash, s_maker_size, rb_float_new(order->maker_size));
 	rb_hash_aset(hash, s_t, ULONG2NUM(order->t));
 
-	rb_hash_aset(hash, s__buy, order->_buy ? Qtrue : Qfalse);
-	rb_hash_aset(hash, s__alive, order->_alive ? Qtrue : Qfalse);
-	rb_hash_aset(hash, s__cancelled, order->_cancelled ? Qtrue : Qfalse);
 	rb_hash_aset(hash, s__status_cached, order->_status_cached ? Qtrue : Qfalse);
+	if (order->_status_cached) {
+		rb_hash_aset(hash, s__buy, order->_buy ? Qtrue : Qfalse);
+		rb_hash_aset(hash, s__alive, order->_alive ? Qtrue : Qfalse);
+		rb_hash_aset(hash, s__cancelled, order->_cancelled ? Qtrue : Qfalse);
+	}
 
 	// Include fields in @_data
 	VALUE data_hash = rb_iv_get(self, "@_data");

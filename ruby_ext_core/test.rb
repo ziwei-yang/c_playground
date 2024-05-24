@@ -1,12 +1,22 @@
 require "urn_core"
 require "json"
+require "date"
+require "colorize"
 require_relative "../../uranus/common/old"
 
 class RubyNative
   include URN::MathUtil_RB
   include URN::OrderUtil_RB
   def initialize
-    @o = {"i"=>"123456", "client_oid"=>"", "pair"=>"", "asset"=>"", "currency"=>"", "status"=>"", "T"=>"", "market"=>"", "p"=>0.0, "s"=>0.0, "remained"=>0.0, "executed"=>0.0, "avg_price"=>0.0, "fee"=>0.0, "maker_size"=>0.0, "t"=>0, "_buy"=>false, "_alive"=>false, "_cancelled"=>false, "_status_cached" => false}
+    @o = {"i"=>"123456", "client_oid"=>"", "pair"=>"", "asset"=>"", "currency"=>"", "status"=>"", "T"=>"", "market"=>"", "p"=>0.0, "s"=>0.0, "remained"=>0.0, "executed"=>0.0, "avg_price"=>0.0, "fee"=>0.0, "maker_size"=>0.0, "t"=>0, "_status_cached" => false}
+    @o['p'] = 66666.66
+    @o['s'] = 0.1
+    @o['maker_size'] = 0.1
+    @o['executed'] = 0.0123
+    @o['T'] = 'buy'
+    @o['t'] = 10000000000
+    @o['market'] = 'market'
+    @o['status'] = 'new'
   end
   def o_hashmap_get(key)
     return @o[key]
@@ -27,13 +37,34 @@ class RubyNative
   def o_to_h
     @o.to_h
   end
+  def format_o
+    [format_order(@o), format_trade(@o)].join("\n").uncolorize
+  end
+  def o_alive?
+    order_alive?(@o)
+    order_cancelled?(@o)
+  end
+  def o_set_dead
+    order_set_dead(@o)
+    @o['_alive'] = nil
+    true
+  end
 end
 
 class RubyCExt
-  include URN_CORE
+  include URN_CORE::MathUtil
+  include URN_CORE::OrderUtil
   def initialize
     @o = URN_CORE::Order.new
     @o['i'] = '123456'
+    @o['p'] = 66666.66
+    @o['executed'] = 0.0123
+    @o['s'] = 0.1
+    @o['maker_size'] = 0.1
+    @o['T'] = 'buy'
+    @o['t'] = 10000000000
+    @o['market'] = 'market'
+    @o['status'] = 'new'
     @o_hash = @o.to_h
   end
   def o_hashmap_get(key)
@@ -55,12 +86,25 @@ class RubyCExt
   def o_to_h
     @o.to_h
   end
+  def format_o
+    [format_order(@o), format_trade(@o)].join("\n").uncolorize
+  end
+  def o_alive?
+    order_alive?(@o)
+    order_cancelled?(@o)
+  end
+  def o_set_dead
+    order_set_dead(@o)
+    @o['_status_cached'] = false
+    true
+  end
 end
 
 class Tester
   def assert(a, b)
     return if a == b
-    raise "#{a.inspect} should equals #{b.inspect}"
+    puts "\nExpect #{a.inspect}\nGot    #{b.inspect}\n"
+    raise "Expect #{a.inspect}\nGot    #{b.inspect}\n"
   end
 
   def test_and_benchmark(name, args, times)
@@ -107,6 +151,16 @@ end
 
 t = Tester.new
 
+t.test_and_benchmark(:o_set_dead, [], 100_000)
+t.test_and_benchmark(:o_alive?, [], 100_000)
+t.test_and_benchmark(:format_o, [], 10_000)
+
+t.test_and_benchmark(:parse_contract, ["USDT-BTC@20240812"], 1_000_000)
+t.test_and_benchmark(:parse_contract, ["USDT-BTC"], 1_000_000)
+
+t.test_and_benchmark(:pair_assets, ["USDT-BTC"], 1_000_000)
+t.test_and_benchmark(:pair_assets, ["USDT-BTC@20240812"], 1_000_000)
+
 t.test_and_benchmark(:is_future?, ["USDT-BTC"], 1_000_000)
 t.test_and_benchmark(:is_future?, ["USDT-BTC@20240812"], 1_000_000)
 
@@ -125,7 +179,6 @@ t.test(:rough_num, [0.007896789])
 t.test(:rough_num, [0.000007896789])
 t.test_and_benchmark(:rough_num, [0.000007896789], 1_000_000)
 
-t.test(:stat_array, [[1,2,3,4,5,6,7,9.0123]])
 t.test(:stat_array, [[1]])
 t.test(:stat_array, [[]])
 t.test_and_benchmark(:stat_array, [[1,2,3,4,5,6,7,9.0123]], 100_000)

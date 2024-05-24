@@ -7,178 +7,154 @@ double urn_round(double f, int precision);
  * bootstrap.rb/MathUtil
  * 	def diff(f1, f2)
  */
-VALUE method_diff(VALUE self, VALUE v_f1, VALUE v_f2) {
-	// return 9999999 if [f1, f2].min <= 0
-	// (f1 - f2) / [f1, f2].min
-	double f1, f2;
-	if (RB_TYPE_P(v_f1, T_FIXNUM) == 1) {
-		f1 = (double)NUM2INT(v_f1);
-	} else if (RB_TYPE_P(v_f1, T_FLOAT) == 1) {
-		f1 = NUM2DBL(v_f1);
-	} else if (RB_TYPE_P(v_f1, T_STRING) == 1) {
-		sscanf(RSTRING_PTR(v_f1), "%lf", &f1);
-	} else if (RB_TYPE_P(v_f1, T_NIL) == 1) {
-		rb_raise(rb_eTypeError, "invalid type for diff() f1: NIL");
-	} else
-		rb_raise(rb_eTypeError, "invalid type for diff() f1");
-	if (RB_TYPE_P(v_f2, T_FIXNUM) == 1) {
-		f2 = (double)NUM2INT(v_f2);
-	} else if (RB_TYPE_P(v_f2, T_FLOAT) == 1) {
-		f2 = NUM2DBL(v_f2);
-	} else if (RB_TYPE_P(v_f2, T_STRING) == 1) {
-		sscanf(RSTRING_PTR(v_f2), "%lf", &f2);
-	} else if (RB_TYPE_P(v_f2, T_NIL) == 1) {
-		rb_raise(rb_eTypeError, "invalid type for diff() f2: NIL");
-	} else
-		rb_raise(rb_eTypeError, "invalid type for diff() f2");
-	if (f1 <= 0 || f2 <= 0) return INT2NUM(9999999);
-	double min = f1;
-	if (f2 < min) min = f2;
-	return DBL2NUM((f1-f2)/min);
+double diff(double f1, double f2) {
+	if (f1 <= 0 || f2 <= 0)
+		return 9999999.0;
+	double min_val = f1 < f2 ? f1 : f2;
+	return (f1 - f2) / min_val;
+}
+VALUE rb_diff(VALUE self, VALUE v_f1, VALUE v_f2) {
+	double f1 = NUM2DBL(v_f1);
+	double f2 = NUM2DBL(v_f2);
+	double result = diff(f1, f2);
+	return rb_float_new(result);
 }
 
 /* Replacement of:
  * bootstrap.rb/MathUtil
  * 	def stat_array(array)
  */
-VALUE method_stat_array(VALUE self, VALUE v_ary) {
-	VALUE r_result = rb_ary_new_capa(4);
-	long sz = RARRAY_LEN(v_ary);
-	double sum = 0;
-	double devi = 0;
-	double mean;
-	double ary[sz];
-
-	if (RB_TYPE_P(v_ary, T_NIL) == 1)
-		goto four_zeros;
-	if (RB_TYPE_P(v_ary, T_ARRAY) != 1)
-		rb_raise(rb_eTypeError, "invalid type for stat_array() array");
-	if (sz == 0)
-		goto four_zeros;
-
-	for (int i=0; i<sz; i++) {
-		ary[i] = NUM2DBL(rb_ary_entry(v_ary, i));
-		sum += ary[i];
+void stat_array(double* array, size_t size, double* stat_result) {
+	if (size == 0) {
+		stat_result[0] = 0;
+		stat_result[1] = 0;
+		stat_result[2] = 0;
+		stat_result[3] = 0;
+		return;
 	}
-	mean = sum/sz;
-	for (int i=0; i<sz; i++)
-		devi = devi + (ary[i] - mean)*(ary[i] - mean);
-	devi = sqrt(devi/sz);
-	// return [n, sum, mean, deviation]
-	rb_ary_push(r_result, INT2NUM(sz));
-	rb_ary_push(r_result, DBL2NUM(sum));
-	rb_ary_push(r_result, DBL2NUM(mean));
-	rb_ary_push(r_result, DBL2NUM(devi));
-	return r_result;
 
-four_zeros:
-	rb_ary_push(r_result, INT2NUM(0));
-	rb_ary_push(r_result, INT2NUM(0));
-	rb_ary_push(r_result, INT2NUM(0));
-	rb_ary_push(r_result, INT2NUM(0));
-	return r_result;
+	double sum = 0;
+	for (size_t i = 0; i < size; i++)
+		sum += array[i];
+
+	double mean = sum / size;
+	double deviation_sum = 0;
+	for (size_t i = 0; i < size; i++) {
+		double diff = array[i] - mean;
+		deviation_sum += diff * diff;
+	}
+
+	double deviation = sqrt(deviation_sum / size);
+
+	stat_result[0] = size;
+	stat_result[1] = sum;
+	stat_result[2] = mean;
+	stat_result[3] = deviation;
+}
+VALUE rb_stat_array(VALUE self, VALUE v_ary) {
+	VALUE result = rb_ary_new2(4);
+	if (NIL_P(v_ary)) {
+		// Return [0, 0, 0, 0] if the input array is nil
+		rb_ary_store(result, 0, rb_float_new(0.0));
+		rb_ary_store(result, 1, rb_float_new(0.0));
+		rb_ary_store(result, 2, rb_float_new(0.0));
+		rb_ary_store(result, 3, rb_float_new(0.0));
+		return result;
+	}
+
+	Check_Type(v_ary, T_ARRAY);
+
+	size_t size = RARRAY_LEN(v_ary);
+	double* array = ALLOCA_N(double, size);
+
+	for (size_t i = 0; i < size; i++)
+		array[i] = NUM2DBL(rb_ary_entry(v_ary, i));
+
+	double stat_result[4];
+	stat_array(array, size, stat_result);
+
+	rb_ary_store(result, 0, rb_float_new(stat_result[0]));
+	rb_ary_store(result, 1, rb_float_new(stat_result[1]));
+	rb_ary_store(result, 2, rb_float_new(stat_result[2]));
+	rb_ary_store(result, 3, rb_float_new(stat_result[3]));
+
+	return result;
 }
 
 /* Replacement of:
  * bootstrap.rb/MathUtil
  * 	def rough_num(f)
  */
-VALUE method_rough_num(VALUE self, VALUE v_f) {
-	double f;
-	if (RB_TYPE_P(v_f, T_FIXNUM) == 1) {
-		f = (double)NUM2INT(v_f);
-	} else if (RB_TYPE_P(v_f, T_FLOAT) == 1) {
-		f = NUM2DBL(v_f);
-	} else
-		rb_raise(rb_eTypeError, "invalid type for rough_num() f");
-
-	double fabs = f;
-	if (f < 0) fabs = 0 - f;
-	if (fabs >= 100)
-		return DBL2NUM(round(f));
-	else if (fabs >= 1)
-		return DBL2NUM(urn_round(f, 2));
-	else if (fabs >= 0.01)
-		return DBL2NUM(urn_round(f, 4));
-	else if (fabs >= 0.0001)
-		return DBL2NUM(urn_round(f, 6));
-	else if (fabs >= 0.000001)
-		return DBL2NUM(urn_round(f, 8));
-	else
-		return v_f;
+double rough_num(double f) {
+	if (fabs(f) > 100) {
+		return round(f);
+	} else if (fabs(f) > 1) {
+		return urn_round(f, 2);
+	} else if (fabs(f) > 0.01) {
+		return urn_round(f, 4);
+	} else if (fabs(f) > 0.0001) {
+		return urn_round(f, 6);
+	} else if (fabs(f) > 0.000001) {
+		return urn_round(f, 8);
+	} else {
+		return f;
+	}
+}
+VALUE rb_rough_num(VALUE self, VALUE v_f) {
+	double f = NIL_P(v_f) ? 0.0 : NUM2DBL(v_f);
+	double result = rough_num(f);
+	return rb_float_new(result);
 }
 
 /* Replacement of:
  * bootstrap.rb/MathUtil
  * 	def format_num(f, float=8, decimal=8)
  */
-VALUE method_format_num(int argc, VALUE *argv, VALUE klass) {
-	VALUE v_f, v_fraclen, v_decilen;
-	// 1 required arg, 2 optional args
-	rb_scan_args(argc, argv, "12", &v_f, &v_fraclen, &v_decilen);
-	int fraclen = 0, decilen = 0;
-	if (RB_TYPE_P(v_fraclen, T_NIL) == 1)
-		fraclen = 8;
-	else if (RB_TYPE_P(v_fraclen, T_FIXNUM) != 1)
-		rb_raise(rb_eTypeError, "invalid type for format_num() fraclen");
-	else
-		fraclen = NUM2INT(v_fraclen);
-
-	if (RB_TYPE_P(v_decilen, T_NIL) == 1)
-		decilen = 8;
-	else if (RB_TYPE_P(v_decilen, T_FIXNUM) != 1)
-		rb_raise(rb_eTypeError, "invalid type for format_num() decilen");
-	else
-		decilen = NUM2INT(v_decilen);
-
-	/* INIT string as all spaces */
-	char *str = RB_ALLOC_N(char, fraclen+decilen+2);
-	memset(str, ' ', fraclen+decilen+2);
-	str[fraclen+decilen+1] = '\0';
-
-	int fint = 0;
-	double frac = 0;
-	if (RB_TYPE_P(v_f, T_NIL) == 1) {
-		return rb_str_new_cstr(str);
-	} else if (RB_TYPE_P(v_f, T_STRING) == 1) {
-		// return rjust(f)
-		char *s = RSTRING_PTR(v_f);
-		int pos = strlen(str) - strlen(s);
-		if (pos >= 0)
-			strcpy(str+pos, s);
-		else
-			strcpy(str, s-pos);
-		return rb_str_new_cstr(str);
-	} if (RB_TYPE_P(v_f, T_FIXNUM) == 1) {
-		fint = NUM2INT(v_f);
-		if (fint == 0)
-			return rb_str_new_cstr(str);
-	} else if (RB_TYPE_P(v_f, T_FLOAT) == 1) {
-		frac = NUM2DBL(v_f);
-		fint = (int)frac;
-		frac = frac - fint;
-	} else
-		rb_raise(rb_eTypeError, "invalid type for format_num() f");
-
-	// URN_DEBUGF("%d (%d) + %f (%d)", fint, decilen, frac, fraclen);
-	int sz = sprintf(str, "%*d", decilen, fint);
-	if (frac == 0) {
-		for(int i = sz; i <fraclen + 1 + decilen; i++)
-			str[i] = ' ';
-		str[fraclen+decilen+1] = '\0';
-		return rb_str_new_cstr(str);
+void format_num(double num, int fraclen, int decilen, char* str) {
+	if (num == 0) {
+		// Fill the string with spaces if the number is zero
+		memset(str, ' ', fraclen + decilen + 1);
+		str[fraclen + decilen + 1] = '\0'; // Null-terminate the string
+		return;
 	}
+	// Use snprintf to format the number with specified width and precision
+	snprintf(str, fraclen + decilen + 3, "%*.*f", fraclen + decilen + 1, fraclen, num);
 
-	int remained_sz = fraclen + 1 + decilen - sz - 1;
-	sprintf(str+sz-1, "%0.*f", remained_sz, frac);
-	/* change tailing zero to space */
-	for(int i = fraclen+decilen; i > sz; i--)
-		if (*(str+i) == '0')
-			*(str+i) = ' ';
-		else
-			break;
-	/* print integer part again to overwirte '0.', change '\0' to '.' */
-	sz = sprintf(str, "%*d", decilen, fint);
-	str[sz] = '.';
-	return rb_str_new_cstr(str);
+	// Replace trailing zeros in the fraction with spaces
+	char* dot = strchr(str, '.');
+	if (dot != NULL) {
+		char* end = str + strlen(str) - 1;
+		while (end > dot && *end == '0') {
+			*end = ' ';
+			end--;
+		}
+		// If the last character after removing zeros is a dot, replace it with a space
+		if (*end == '.')
+			*end = ' ';
+	}
+}
+VALUE rb_format_num(int argc, VALUE *argv, VALUE klass) {
+	VALUE v_num, v_fraclen, v_decilen;
+	rb_scan_args(argc, argv, "30", &v_num, &v_fraclen, &v_decilen);
+
+	double num = NUM2DBL(v_num);
+	int fraclen = NUM2INT(v_fraclen);
+	int decilen = NUM2INT(v_decilen);
+
+	// Calculate the size of the buffer needed
+	int size = fraclen + decilen + 3; // 1 for sign, 1 for decimal point, 1 for null terminator
+	char* str = (char*)malloc(size * sizeof(char));
+	if (str == NULL)
+		rb_raise(rb_eNoMemError, "Memory allocation failed");
+
+	// Use format_num to format the number
+	format_num(num, fraclen, decilen, str);
+
+	// Create a Ruby string from the formatted string
+	VALUE result = rb_str_new_cstr(str);
+
+	// Free the allocated memory
+	free(str);
+
+	return result;
 }

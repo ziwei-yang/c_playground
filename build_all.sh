@@ -8,13 +8,13 @@ for f in $DIR/* ; do
 	[[ $f != *_ws.c ]] && continue
 	[[ $f == nng_ws.c ]] && continue
 	f=$( basename $f )
-	echo "./build.sh $f -o tmp/$f"
+	echo ./build.sh urn.c $f -o tmp/$f
 	./build.sh urn.c $f -o tmp/$f
 	[[ $? != 0 ]] && echo "Failed" && exit 1
 done
 
 for f in shmutil.c mkt_viewer.c ; do
-	echo "./build.sh $f -o tmp/$f"
+	echo ./build.sh urn.c $f -o tmp/$f
 	./build.sh urn.c $f -o tmp/$f
 	[[ $? != 0 ]] && echo "Failed" && exit 1
 done
