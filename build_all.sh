@@ -9,13 +9,13 @@ for f in $DIR/* ; do
 	[[ $f == nng_ws.c ]] && continue
 	f=$( basename $f )
 	echo "./build.sh $f -o tmp/$f"
-	./build.sh $f -o tmp/$f
+	./build.sh urn.c $f -o tmp/$f
 	[[ $? != 0 ]] && echo "Failed" && exit 1
 done
 
 for f in shmutil.c mkt_viewer.c ; do
 	echo "./build.sh $f -o tmp/$f"
-	./build.sh $f -o tmp/$f
+	./build.sh urn.c $f -o tmp/$f
 	[[ $? != 0 ]] && echo "Failed" && exit 1
 done
 
@@ -23,6 +23,8 @@ echo "Checking RVM"
 which rvm
 if [[ $? == 0 ]]; then
 	cd $DIR/ruby_ext_mktdata
+	ln -sf ../urn.h ./urn.h
+	ln -sf ../urn.c ./urn.c
 	echo "rvm use 3.0 ; ruby extconf.rb ; make clean; make"
 	rvm use 3.0 && ruby extconf.rb && make clean && make
 else

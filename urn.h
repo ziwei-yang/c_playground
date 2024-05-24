@@ -299,6 +299,8 @@ typedef urn_odbk_clients urn_tick_clients;
 	"HashkeyG","Gemini","Bitstamp","BybitI", \
 	"OKX","Hashkey","\0" // preset index for exchanges, SHMEM_KEY relies on this, rename and append only.
 
+extern const char *urn_shm_exchanges[];
+
 extern int urn_odbk_shm_i(char *exchange);
 extern int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr);
 extern int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len);
