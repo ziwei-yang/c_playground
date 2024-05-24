@@ -3,6 +3,7 @@
 
 #include "order.h"
 #include "urn.h"
+#include "order_util.h"
 
 void format_num(double num, int fraclen, int decilen, char* str); // in util.c
 void urn_s_trim(const char* str, char* new_s); // in urn.h
@@ -21,9 +22,6 @@ static Order* _attach_or_parse_ruby_order(VALUE v_order, Order *o) {
 	}
 	return o;
 }
-#define extract_ruby_order(v_order, opvar) \
-	Order _temp_o;memset(&_temp_o, 0, sizeof(Order));\
-	Order* opvar = _attach_or_parse_ruby_order(v_order, &_temp_o);
 
 /* Replacement of:
  * bootstrap.rb/OrderUtil
@@ -340,11 +338,11 @@ static int order_calculate_status(Order* o) {
 	return 0;
 }
 bool order_cancelled(Order* o) {
-	order_calculate_status(o);
+	if (!o->_status_cached) order_calculate_status(o);
 	return o->_cancelled;
 }
 bool order_alive(Order* o) {
-	order_calculate_status(o);
+	if (!o->_status_cached) order_calculate_status(o);
 	return o->_alive;
 }
 VALUE rb_order_cancelled(VALUE self, VALUE v_order) {

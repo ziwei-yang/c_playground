@@ -1,5 +1,8 @@
 #include "ruby.h"
 
+#include "order.h"
+#include "order_util.h"
+
 /*
  * util.c
  * Replacement of bootstrap.rb/MathUtil
@@ -10,8 +13,6 @@ VALUE rb_rough_num(VALUE self, VALUE v_f);
 VALUE rb_format_num(int argc, VALUE *argv, VALUE klass);
 
 void order_bind(VALUE urn_core_module);      // order.c
-
-void order_util_bind(VALUE urn_core_module); // order_util.c
 
 void ab3_init();
 VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt);
