@@ -4,107 +4,118 @@ require "date"
 require "colorize"
 require_relative "../../uranus/common/old"
 
-class RubyNative
-  include URN::MathUtil_RB
-  include URN::OrderUtil_RB
-  def initialize
-    @o = {"i"=>"123456","status"=>"new", "T"=>"buy", "market"=>"market", "p"=>66666.66, "s"=>0.1, "executed"=>0.0123, "maker_size"=>0.1, "t"=>10000000000, "_status_cached"=>false}
-    @o['p'] = 66666.66
-    @o['s'] = 0.1
-    @o['maker_size'] = 0.1
-    @o['executed'] = 0.0123
-    @o['T'] = 'buy'
-    @o['t'] = 10000000000
-    @o['market'] = 'market'
-    @o['status'] = 'new'
+class Base
+  def self.make_samples(num)
+    pairs = ["USD-BTC", "USD-ETH", "USD-LTC", "USD-XRP", "USD-BCH"]
+    statuses = ["new", "pending", "filled"]
+    types = ["buy", "sell"]
+    markets = ["market_1", "market_2", "market_3", "market_4", "market_5"]
+
+    samples = []
+
+    num.times do |i|
+      order = {
+        "i" => "id_#{sprintf('%05d', i+1)}",
+        "pair" => pairs.sample,
+        "status" => statuses.sample,
+        "T" => types.sample,
+        "market" => markets.sample,
+        "p" => (rand * 100000).round(2),
+        "s" => (rand * 1000).round(2),
+        "remained" => (rand * 500).round(2),
+        "executed" => (rand * 500).round(2),
+        "t" => 1609459200 + i * 60
+      }
+
+      # Add optional fields to 20% of the orders
+      if rand < 0.2
+        order["_status_cached"] = [true, false].sample
+        order["_buy"] = [true, false].sample
+        order["_alive"] = [true, false].sample
+        order["_cancelled"] = [true, false].sample
+      end
+
+      # Add 'v' field to 25% of the orders
+      if rand < 0.25
+        order["v"] = (order["p"] * order["s"]).round
+      end
+
+      # Add optional client_oid, avg_price, fee, maker_size fields to some orders
+      order["client_oid"] = "oid_#{sprintf('%05d', rand(10000))}" if rand < 0.3
+      order["avg_price"] = (rand * 100000).round(2) if rand < 0.3
+      order["fee"] = (rand * 100).round(2) if rand < 0.3
+      order["maker_size"] = (rand * 1000).round(2) if rand < 0.3
+
+      samples << order
+    end
+
+    samples
   end
+
+  def initialize(samples)
+    @samples = samples
+  end
+  def samples
+    @samples
+  end
+
   def o_hashmap_get(key)
-    return @o[key]
+    @samples.map { |o| o[key] }
   end
   def o_hashmap_set(key, value)
-    @o[key] = value
+    @samples.map { |o| o[key] = value }
   end
   def o_to_json
-    JSON.pretty_generate(@o)
+    @samples.map { |o| o.to_json }
   end
   def o_clone
-    @o.clone()['i']
+    @samples.map { |o| o.clone }
   end
   def o_from_hash
-    @o.clone
-    nil
+    @samples.map { |o| o.clone }
   end
   def o_to_h
-    @o.to_h
+    @samples.map { |o| o.to_h }
   end
   def format_o
-    [format_order(@o), format_trade(@o)].join("\n").uncolorize
+    @samples.map { |o| [format_order(o), format_trade(o)].join("\n").uncolorize }
   end
   def o_alive?
-    order_alive?(@o)
-    order_cancelled?(@o)
+    @samples.map { |o| [order_alive?(o), order_cancelled?(o)] }
   end
   def o_set_dead
-    order_set_dead(@o)
-    @o['_alive'] = nil
-    order_alive?(@o)
+    @samples.map { |o| order_set_dead(o); o; }
   end
 end
 
-class RubyCExt
+class RubyNative < Base
+  include URN::MathUtil_RB
+  include URN::OrderUtil_RB
+end
+class RubyCExt < Base
   include URN_CORE::MathUtil
   include URN_CORE::OrderUtil
-  def initialize
-    @o = URN_CORE::Order.new
-    @o['i'] = '123456'
-    @o['p'] = 66666.66
-    @o['executed'] = 0.0123
-    @o['s'] = 0.1
-    @o['maker_size'] = 0.1
-    @o['T'] = 'buy'
-    @o['t'] = 10000000000
-    @o['market'] = 'market'
-    @o['status'] = 'new'
-    @o_hash = @o.to_h
-  end
-  def o_hashmap_get(key)
-    @o[key]
-  end
-  def o_hashmap_set(key, value)
-    @o[key] = value
-  end
-  def o_to_json
-    JSON.pretty_generate(@o)
-  end
-  def o_clone
-    @o.clone['i']
-  end
-  def o_from_hash
-    URN_CORE::Order.from_hash(@o_hash)
-    nil
-  end
-  def o_to_h
-    @o.to_h
-  end
-  def format_o
-    [format_order(@o), format_trade(@o)].join("\n").uncolorize
-  end
-  def o_alive?
-    order_alive?(@o)
-    order_cancelled?(@o)
-  end
-  def o_set_dead
-    order_set_dead(@o)
-    @o['_status_cached'] = false
-    order_alive?(@o)
-  end
 end
 
 class Tester
-  def assert(a, b)
-    return if a == b
-    puts "\nExpect #{a.inspect}\nGot    #{b.inspect}\n"
-    raise "Expect #{a.inspect}\nGot    #{b.inspect}\n"
+  def assert(x, y, opt={})
+    samples = opt[:samples] || []
+    if x.is_a?(Array) && y.is_a?(Array)
+      x.size.times { |i|
+        a = x[i]
+        b = y[i]
+        next if a == b
+        puts "\nSample [#{i}] #{samples[i].inspect}"
+        puts "\nExpect     #{a.inspect}\nGot        #{b.inspect}\n"
+        raise "asset error"
+      }
+    else
+      return if x == y
+      a = x
+      b = y
+      puts "\nExpect #{a.inspect}\nGot    #{b.inspect}\n"
+      raise "Expect #{a.inspect}\nGot    #{b.inspect}\n"
+    end
   end
 
   def test_and_benchmark(name, args, times)
@@ -113,32 +124,38 @@ class Tester
 
   def test(name, args, opt={})
     name = name.to_sym
-    print "Test #{name.inspect} #{args.inspect}"
-    @r_ver = RubyNative.new
-    @c_ver = RubyCExt.new
-    assert(
-      @r_ver.send(name, *args),
-      @c_ver.send(name, *args)
-    )
-    print " √ "
+    print "Preparing #{name.inspect} #{args.inspect}"
 
-    benchmark_times = opt[:benchmark] || 0
-    if benchmark_times == 0
-      print "\n"
-      return
-    end
+    times = opt[:benchmark] || 1
 
-    times = benchmark_times
+    use_samples = name.to_s.start_with?('o_')
+    samples = Base.make_samples(use_samples ? times : 1)
+    @r_ver = RubyNative.new(JSON.parse(samples.to_json))
+    @c_ver = RubyCExt.new(JSON.parse(samples.to_json))
+
+    print "\rTest #{name.inspect} #{args.inspect}"
     t = Time.now.to_f
-    times.times { @r_ver.send(name, *args) }
+    if use_samples
+      c_result = @c_ver.send(name, *args)
+    else
+      times.times { c_result = @c_ver.send(name, *args) }
+    end
+    ct = t = Time.now.to_f - t
+    # puts "#{name} C version #{times} times #{t.round(5)} sec, #{faster}X"
+
+    t = Time.now.to_f
+    if use_samples
+      r_result = @r_ver.send(name, *args)
+    else
+      times.times { r_result = @r_ver.send(name, *args) }
+    end
     rt = t = Time.now.to_f - t
     # puts "#{name} R version #{times} times #{t.round(5)} sec"
 
-    t = Time.now.to_f
-    times.times { @c_ver.send(name, *args) }
-    ct = t = Time.now.to_f - t
+    assert(r_result, c_result, samples: samples)
+    print " √ "
+
     faster = (rt/ct).round(1)
-    # puts "#{name} C version #{times} times #{t.round(5)} sec, #{faster}X"
     if faster > 1.1
       print " \033[32m#{faster} x\033[0m\n"
     elsif faster < 1
@@ -168,8 +185,8 @@ t.test_and_benchmark(:o_from_hash, [], 100_000)
 t.test_and_benchmark(:o_to_h, [], 100_000)
 t.test_and_benchmark(:o_clone, [], 100_000)
 
-t.test_and_benchmark(:o_hashmap_get, ['i'], 3_000_000)
-t.test_and_benchmark(:o_hashmap_set, ['i', '998877'], 3_000_000)
+t.test_and_benchmark(:o_hashmap_get, ['i'], 100_000)
+t.test_and_benchmark(:o_hashmap_set, ['i', '998877'], 100_000)
 t.test_and_benchmark(:o_to_json, [], 100_000)
 
 t.test(:rough_num, [1234.789])
