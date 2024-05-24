@@ -12,15 +12,34 @@ void urn_s_trim(const char* str, char* new_s); // in urn.h
 void order_from_hash(VALUE hash, Order* o);
 
 static Order* _attach_or_parse_ruby_order(VALUE v_order, Order *o) {
+	if (rb_obj_is_kind_of(v_order, rb_path2class("URN_CORE::Order")))
+		Data_Get_Struct(rb_ivar_get(v_order, rb_intern("@_cdata")), Order, o);
+	else if (TYPE(v_order) == T_HASH)
+		order_from_hash(v_order, o);
+	else
+		rb_raise(rb_eTypeError, "Expected URN_CORE::Order or Hash");
+	return o;
+}
+#define attach_or_parse_ruby_order(v_order, opvar) \
+        Order _temp_o; INIT_ORDER(&_temp_o); \
+        Order* opvar = _attach_or_parse_ruby_order(v_order, &_temp_o);
+
+// Copy order back to v_order @_cdata, if v_order is URN_CORE::Order
+// Copy order back to v_order fields, if v_order is Hash
+static void write_to_ruby_order(VALUE v_order, Order *o) {
 	if (rb_obj_is_kind_of(v_order, rb_path2class("URN_CORE::Order"))) {
 		VALUE _cdata = rb_ivar_get(v_order, rb_intern("@_cdata"));
-		Data_Get_Struct(_cdata, Order, o);
+		Order *order_data;
+		Data_Get_Struct(_cdata, Order, order_data);
+		if (order_data == o)
+			return; // Do nothing if o is already the data inside URN_CORE::Order instance
+		*order_data = *o; // Copy the entire structure
 	} else if (TYPE(v_order) == T_HASH) {
-		order_from_hash(v_order, o);
+		VALUE order_hash = rb_order_to_hash(Qnil);
+		rb_funcall(v_order, rb_intern("merge!"), 1, order_hash);
 	} else {
 		rb_raise(rb_eTypeError, "Expected URN_CORE::Order or Hash");
 	}
-	return o;
 }
 
 /* Replacement of:
@@ -157,7 +176,7 @@ void format_order(char* buffer, size_t size, const struct Order* o) {
 	snprintf(buffer, size, "%-5s%s%s", o->T, p_str, s_str);
 }
 VALUE rb_format_order(VALUE self, VALUE v_order) {
-	extract_ruby_order(v_order, o);
+	attach_or_parse_ruby_order(v_order, o);
 
 	char buffer[256];
 	format_order(buffer, sizeof(buffer), o);
@@ -291,7 +310,7 @@ VALUE rb_format_trade(int argc, VALUE* argv, VALUE self) {
 	VALUE v_opt;
 	rb_scan_args(argc, argv, "11", &v_order, &v_opt);  // 1 required and 1 optional argument
 
-	extract_ruby_order(v_order, o);
+	attach_or_parse_ruby_order(v_order, o);
 
 	char result[256];
 	format_trade(o, result);
@@ -346,11 +365,11 @@ bool order_alive(Order* o) {
 	return o->_alive;
 }
 VALUE rb_order_cancelled(VALUE self, VALUE v_order) {
-	extract_ruby_order(v_order, o);
+	attach_or_parse_ruby_order(v_order, o);
 	return order_cancelled(o) ? Qtrue : Qfalse;
 }
 VALUE rb_order_alive(VALUE self, VALUE v_order) {
-	extract_ruby_order(v_order, o);
+	attach_or_parse_ruby_order(v_order, o);
 	return order_alive(o) ? Qtrue : Qfalse;
 }
 
@@ -362,12 +381,12 @@ VALUE rb_order_alive(VALUE self, VALUE v_order) {
 inline bool order_canceling(Order* o) { return strcmp(o->status, "canceling") == 0; }
 inline bool order_pending(Order* o) { return strcmp(o->status, "pending") == 0; }
 VALUE rb_order_canceling(VALUE self, VALUE v_order) {
-    extract_ruby_order(v_order, o);
-    return order_canceling(o) ? Qtrue : Qfalse;
+	attach_or_parse_ruby_order(v_order, o);
+	return order_canceling(o) ? Qtrue : Qfalse;
 }
 VALUE rb_order_pending(VALUE self, VALUE v_order) {
-    extract_ruby_order(v_order, o);
-    return order_pending(o) ? Qtrue : Qfalse;
+	attach_or_parse_ruby_order(v_order, o);
+	return order_pending(o) ? Qtrue : Qfalse;
 }
 
 /* Replacement of:
@@ -375,18 +394,47 @@ VALUE rb_order_pending(VALUE self, VALUE v_order) {
  *	def order_set_dead(o)
  */
 void order_set_dead(Order *o) {
-    if (o->_status_cached && !o->_alive) return;
-    if (o->remained == 0.0)
-        strncpy(o->status, "filled", sizeof(o->status) - 1);
-    else
-        strncpy(o->status, "canceled", sizeof(o->status) - 1);
-    o->_status_cached = false;
-    order_calculate_status(o);
+	if (o->_status_cached && !o->_alive) return;
+	if (o->remained == 0.0)
+		strncpy(o->status, "filled", sizeof(o->status) - 1);
+	else
+		strncpy(o->status, "canceled", sizeof(o->status) - 1);
+	o->_status_cached = false;
+	order_calculate_status(o);
 }
 VALUE rb_order_set_dead(VALUE self, VALUE v_order) {
-    extract_ruby_order(v_order, o);
-    order_set_dead(o);
-    return v_order;
+	attach_or_parse_ruby_order(v_order, o);
+	order_set_dead(o);
+	write_to_ruby_order(v_order, o);
+	return v_order;
+}
+
+/* Replacement of:
+ * bootstrap.rb/OrderUtil
+ *	def order_status_evaluate(o)
+ */
+void order_status_evaluate(Order *o) {
+	if (o->v < 0) {
+		o->s = urn_round(o->s, 10);
+		o->executed = urn_round(o->executed, 10);
+		o->remained = urn_round(o->remained, 10);
+		o->p = urn_round(o->p, 10);
+		if (strcmp(o->status, "pending") == 0) {
+			// Pending order might have no maker_size
+			if (o->maker_size >= 0)
+				o->maker_size = urn_round(o->maker_size, 10);
+		} else
+			o->maker_size = urn_round(o->maker_size, 10);
+	}
+
+	o->_status_cached = false;
+	order_calculate_status(o);
+}
+VALUE rb_order_status_evaluate(VALUE self, VALUE v_order) {
+	attach_or_parse_ruby_order(v_order, o);
+	order_status_evaluate(o);
+	write_to_ruby_order(v_order, o);
+	return v_order;
 }
 
 void order_util_bind(VALUE urn_core_module) {
@@ -402,5 +450,6 @@ void order_util_bind(VALUE urn_core_module) {
 	rb_define_method(cOrderUtil, "order_canceling", rb_order_canceling, 1);
 	rb_define_method(cOrderUtil, "order_pending", rb_order_pending, 1);
 	rb_define_method(cOrderUtil, "order_set_dead", rb_order_set_dead, 1);
+	rb_define_method(cOrderUtil, "order_status_evaluate", rb_order_status_evaluate, 1);
 
 }

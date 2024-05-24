@@ -8,7 +8,7 @@ class RubyNative
   include URN::MathUtil_RB
   include URN::OrderUtil_RB
   def initialize
-    @o = {"i"=>"123456", "client_oid"=>"", "pair"=>"", "asset"=>"", "currency"=>"", "status"=>"", "T"=>"", "market"=>"", "p"=>0.0, "s"=>0.0, "remained"=>0.0, "executed"=>0.0, "avg_price"=>0.0, "fee"=>0.0, "maker_size"=>0.0, "t"=>0, "_status_cached" => false}
+    @o = {"i"=>"123456","status"=>"new", "T"=>"buy", "market"=>"market", "p"=>66666.66, "s"=>0.1, "executed"=>0.0123, "maker_size"=>0.1, "t"=>10000000000, "_status_cached"=>false}
     @o['p'] = 66666.66
     @o['s'] = 0.1
     @o['maker_size'] = 0.1
@@ -47,7 +47,7 @@ class RubyNative
   def o_set_dead
     order_set_dead(@o)
     @o['_alive'] = nil
-    true
+    order_alive?(@o)
   end
 end
 
@@ -96,7 +96,7 @@ class RubyCExt
   def o_set_dead
     order_set_dead(@o)
     @o['_status_cached'] = false
-    true
+    order_alive?(@o)
   end
 end
 

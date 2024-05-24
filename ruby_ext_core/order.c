@@ -21,6 +21,8 @@ static VALUE s_executed;
 static VALUE s_avg_price;
 static VALUE s_fee;
 static VALUE s_maker_size;
+static VALUE s_p_real;
+static VALUE s_v;
 static VALUE s_t;
 static VALUE s__buy;
 static VALUE s__status_cached;
@@ -57,6 +59,10 @@ static void rb_init_order_extension() {
 	rb_global_variable(&s_fee);
 	s_maker_size = rb_str_new_cstr("maker_size");
 	rb_global_variable(&s_maker_size);
+	s_p_real= rb_str_new_cstr("p_real");
+	rb_global_variable(&s_p_real);
+	s_maker_size = rb_str_new_cstr("v");
+	rb_global_variable(&s_v);
 	s_t = rb_str_new_cstr("t");
 	rb_global_variable(&s_t);
 	s__buy = rb_str_new_cstr("_buy");
@@ -71,7 +77,7 @@ static void rb_init_order_extension() {
 
 VALUE rb_order_new(VALUE self) {
 	Order *o = ALLOC(Order);
-	memset(o, 0, sizeof(Order));
+	INIT_ORDER(o);
 	// Wrap struct into @_cdata
 	rb_ivar_set(self, rb_intern("@_cdata"), Data_Wrap_Struct(URN_CORE_Order, NULL, xfree, o));
 	// Al rest unstructured fields in @_data
@@ -80,7 +86,7 @@ VALUE rb_order_new(VALUE self) {
 }
 
 // Retrieve struct o from Order @_cdata
-struct Order* order_cdata(VALUE order) {
+Order* order_cdata(VALUE order) {
 	VALUE _cdata = rb_ivar_get(order, rb_intern("@_cdata"));
 	struct Order *o = NULL;
 	Data_Get_Struct(_cdata, Order, o);
@@ -89,7 +95,7 @@ struct Order* order_cdata(VALUE order) {
 
 // Importing Order from Hash values.
 void order_from_hash(VALUE hash, Order* o) {
-	memset(o, 0, sizeof(Order));
+	INIT_ORDER(o);
 	VALUE temp;
 	// Set fields from hash if present
 	if ((temp = rb_hash_aref(hash, s_i)) != Qnil) strncpy(o->i, RSTRING_PTR(temp), sizeof(o->i) - 1);
@@ -101,14 +107,54 @@ void order_from_hash(VALUE hash, Order* o) {
 	if ((temp = rb_hash_aref(hash, s_T)) != Qnil) strncpy(o->T, RSTRING_PTR(temp), sizeof(o->T) - 1);
 	if ((temp = rb_hash_aref(hash, s_market)) != Qnil) strncpy(o->market, RSTRING_PTR(temp), sizeof(o->market) - 1);
 
-	if ((temp = rb_hash_aref(hash, s_p)) != Qnil) o->p = NUM2DBL(temp);
-	if ((temp = rb_hash_aref(hash, s_s)) != Qnil) o->s = NUM2DBL(temp);
-	if ((temp = rb_hash_aref(hash, s_remained)) != Qnil) o->remained = NUM2DBL(temp);
-	if ((temp = rb_hash_aref(hash, s_executed)) != Qnil) o->executed = NUM2DBL(temp);
-	if ((temp = rb_hash_aref(hash, s_avg_price)) != Qnil) o->avg_price = NUM2DBL(temp);
-	if ((temp = rb_hash_aref(hash, s_fee)) != Qnil) o->fee = NUM2DBL(temp);
-	if ((temp = rb_hash_aref(hash, s_maker_size)) != Qnil) o->maker_size = NUM2DBL(temp);
-	if ((temp = rb_hash_aref(hash, s_t)) != Qnil) o->t = NUM2ULONG(temp);
+	if ((temp = rb_hash_aref(hash, s_p)) != Qnil) {
+		o->p = NUM2DBL(temp);
+	} else {
+		o->p = -99999.0;
+	}
+	if ((temp = rb_hash_aref(hash, s_s)) != Qnil) {
+		o->s = NUM2DBL(temp);
+	} else {
+		o->s = -99999.0;
+	}
+	if ((temp = rb_hash_aref(hash, s_remained)) != Qnil) {
+		o->remained = NUM2DBL(temp);
+	} else {
+		o->remained = -99999.0;
+	}
+	if ((temp = rb_hash_aref(hash, s_executed)) != Qnil) {
+		o->executed = NUM2DBL(temp);
+	} else {
+		o->executed = -99999.0;
+	}
+	if ((temp = rb_hash_aref(hash, s_avg_price)) != Qnil) {
+		o->avg_price = NUM2DBL(temp);
+	} else {
+		o->avg_price = -99999.0;
+	}
+	if ((temp = rb_hash_aref(hash, s_fee)) != Qnil) {
+		o->fee = NUM2DBL(temp);
+	} else {
+		o->fee = -99999.0;
+	}
+	if ((temp = rb_hash_aref(hash, s_maker_size)) != Qnil) {
+		o->maker_size = NUM2DBL(temp);
+	} else {
+		o->maker_size = -99999.0;
+	}
+	if ((temp = rb_hash_aref(hash, s_p_real)) != Qnil) {
+		o->p_real = NUM2DBL(temp);
+	} else {
+		o->p_real = -99999.0;
+	}
+	if ((temp = rb_hash_aref(hash, s_v)) != Qnil) {
+		o->v = NUM2DBL(temp);
+	} else {
+		o->v = -99999.0;
+	}
+	if ((temp = rb_hash_aref(hash, s_t)) != Qnil) {
+		o->t = NUM2ULONG(temp);
+	}
 
 	if ((temp = rb_hash_aref(hash, s__status_cached)) != Qnil) o->_status_cached = RTEST(temp);
 	if ((temp = rb_hash_aref(hash, s__buy)) != Qnil) o->_buy = RTEST(temp);
@@ -138,6 +184,7 @@ VALUE rb_new_order_from_hash(VALUE klass, VALUE hash) {
 				strcmp(key_str, "remained") != 0 && strcmp(key_str, "executed") != 0 &&
 				strcmp(key_str, "avg_price") != 0 && strcmp(key_str, "fee") != 0 &&
 				strcmp(key_str, "maker_size") != 0 && strcmp(key_str, "t") != 0 &&
+				strcmp(key_str, "p_real") != 0 && strcmp(key_str, "v") != 0 &&
 				strcmp(key_str, "_buy") != 0 && strcmp(key_str, "_status_cached") != 0 &&
 				strcmp(key_str, "_alive") != 0 && strcmp(key_str, "_cancelled") != 0) {
 			rb_hash_aset(data_hash, key, rb_hash_aref(hash, key));
@@ -160,13 +207,15 @@ VALUE rb_order_hashget(VALUE self, VALUE v_key) {
 	if (strcmp(s, "T") == 0) return rb_str_new_cstr(o->T);
 	if (strcmp(s, "market") == 0) return rb_str_new_cstr(o->market);
 
-	if (strcmp(s, "p") == 0) return rb_float_new(o->p);
-	if (strcmp(s, "s") == 0) return rb_float_new(o->s);
-	if (strcmp(s, "remained") == 0) return rb_float_new(o->remained);
-	if (strcmp(s, "executed") == 0) return rb_float_new(o->executed);
-	if (strcmp(s, "avg_price") == 0) return rb_float_new(o->avg_price);
-	if (strcmp(s, "fee") == 0) return rb_float_new(o->fee);
-	if (strcmp(s, "maker_size") == 0) return rb_float_new(o->maker_size);
+	if (strcmp(s, "p") == 0) return o->p < 0 ? Qnil : rb_float_new(o->p);
+	if (strcmp(s, "s") == 0) return o->s < 0 ? Qnil : rb_float_new(o->s);
+	if (strcmp(s, "remained") == 0) return o->remained < 0 ? Qnil : rb_float_new(o->remained);
+	if (strcmp(s, "executed") == 0) return o->executed < 0 ? Qnil : rb_float_new(o->executed);
+	if (strcmp(s, "avg_price") == 0) return o->avg_price < 0 ? Qnil : rb_float_new(o->avg_price);
+	if (strcmp(s, "fee") == 0) return o->fee < 0 ? Qnil : rb_float_new(o->fee);
+	if (strcmp(s, "maker_size") == 0) return o->maker_size < 0 ? Qnil : rb_float_new(o->maker_size);
+	if (strcmp(s, "p_real") == 0) return o->p_real < 0 ? Qnil : rb_float_new(o->p_real);
+	if (strcmp(s, "v") == 0) return o->v < 0 ? Qnil : rb_float_new(o->v);
 
 	if (strcmp(s, "t") == 0) return ULONG2NUM(o->t);
 
@@ -185,82 +234,123 @@ VALUE rb_order_hashset(VALUE self, VALUE v_key, VALUE v_val) {
 	char *s = RSTRING_PTR(v_key);
 
 	if (strcmp(s, "i") == 0) {
-		strcpy(o->i, RSTRING_PTR(v_val));
+		if (v_val == Qnil) {
+			memset(o->i, 0, sizeof(o->i));
+		} else {
+			strncpy(o->i, RSTRING_PTR(v_val), sizeof(o->i) - 1);
+		}
 	} else if (strcmp(s, "client_oid") == 0) {
-		strcpy(o->client_oid, RSTRING_PTR(v_val));
+		if (v_val == Qnil) {
+			memset(o->client_oid, 0, sizeof(o->client_oid));
+		} else {
+			strncpy(o->client_oid, RSTRING_PTR(v_val), sizeof(o->client_oid) - 1);
+		}
 	} else if (strcmp(s, "pair") == 0) {
-		strcpy(o->pair, RSTRING_PTR(v_val));
+		if (v_val == Qnil) {
+			memset(o->pair, 0, sizeof(o->pair));
+		} else {
+			strncpy(o->pair, RSTRING_PTR(v_val), sizeof(o->pair) - 1);
+		}
 	} else if (strcmp(s, "asset") == 0) {
-		strcpy(o->asset, RSTRING_PTR(v_val));
+		if (v_val == Qnil) {
+			memset(o->asset, 0, sizeof(o->asset));
+		} else {
+			strncpy(o->asset, RSTRING_PTR(v_val), sizeof(o->asset) - 1);
+		}
 	} else if (strcmp(s, "currency") == 0) {
-		strcpy(o->currency, RSTRING_PTR(v_val));
+		if (v_val == Qnil) {
+			memset(o->currency, 0, sizeof(o->currency));
+		} else {
+			strncpy(o->currency, RSTRING_PTR(v_val), sizeof(o->currency) - 1);
+		}
 	} else if (strcmp(s, "status") == 0) {
-		strcpy(o->status, RSTRING_PTR(v_val));
+		if (v_val == Qnil) {
+			memset(o->status, 0, sizeof(o->status));
+		} else {
+			strncpy(o->status, RSTRING_PTR(v_val), sizeof(o->status) - 1);
+		}
 	} else if (strcmp(s, "T") == 0) {
-		strcpy(o->T, RSTRING_PTR(v_val));
+		if (v_val == Qnil) {
+			memset(o->T, 0, sizeof(o->T));
+		} else {
+			strncpy(o->T, RSTRING_PTR(v_val), sizeof(o->T) - 1);
+		}
 	} else if (strcmp(s, "market") == 0) {
-		strcpy(o->market, RSTRING_PTR(v_val));
+		if (v_val == Qnil) {
+			memset(o->market, 0, sizeof(o->market));
+		} else {
+			strncpy(o->market, RSTRING_PTR(v_val), sizeof(o->market) - 1);
+		}
 	} else if (strcmp(s, "p") == 0) {
-		o->p = NUM2DBL(v_val);
+		o->p = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
 	} else if (strcmp(s, "s") == 0) {
-		o->s = NUM2DBL(v_val);
+		o->s = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
 	} else if (strcmp(s, "remained") == 0) {
-		o->remained = NUM2DBL(v_val);
+		o->remained = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
 	} else if (strcmp(s, "executed") == 0) {
-		o->executed = NUM2DBL(v_val);
+		o->executed = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
 	} else if (strcmp(s, "avg_price") == 0) {
-		o->avg_price = NUM2DBL(v_val);
+		o->avg_price = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
 	} else if (strcmp(s, "fee") == 0) {
-		o->fee = NUM2DBL(v_val);
+		o->fee = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
 	} else if (strcmp(s, "maker_size") == 0) {
-		o->maker_size = NUM2DBL(v_val);
+		o->maker_size = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
+	} else if (strcmp(s, "p_real") == 0) {
+		o->p_real = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
+	} else if (strcmp(s, "v") == 0) {
+		o->v = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
 	} else if (strcmp(s, "t") == 0) {
-		o->t = NUM2ULONG(v_val);
+		o->t = (v_val == Qnil) ? 0 : NUM2ULONG(v_val);
 	} else if (strcmp(s, "_buy") == 0) {
-		o->_buy = RTEST(v_val);
+		o->_buy = (v_val == Qnil) ? false : RTEST(v_val);
 	} else if (strcmp(s, "_status_cached") == 0) {
-		o->_status_cached = RTEST(v_val);
+		o->_status_cached = (v_val == Qnil) ? false : RTEST(v_val);
 	} else if (strcmp(s, "_alive") == 0) {
-		o->_alive = RTEST(v_val);
+		o->_alive = (v_val == Qnil) ? false : RTEST(v_val);
 	} else if (strcmp(s, "_cancelled") == 0) {
-		o->_cancelled = RTEST(v_val);
-	} else { // Write into @_data if the field is unknown
-		rb_hash_aset(rb_iv_get(self, "@_data"), v_key, v_val);
+		o->_cancelled = (v_val == Qnil) ? false : RTEST(v_val);
+	} else {
+		// If the field is not recognized, store it in @_data
+		VALUE _data = rb_iv_get(self, "@_data");
+		rb_hash_aset(_data, v_key, v_val);
 	}
 
-	return Qnil;
+	return v_val;
 }
 
 VALUE rb_order_to_hash(VALUE self) {
 	VALUE _cdata = rb_ivar_get(self, rb_intern("@_cdata"));
-	Order *order = NULL;
-	Data_Get_Struct(_cdata, Order, order);
+	Order *o = NULL;
+	Data_Get_Struct(_cdata, Order, o);
 
 	VALUE hash = rb_hash_new();
 
-	rb_hash_aset(hash, s_i, rb_str_new_cstr(order->i));
-	rb_hash_aset(hash, s_client_oid, rb_str_new_cstr(order->client_oid));
-	rb_hash_aset(hash, s_pair, rb_str_new_cstr(order->pair));
-	rb_hash_aset(hash, s_asset, rb_str_new_cstr(order->asset));
-	rb_hash_aset(hash, s_currency, rb_str_new_cstr(order->currency));
-	rb_hash_aset(hash, s_status, rb_str_new_cstr(order->status));
-	rb_hash_aset(hash, s_T, rb_str_new_cstr(order->T));
-	rb_hash_aset(hash, s_market, rb_str_new_cstr(order->market));
+	if (strlen(o->i) > 0) rb_hash_aset(hash, rb_str_new_cstr("i"), rb_str_new_cstr(o->i));
+	if (strlen(o->client_oid) > 0) rb_hash_aset(hash, rb_str_new_cstr("client_oid"), rb_str_new_cstr(o->client_oid));
+	if (strlen(o->pair) > 0) rb_hash_aset(hash, rb_str_new_cstr("pair"), rb_str_new_cstr(o->pair));
+	if (strlen(o->asset) > 0) rb_hash_aset(hash, rb_str_new_cstr("asset"), rb_str_new_cstr(o->asset));
+	if (strlen(o->currency) > 0) rb_hash_aset(hash, rb_str_new_cstr("currency"), rb_str_new_cstr(o->currency));
+	if (strlen(o->status) > 0) rb_hash_aset(hash, rb_str_new_cstr("status"), rb_str_new_cstr(o->status));
+	if (strlen(o->T) > 0) rb_hash_aset(hash, rb_str_new_cstr("T"), rb_str_new_cstr(o->T));
+	if (strlen(o->market) > 0) rb_hash_aset(hash, rb_str_new_cstr("market"), rb_str_new_cstr(o->market));
 
-	rb_hash_aset(hash, s_p, rb_float_new(order->p));
-	rb_hash_aset(hash, s_s, rb_float_new(order->s));
-	rb_hash_aset(hash, s_remained, rb_float_new(order->remained));
-	rb_hash_aset(hash, s_executed, rb_float_new(order->executed));
-	rb_hash_aset(hash, s_avg_price, rb_float_new(order->avg_price));
-	rb_hash_aset(hash, s_fee, rb_float_new(order->fee));
-	rb_hash_aset(hash, s_maker_size, rb_float_new(order->maker_size));
-	rb_hash_aset(hash, s_t, ULONG2NUM(order->t));
+	if (o->p >= 0) rb_hash_aset(hash, rb_str_new_cstr("p"), rb_float_new(o->p));
+	if (o->s >= 0) rb_hash_aset(hash, rb_str_new_cstr("s"), rb_float_new(o->s));
+	if (o->remained >= 0) rb_hash_aset(hash, rb_str_new_cstr("remained"), rb_float_new(o->remained));
+	if (o->executed >= 0) rb_hash_aset(hash, rb_str_new_cstr("executed"), rb_float_new(o->executed));
+	if (o->avg_price >= 0) rb_hash_aset(hash, rb_str_new_cstr("avg_price"), rb_float_new(o->avg_price));
+	if (o->fee >= 0) rb_hash_aset(hash, rb_str_new_cstr("fee"), rb_float_new(o->fee));
+	if (o->maker_size >= 0) rb_hash_aset(hash, rb_str_new_cstr("maker_size"), rb_float_new(o->maker_size));
+	if (o->p_real >= 0) rb_hash_aset(hash, rb_str_new_cstr("p_real"), rb_float_new(o->p_real));
+	if (o->v >= 0) rb_hash_aset(hash, rb_str_new_cstr("v"), rb_float_new(o->v));
 
-	rb_hash_aset(hash, s__status_cached, order->_status_cached ? Qtrue : Qfalse);
-	if (order->_status_cached) {
-		rb_hash_aset(hash, s__buy, order->_buy ? Qtrue : Qfalse);
-		rb_hash_aset(hash, s__alive, order->_alive ? Qtrue : Qfalse);
-		rb_hash_aset(hash, s__cancelled, order->_cancelled ? Qtrue : Qfalse);
+	rb_hash_aset(hash, s_t, ULONG2NUM(o->t));
+
+	rb_hash_aset(hash, s__status_cached, o->_status_cached ? Qtrue : Qfalse);
+	if (o->_status_cached) {
+		rb_hash_aset(hash, s__buy, o->_buy ? Qtrue : Qfalse);
+		rb_hash_aset(hash, s__alive, o->_alive ? Qtrue : Qfalse);
+		rb_hash_aset(hash, s__cancelled, o->_cancelled ? Qtrue : Qfalse);
 	}
 
 	// Include fields in @_data
