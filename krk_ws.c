@@ -207,7 +207,15 @@ int on_wss_msg(char *msg, size_t len) {
 			   */
 			URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "status"), "subscriptionStatus no status", EINVAL);
 			const char *status = yyjson_get_str(jval);
-			if (strcmp(status, "subscribed") != 0) { // Unknown status
+			// {"errorMessage":"Currency pair not supported LSK/XBT","event":"subscriptionStatus","pair":"LSK/XBT","status":"error","subscription":{"name":"book"}}
+			if (strcmp(status, "error") == 0) {
+				URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "errorMessage"), "subscriptionStatus error but no message", EINVAL);
+				const char *error_msg = yyjson_get_str(jval);
+				URN_WARNF("%s", error_msg);
+				if (strstr(error_msg, "Currency pair not supported") != NULL)
+					goto final;
+				URN_GO_FINAL_ON_RV(EINVAL, msg);
+			} else if (strcmp(status, "subscribed") != 0) {
 				URN_GO_FINAL_ON_RV(EINVAL, msg);
 			}
 			URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "channelID"), "subscriptionStatus no channelID", EINVAL);

@@ -335,6 +335,10 @@ int wss_connect() {
 	if ((rv = urn_ws_init(wss_uri, &dialer, &dialer_aio)) != 0)
 		return URN_FATAL_NNG(rv);
 
+	URN_INFOF("Set wss timeout 10s");
+	// nng_duration is a relative time, measured in milliseconds
+	nng_aio_set_timeout(dialer_aio, 10000);
+
 	URN_INFO("Wait conn stream");
 	if ((rv = urn_ws_wait_stream(dialer_aio, &stream)) != 0)
 		return URN_FATAL_NNG(rv);
