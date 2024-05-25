@@ -35,8 +35,9 @@ static void write_to_ruby_order(VALUE v_order, Order *o) {
 			return; // Do nothing if o is already the data inside URN_CORE::Order instance
 		*order_data = *o; // Copy the entire structure
 	} else if (TYPE(v_order) == T_HASH) {
-		VALUE order_hash = rb_order_to_hash(Qnil);
-		rb_funcall(v_order, rb_intern("merge!"), 1, order_hash);
+		VALUE hash = rb_hash_new();
+		order_to_hash(hash, o);
+		rb_funcall(v_order, rb_intern("merge!"), 1, hash);
 	} else {
 		rb_raise(rb_eTypeError, "Expected URN_CORE::Order or Hash");
 	}
@@ -231,7 +232,7 @@ void short_order_status(const char* status, char* short_status) {
 	} else if (strcmp(trimmed_status, "canceled") == 0) {
 		strncpy(short_status, " - ", 4);
 	} else if (strcmp(trimmed_status, "finished") == 0 || strcmp(trimmed_status, "filled") == 0) {
-		strncpy(short_status, " √ ", 4);
+		strncpy(short_status, "FIL", 4);
 	} else if (strcmp(trimmed_status, "new") == 0) {
 		strncpy(short_status, "NEW", 4);
 	} else if (strcmp(trimmed_status, "cancelling") == 0 || strcmp(trimmed_status, "canceling") == 0) {
@@ -242,68 +243,86 @@ void short_order_status(const char* status, char* short_status) {
 	}
 }
 void format_trade(Order* o, char* str) {
-	char market_account[9];
-	char type[2];
-	char price[32];
-	char executed_s[32];
-	char status[4];
-	char id[7];
-	char trade_time[64];
-	char maker_size[4] = "??";
-	char formatted_str[256];  // Buffer for the formatted string
+	if (o == NULL) {
+		snprintf(str, 256, "Null trade");
+		return;
+	}
 
-	// Market and account
-	snprintf(market_account, 9, "%s%s", o->market, o->account);
-	market_account[8] = '\0';
+	char market_account[16] = {0};
+	snprintf(market_account, sizeof(market_account), "%-8.8s", o->market);
 
-	// Type
-	if (strlen(o->T) > 0)
-		snprintf(type, 2, "%c", toupper(o->T[0]));
-	else
-		snprintf(type, 2, "?");
+	char t_type[16] = {0};
+	snprintf(t_type, sizeof(t_type), "%-4.4s", o->T);
+	t_type[0] = toupper(t_type[0]);
 
-	// Price
-	format_num(o->p, 10, 5, price);
+	char p_str[32] = {0};
+	format_num(o->p, 10, 5, p_str);
 
-	// Executed and size
-	format_num(o->executed, 5, 5, executed_s);
-	char size[32];
-	format_num(o->s, 5, 5, size);
-	snprintf(executed_s + strlen(executed_s), 32 - strlen(executed_s), "/%s", size);
+	char executed_str[32] = {0};
+	format_num(o->executed, 5, 5, executed_str);
 
-	// Status
+	char s_str[32] = {0};
+	format_num(o->s, 5, 5, s_str);
+
+	char status[16] = {0};
 	short_order_status(o->status, status);
 
-	// ID
-	if (strlen(o->i) > 0)
-		snprintf(id, 7, "%s", o->i);
-	else
-		snprintf(id, 7, "-");
-	id[6] = '\0';
+	char id_str[64] = {0};
+	snprintf(id_str, sizeof(id_str), "%.6s", o->i + strlen(o->i) - 6);
+	char id_ljust[64] = {0};
+	snprintf(id_ljust, sizeof(id_ljust), "%-6s", id_str);
 
-	// Trade time
-	format_trade_time(o->t, trade_time);
+	char time_str[64] = {0};
+	format_trade_time(o->t, time_str);
 
-	// Maker size
-	if (o->maker_size != 0 && o->s != 0) {
-		if (o->maker_size == o->s) {
-			snprintf(maker_size, 3, "  ");
+	char maker_size_str[32] = "??";
+	if (o->maker_size >= 0 && o->s >= 0) {
+		if (fabs(o->maker_size - o->s) < 1e-6) {
+			strcpy(maker_size_str, "  ");
 		} else {
-			snprintf(maker_size, 3, "Tk");
+			strcpy(maker_size_str, "Tk");
 		}
-	} else
-		snprintf(maker_size, 3, "??");
+	}
 
-	// Construct the formatted string
-	snprintf(formatted_str, 256, "%-8s %s %s %s %s %-6s %s %s",
-			market_account, type, price, executed_s,
-			status, id, trade_time, maker_size);
+	char result[512] = {0};
 
-	// Wrap the formatted string with the appropriate color
-	if (strlen(o->T) > 0 && (strcasecmp(o->T, "sell") == 0 || strcasecmp(o->T, "ask") == 0))
-		snprintf(str, 256, "%s%s%s", CLR_RED, formatted_str, CLR_RST);
-	else
-		snprintf(str, 256, "%s%s%s", CLR_GREEN, formatted_str, CLR_RST);
+	if (o->v >= 0) {
+		char executed_v_str[32] = {0};
+		format_num(o->executed_v, 1, 7, executed_v_str);
+
+		char v_str[32] = {0};
+		format_num(o->v, 1, 7, v_str);
+
+		char vol_info[64] = {0};
+		format_num(o->executed, 4, 2, executed_str);
+		snprintf(vol_info, sizeof(executed_str), "S:%s", executed_str);
+
+		char expiry_info[16] = {0};
+		char* at_pos = strchr(o->pair, '@');
+		if (at_pos != NULL) {
+			if (strcmp(at_pos + 1, "P") == 0) {
+				strcpy(expiry_info, "@P");
+			} else {
+				snprintf(expiry_info, sizeof(expiry_info), "@%.4s", at_pos + 1 + strlen(at_pos + 1) - 4);
+			}
+		}
+
+		snprintf(vol_info + strlen(vol_info), sizeof(vol_info) - strlen(vol_info), "%s", expiry_info);
+		snprintf(result, sizeof(result), "%-8s %c %-10s %-9s/%-9s %s %-5s %s %s %s",
+				market_account, t_type[0], p_str, executed_v_str,
+				v_str, status, id_ljust, time_str, maker_size_str, vol_info);
+	} else {
+		snprintf(result, sizeof(result), "%-8s %c %-10s %-11s/%-10s %s %-5s %s %s",
+				market_account, t_type[0], p_str, executed_str,
+				s_str, status, id_ljust, time_str, maker_size_str);
+	}
+
+	// Handle color based on order type
+	if (strcasecmp(o->T, "sell") == 0 || strcasecmp(o->T, "ask") == 0) {
+		snprintf(str, 256, "%s%s%s", CLR_RED, result, CLR_RST);
+	} else {
+		snprintf(str, 256, "%s%s%s", CLR_GREEN, result, CLR_RST);
+	}
 }
 VALUE rb_format_trade(int argc, VALUE* argv, VALUE self) {
 	VALUE v_order;
@@ -313,6 +332,7 @@ VALUE rb_format_trade(int argc, VALUE* argv, VALUE self) {
 	attach_or_parse_ruby_order(v_order, o);
 
 	char result[256];
+	//	ORDER_LOG(o);
 	format_trade(o, result);
 	return rb_str_new_cstr(result);
 }

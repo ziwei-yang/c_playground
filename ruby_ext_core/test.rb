@@ -7,13 +7,14 @@ require_relative "../../uranus/common/old"
 class Base
   def self.make_samples(num)
     pairs = ["USD-BTC", "USD-ETH", "USD-LTC", "USD-XRP", "USD-BCH"]
-    statuses = ["new", "pending", "filled"]
+    statuses = ["new", "canceled"]
     types = ["buy", "sell"]
     markets = ["market_1", "market_2", "market_3", "market_4", "market_5"]
 
     samples = []
 
     num.times do |i|
+      s = (rand * 10).round(8)
       order = {
         "i" => "id_#{sprintf('%05d', i+1)}",
         "pair" => pairs.sample,
@@ -21,23 +22,27 @@ class Base
         "T" => types.sample,
         "market" => markets.sample,
         "p" => (rand * 100000).round(2),
-        "s" => (rand * 1000).round(2),
-        "remained" => (rand * 500).round(2),
-        "executed" => (rand * 500).round(2),
+        "s" => s,
+        "remained" => [(rand * 500).round(8), s].min.round(8),
         "t" => 1609459200 + i * 60
       }
+      # 20% of the orders are filled.
+      if rand < 0.2
+        order['remained'] = 0
+      end
+      order['status'] = "filled" if order['remained'] == 0
+      order["executed"] = (order['s'] - order['remained']).round(8)
 
       # Add optional fields to 20% of the orders
       if rand < 0.2
-        order["_status_cached"] = [true, false].sample
-        order["_buy"] = [true, false].sample
-        order["_alive"] = [true, false].sample
-        order["_cancelled"] = [true, false].sample
+        order["_alive"] = (order['status'] == 'new')
+        order["_cancelled"] = (order['status'] == 'canceled')
       end
 
       # Add 'v' field to 25% of the orders
       if rand < 0.25
         order["v"] = (order["p"] * order["s"]).round
+        order["executed_v"] = (order["p"] * order["executed"]).round
       end
 
       # Add optional client_oid, avg_price, fee, maker_size fields to some orders
@@ -77,7 +82,7 @@ class Base
   def o_to_h
     @samples.map { |o| o.to_h }
   end
-  def format_o
+  def o_format
     @samples.map { |o| [format_order(o), format_trade(o)].join("\n").uncolorize }
   end
   def o_alive?
@@ -124,7 +129,7 @@ class Tester
 
   def test(name, args, opt={})
     name = name.to_sym
-    print "Preparing #{name.inspect} #{args.inspect}"
+    print "prep #{name.inspect} #{args.inspect}..."
 
     times = opt[:benchmark] || 1
 
@@ -168,9 +173,9 @@ end
 
 t = Tester.new
 
+t.test_and_benchmark(:o_format, [], 100_000)
 t.test_and_benchmark(:o_set_dead, [], 100_000)
 t.test_and_benchmark(:o_alive?, [], 100_000)
-t.test_and_benchmark(:format_o, [], 10_000)
 
 t.test_and_benchmark(:parse_contract, ["USDT-BTC@20240812"], 1_000_000)
 t.test_and_benchmark(:parse_contract, ["USDT-BTC"], 1_000_000)
@@ -204,7 +209,10 @@ t.test(:diff, [8, 4])
 t.test(:diff, [4, 8.88])
 t.test_and_benchmark(:diff, [3.88, 8.33], 100_000)
 
+t.test(:format_num, [0.0, 8, 4])
 t.test(:format_num, [0.88, 8, 4])
 t.test(:format_num, [0.88, 4, 8])
 t.test(:format_num, [8888, 8, 4])
+t.test(:format_num, [9.00000034, 5, 5])
+t.test(:format_num, [81176.0, 10, 5])
 t.test_and_benchmark(:format_num, [1.88, 8, 4], 100_000)

@@ -117,21 +117,27 @@ void format_num(double num, int fraclen, int decilen, char* str) {
 		str[fraclen + decilen + 1] = '\0'; // Null-terminate the string
 		return;
 	}
+
+
 	// Use snprintf to format the number with specified width and precision
 	snprintf(str, fraclen + decilen + 3, "%*.*f", fraclen + decilen + 1, fraclen, num);
 
 	// Replace trailing zeros in the fraction with spaces
 	char* dot = strchr(str, '.');
-	if (dot != NULL) {
-		char* end = str + strlen(str) - 1;
-		while (end > dot && *end == '0') {
-			*end = ' ';
-			end--;
+	if (dot == NULL) return;
+	char* end = str + strlen(str) - 1;
+	if ((int)num == num) {
+		while (end >= dot) {
+			*end = ' '; end--;
 		}
-		// If the last character after removing zeros is a dot, replace it with a space
-		if (*end == '.')
-			*end = ' ';
+		return;
 	}
+	while (end > dot && *end == '0') {
+		if (end == dot + 1) break;
+		*end = ' '; end--;
+	}
+	// If the last character after removing zeros is a dot, replace it with a space
+	if (*end == '.') *end = ' ';
 }
 VALUE rb_format_num(int argc, VALUE *argv, VALUE klass) {
 	VALUE v_num, v_fraclen, v_decilen;

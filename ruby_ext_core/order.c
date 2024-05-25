@@ -23,6 +23,8 @@ static VALUE s_fee;
 static VALUE s_maker_size;
 static VALUE s_p_real;
 static VALUE s_v;
+static VALUE s_executed_v;
+static VALUE s_remained_v;
 static VALUE s_t;
 static VALUE s__buy;
 static VALUE s__status_cached;
@@ -61,8 +63,12 @@ static void rb_init_order_extension() {
 	rb_global_variable(&s_maker_size);
 	s_p_real= rb_str_new_cstr("p_real");
 	rb_global_variable(&s_p_real);
-	s_maker_size = rb_str_new_cstr("v");
+	s_v = rb_str_new_cstr("v");
 	rb_global_variable(&s_v);
+	s_executed_v = rb_str_new_cstr("executed_v");
+	rb_global_variable(&s_executed_v);
+	s_remained_v = rb_str_new_cstr("remained_v");
+	rb_global_variable(&s_remained_v);
 	s_t = rb_str_new_cstr("t");
 	rb_global_variable(&s_t);
 	s__buy = rb_str_new_cstr("_buy");
@@ -152,6 +158,16 @@ void order_from_hash(VALUE hash, Order* o) {
 	} else {
 		o->v = -99999.0;
 	}
+	if ((temp = rb_hash_aref(hash, s_executed_v)) != Qnil) {
+		o->executed_v = NUM2DBL(temp);
+	} else {
+		o->executed_v = -99999.0;
+	}
+	if ((temp = rb_hash_aref(hash, s_remained_v)) != Qnil) {
+		o->remained_v = NUM2DBL(temp);
+	} else {
+		o->remained_v = -99999.0;
+	}
 	if ((temp = rb_hash_aref(hash, s_t)) != Qnil) {
 		o->t = NUM2ULONG(temp);
 	}
@@ -185,6 +201,7 @@ VALUE rb_new_order_from_hash(VALUE klass, VALUE hash) {
 				strcmp(key_str, "avg_price") != 0 && strcmp(key_str, "fee") != 0 &&
 				strcmp(key_str, "maker_size") != 0 && strcmp(key_str, "t") != 0 &&
 				strcmp(key_str, "p_real") != 0 && strcmp(key_str, "v") != 0 &&
+				strcmp(key_str, "executed_v") != 0 && strcmp(key_str, "remained_v") != 0 &&
 				strcmp(key_str, "_buy") != 0 && strcmp(key_str, "_status_cached") != 0 &&
 				strcmp(key_str, "_alive") != 0 && strcmp(key_str, "_cancelled") != 0) {
 			rb_hash_aset(data_hash, key, rb_hash_aref(hash, key));
@@ -216,6 +233,8 @@ VALUE rb_order_hashget(VALUE self, VALUE v_key) {
 	if (strcmp(s, "maker_size") == 0) return o->maker_size < 0 ? Qnil : rb_float_new(o->maker_size);
 	if (strcmp(s, "p_real") == 0) return o->p_real < 0 ? Qnil : rb_float_new(o->p_real);
 	if (strcmp(s, "v") == 0) return o->v < 0 ? Qnil : rb_float_new(o->v);
+	if (strcmp(s, "executed_v") == 0) return o->executed_v < 0 ? Qnil : rb_float_new(o->executed_v);
+	if (strcmp(s, "remained_v") == 0) return o->remained_v < 0 ? Qnil : rb_float_new(o->remained_v);
 
 	if (strcmp(s, "t") == 0) return ULONG2NUM(o->t);
 
@@ -299,6 +318,10 @@ VALUE rb_order_hashset(VALUE self, VALUE v_key, VALUE v_val) {
 		o->p_real = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
 	} else if (strcmp(s, "v") == 0) {
 		o->v = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
+	} else if (strcmp(s, "executed_v") == 0) {
+		o->executed_v = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
+	} else if (strcmp(s, "remained_v") == 0) {
+		o->remained_v = (v_val == Qnil) ? -99999 : NUM2DBL(v_val);
 	} else if (strcmp(s, "t") == 0) {
 		o->t = (v_val == Qnil) ? 0 : NUM2ULONG(v_val);
 	} else if (strcmp(s, "_buy") == 0) {
@@ -318,13 +341,7 @@ VALUE rb_order_hashset(VALUE self, VALUE v_key, VALUE v_val) {
 	return v_val;
 }
 
-VALUE rb_order_to_hash(VALUE self) {
-	VALUE _cdata = rb_ivar_get(self, rb_intern("@_cdata"));
-	Order *o = NULL;
-	Data_Get_Struct(_cdata, Order, o);
-
-	VALUE hash = rb_hash_new();
-
+void order_to_hash(VALUE hash, Order* o) {
 	if (strlen(o->i) > 0) rb_hash_aset(hash, rb_str_new_cstr("i"), rb_str_new_cstr(o->i));
 	if (strlen(o->client_oid) > 0) rb_hash_aset(hash, rb_str_new_cstr("client_oid"), rb_str_new_cstr(o->client_oid));
 	if (strlen(o->pair) > 0) rb_hash_aset(hash, rb_str_new_cstr("pair"), rb_str_new_cstr(o->pair));
@@ -343,15 +360,29 @@ VALUE rb_order_to_hash(VALUE self) {
 	if (o->maker_size >= 0) rb_hash_aset(hash, rb_str_new_cstr("maker_size"), rb_float_new(o->maker_size));
 	if (o->p_real >= 0) rb_hash_aset(hash, rb_str_new_cstr("p_real"), rb_float_new(o->p_real));
 	if (o->v >= 0) rb_hash_aset(hash, rb_str_new_cstr("v"), rb_float_new(o->v));
+	if (o->executed_v >= 0) rb_hash_aset(hash, rb_str_new_cstr("executed_v"), rb_float_new(o->executed_v));
+	if (o->remained_v >= 0) rb_hash_aset(hash, rb_str_new_cstr("remained_v"), rb_float_new(o->remained_v));
 
 	rb_hash_aset(hash, s_t, ULONG2NUM(o->t));
 
-	rb_hash_aset(hash, s__status_cached, o->_status_cached ? Qtrue : Qfalse);
+	// Ruby version does not need _status_cached
+	// rb_hash_aset(hash, s__status_cached, o->_status_cached ? Qtrue : Qfalse);
 	if (o->_status_cached) {
-		rb_hash_aset(hash, s__buy, o->_buy ? Qtrue : Qfalse);
+		// Ruby version does not need _buy
+		// rb_hash_aset(hash, s__buy, o->_buy ? Qtrue : Qfalse);
 		rb_hash_aset(hash, s__alive, o->_alive ? Qtrue : Qfalse);
 		rb_hash_aset(hash, s__cancelled, o->_cancelled ? Qtrue : Qfalse);
 	}
+	return;
+}
+VALUE rb_order_to_hash(VALUE self) {
+		URN_LOG("ENTER rb_order_to_hash");
+	VALUE _cdata = rb_ivar_get(self, rb_intern("@_cdata"));
+	Order *o = NULL;
+	Data_Get_Struct(_cdata, Order, o);
+
+	VALUE hash = rb_hash_new();
+	order_to_hash(hash, o);
 
 	// Include fields in @_data
 	VALUE data_hash = rb_iv_get(self, "@_data");
