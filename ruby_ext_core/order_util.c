@@ -251,11 +251,11 @@ void short_order_status(const char* status, char* short_status) {
 	} else if (strcmp(trimmed_status, "canceled") == 0) {
 		strncpy(short_status, " - ", 4);
 	} else if (strcmp(trimmed_status, "finished") == 0 || strcmp(trimmed_status, "filled") == 0) {
-		strncpy(short_status, "FIL", 4);
+		strncpy(short_status, " √ ", 6); // ticker is a 3-byte UTF8 char
 	} else if (strcmp(trimmed_status, "new") == 0) {
 		strncpy(short_status, "NEW", 4);
 	} else if (strcmp(trimmed_status, "cancelling") == 0 || strcmp(trimmed_status, "canceling") == 0) {
-		strncpy(short_status, "---", 4);
+		strncpy(short_status, ".x.", 4);
 	} else {
 		strncpy(short_status, trimmed_status, 3);
 		short_status[3] = '\0'; // Ensure null-terminated string
@@ -296,7 +296,7 @@ void format_trade(Order* o, char* str) {
 
 	char maker_size_str[32] = "??";
 	if (o->maker_size >= 0 && o->s >= 0) {
-		if (fabs(o->maker_size - o->s) < 1e-6) {
+		if (o->maker_size == o->s) {
 			strcpy(maker_size_str, "  ");
 		} else {
 			strcpy(maker_size_str, "Tk");
@@ -343,6 +343,8 @@ void format_trade(Order* o, char* str) {
 		snprintf(str, 256, "%s%s%s", CLR_GREEN, result, CLR_RST);
 	}
 }
+static ID id_force_encoding;
+static VALUE encoding_utf8;
 VALUE rb_format_trade(int argc, VALUE* argv, VALUE self) {
 	VALUE v_order;
 	VALUE v_opt;
@@ -351,9 +353,12 @@ VALUE rb_format_trade(int argc, VALUE* argv, VALUE self) {
 	attach_or_parse_ruby_order(v_order, o);
 
 	char result[256];
-	//	ORDER_LOG(o);
 	format_trade(o, result);
-	return rb_str_new_cstr(result);
+
+	// force_encoding(Encoding::UTF_8)
+	VALUE rb_result = rb_str_new_cstr(result);
+	rb_funcall(rb_result, id_force_encoding, 1, encoding_utf8);
+	return rb_result;
 }
 
 /* Replacement of:
@@ -758,6 +763,8 @@ VALUE rb_order_same_mkt_pair(VALUE self, VALUE v_orders) {
 void order_util_bind(VALUE urn_core_module) {
 	// Init static resources
 	sym_omit_size = ID2SYM(rb_intern("omit_size"));
+	id_force_encoding = rb_intern("force_encoding");
+	encoding_utf8 = rb_const_get(rb_const_get(rb_cObject, rb_intern("Encoding")), rb_intern("UTF_8"));
 
 	VALUE cOrderUtil = rb_define_module_under(urn_core_module, "OrderUtil");
 	rb_define_method(cOrderUtil, "is_future?", rb_is_future, 1);
@@ -766,18 +773,18 @@ void order_util_bind(VALUE urn_core_module) {
 	rb_define_method(cOrderUtil, "format_order", rb_format_order, 1);
 	rb_define_method(cOrderUtil, "format_trade_time", rb_format_trade_time, 1);
 	rb_define_method(cOrderUtil, "format_trade", rb_format_trade, -1);
-	// rb_define_method(cOrderUtil, "order_cancelled?", rb_order_cancelled, 1);
-	// rb_define_method(cOrderUtil, "order_alive?", rb_order_alive, 1);
-	// rb_define_method(cOrderUtil, "order_canceling", rb_order_canceling, 1);
-	// rb_define_method(cOrderUtil, "order_pending", rb_order_pending, 1);
-	// rb_define_method(cOrderUtil, "order_set_dead", rb_order_set_dead, 1);
-	// rb_define_method(cOrderUtil, "order_status_evaluate", rb_order_status_evaluate, 1);
-	// rb_define_method(cOrderUtil, "order_age", rb_order_age, 1);
-	// rb_define_method(cOrderUtil, "order_full_filled?", rb_order_full_filled, -1);
-	// rb_define_method(cOrderUtil, "order_same?", rb_order_same, 2);
-	// rb_define_method(cOrderUtil, "order_changed?", rb_order_changed, 2);
-	// rb_define_method(cOrderUtil, "order_should_update?", rb_order_should_update, 2);
-	// rb_define_method(cOrderUtil, "order_stat", rb_order_stat, -1);
-	// rb_define_method(cOrderUtil, "order_real_vol", rb_order_real_vol, 1);
-	// rb_define_method(cOrderUtil, "order_same_mkt_pair?", rb_order_same_mkt_pair, 1);
+	rb_define_method(cOrderUtil, "order_cancelled?", rb_order_cancelled, 1);
+	rb_define_method(cOrderUtil, "order_alive?", rb_order_alive, 1);
+	rb_define_method(cOrderUtil, "order_canceling", rb_order_canceling, 1);
+	rb_define_method(cOrderUtil, "order_pending", rb_order_pending, 1);
+	rb_define_method(cOrderUtil, "order_set_dead", rb_order_set_dead, 1);
+	rb_define_method(cOrderUtil, "order_status_evaluate", rb_order_status_evaluate, 1);
+	rb_define_method(cOrderUtil, "order_age", rb_order_age, 1);
+	rb_define_method(cOrderUtil, "order_full_filled?", rb_order_full_filled, -1);
+	rb_define_method(cOrderUtil, "order_same?", rb_order_same, 2);
+	rb_define_method(cOrderUtil, "order_changed?", rb_order_changed, 2);
+	rb_define_method(cOrderUtil, "order_should_update?", rb_order_should_update, 2);
+	rb_define_method(cOrderUtil, "order_stat", rb_order_stat, -1);
+	rb_define_method(cOrderUtil, "order_real_vol", rb_order_real_vol, 1);
+	rb_define_method(cOrderUtil, "order_same_mkt_pair?", rb_order_same_mkt_pair, 1);
 }

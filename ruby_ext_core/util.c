@@ -141,26 +141,13 @@ void format_num(double num, int fraclen, int decilen, char* str) {
 }
 VALUE rb_format_num(int argc, VALUE *argv, VALUE klass) {
 	VALUE v_num, v_fraclen, v_decilen;
-	rb_scan_args(argc, argv, "30", &v_num, &v_fraclen, &v_decilen);
+	rb_scan_args(argc, argv, "12", &v_num, &v_fraclen, &v_decilen);
 
 	double num = NUM2DBL(v_num);
-	int fraclen = NUM2INT(v_fraclen);
-	int decilen = NUM2INT(v_decilen);
+	int fraclen = NIL_P(v_fraclen) ? 8 : NUM2INT(v_fraclen);
+	int decilen = NIL_P(v_decilen) ? 8 : NUM2INT(v_decilen);
 
-	// Calculate the size of the buffer needed
-	int size = fraclen + decilen + 3; // 1 for sign, 1 for decimal point, 1 for null terminator
-	char* str = (char*)malloc(size * sizeof(char));
-	if (str == NULL)
-		rb_raise(rb_eNoMemError, "Memory allocation failed");
-
-	// Use format_num to format the number
+	char str[fraclen + decilen + 3]; // 1 for sign, 1 for decimal point, 1 for null terminator
 	format_num(num, fraclen, decilen, str);
-
-	// Create a Ruby string from the formatted string
-	VALUE result = rb_str_new_cstr(str);
-
-	// Free the allocated memory
-	free(str);
-
-	return result;
+	return rb_str_new_cstr(str);
 }

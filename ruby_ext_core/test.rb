@@ -4,7 +4,6 @@ require "date"
 require "colorize"
 
 require_relative "../../uranus/common/bootstrap" # source env.sh first
-require_relative "../../uranus/common/old"
 
 class Base
   def self.make_samples(num)
@@ -180,8 +179,19 @@ class Tester
 
     use_samples = name.to_s.start_with?('o_')
     samples = Base.make_samples(use_samples ? times : 1)
-    @r_ver = RubyNative.new(JSON.parse(samples.to_json))
-    @c_ver = RubyCExt.new(JSON.parse(samples.to_json))
+    @x_ver = RubyNative.new(samples.map { |o| o.clone })
+    @y_ver = RubyCExt.new(samples.map { |o| o.clone })
+    @r_ver = RubyNative.new(samples.map { |o| o.clone })
+    @c_ver = RubyCExt.new(samples.map { |o| o.clone })
+
+    print "\rTest #{name.inspect} #{args.inspect} warmup"
+    if use_samples
+      @x_ver.send(name, *args)
+      @y_ver.send(name, *args)
+    else
+      times.times { @x_ver.send(name, *args) }
+      times.times { @y_ver.send(name, *args) }
+    end
 
     print "\rTest #{name.inspect} #{args.inspect} C ver"
     t = Time.now.to_f

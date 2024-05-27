@@ -30,7 +30,6 @@ static VALUE s__buy;
 static VALUE s__status_cached;
 static VALUE s__alive;
 static VALUE s__cancelled;
-static VALUE s_fee;
 static VALUE s_maker_buy;
 static VALUE s_maker_sell;
 static VALUE s_taker_buy;
@@ -118,6 +117,25 @@ Order* order_cdata(VALUE order) {
 	return o;
 }
 
+#define PARSE_DOUBLE_FROM_VALUE(hash, key, field) \
+    if ((temp = rb_hash_aref(hash, key)) != Qnil) { \
+        if (RB_TYPE_P(temp, T_FLOAT) || RB_TYPE_P(temp, T_FIXNUM) || RB_TYPE_P(temp, T_BIGNUM)) { \
+            field = NUM2DBL(temp); \
+        } else if (RB_TYPE_P(temp, T_STRING)) { \
+            field = NUM2DBL(rb_funcall(temp, rb_intern("to_f"), 0)); \
+        } else { \
+            field = NUM2DBL(rb_funcall(temp, rb_intern("to_f"), 0)); \
+            URN_WARNF("value of key [%s] type [%s] and value [%s], parsed as double %lf", \
+                      RSTRING_PTR(key), \
+		      rb_obj_classname(temp), \
+		      RSTRING_PTR(rb_funcall(temp, rb_intern("inspect"), 0)), \
+		      field); \
+        } \
+    } else { \
+        field = -99999.0; \
+    }
+
+
 // Importing Order from Hash values.
 void order_from_hash(VALUE hash, Order* o) {
 	INIT_ORDER(o);
@@ -140,63 +158,27 @@ void order_from_hash(VALUE hash, Order* o) {
 			URN_WARNF("Unknown order T %s", o->T);
 	}
 
-	if ((temp = rb_hash_aref(hash, s_p)) != Qnil) {
-		o->p = NUM2DBL(temp);
-	} else {
-		o->p = -99999.0;
-	}
-	if ((temp = rb_hash_aref(hash, s_s)) != Qnil) {
-		o->s = NUM2DBL(temp);
-	} else {
-		o->s = -99999.0;
-	}
-	if ((temp = rb_hash_aref(hash, s_remained)) != Qnil) {
-		o->remained = NUM2DBL(temp);
-	} else {
-		o->remained = -99999.0;
-	}
-	if ((temp = rb_hash_aref(hash, s_executed)) != Qnil) {
-		o->executed = NUM2DBL(temp);
-	} else {
-		o->executed = -99999.0;
-	}
-	if ((temp = rb_hash_aref(hash, s_avg_price)) != Qnil) {
-		o->avg_price = NUM2DBL(temp);
-	} else {
-		o->avg_price = -99999.0;
-	}
-	if ((temp = rb_hash_aref(hash, s_fee)) != Qnil) {
-		o->fee = NUM2DBL(temp);
-	} else {
-		o->fee = -99999.0;
-	}
-	if ((temp = rb_hash_aref(hash, s_maker_size)) != Qnil) {
-		o->maker_size = NUM2DBL(temp);
-	} else {
-		o->maker_size = -99999.0;
-	}
-	if ((temp = rb_hash_aref(hash, s_p_real)) != Qnil) {
-		o->p_real = NUM2DBL(temp);
-	} else {
-		o->p_real = -99999.0;
-	}
-	if ((temp = rb_hash_aref(hash, s_v)) != Qnil) {
-		o->v = NUM2DBL(temp);
-	} else {
-		o->v = -99999.0;
-	}
-	if ((temp = rb_hash_aref(hash, s_executed_v)) != Qnil) {
-		o->executed_v = NUM2DBL(temp);
-	} else {
-		o->executed_v = -99999.0;
-	}
-	if ((temp = rb_hash_aref(hash, s_remained_v)) != Qnil) {
-		o->remained_v = NUM2DBL(temp);
-	} else {
-		o->remained_v = -99999.0;
-	}
+	PARSE_DOUBLE_FROM_VALUE(hash, s_p, o->p);
+	PARSE_DOUBLE_FROM_VALUE(hash, s_s, o->s);
+	PARSE_DOUBLE_FROM_VALUE(hash, s_remained, o->remained);
+	PARSE_DOUBLE_FROM_VALUE(hash, s_executed, o->executed);
+	PARSE_DOUBLE_FROM_VALUE(hash, s_avg_price, o->avg_price);
+	PARSE_DOUBLE_FROM_VALUE(hash, s_fee, o->fee);
+	PARSE_DOUBLE_FROM_VALUE(hash, s_maker_size, o->maker_size);
+	PARSE_DOUBLE_FROM_VALUE(hash, s_p_real, o->p_real);
+	PARSE_DOUBLE_FROM_VALUE(hash, s_v, o->v);
+	PARSE_DOUBLE_FROM_VALUE(hash, s_executed_v, o->executed_v);
+	PARSE_DOUBLE_FROM_VALUE(hash, s_remained_v, o->remained_v);
+
 	if ((temp = rb_hash_aref(hash, s_t)) != Qnil) {
-		o->t = NUM2ULONG(temp);
+		if (RB_TYPE_P(temp, T_FIXNUM) || RB_TYPE_P(temp, T_BIGNUM)) {
+			o->t = NUM2ULONG(temp);
+		} else {
+			URN_WARNF("value of key %s should be an integer", RSTRING_PTR(s_t));
+			o->t = NUM2ULONG(rb_funcall(temp, rb_intern("to_i"), 0));
+		}
+	} else {
+		o->t = 0;
 	}
 
 	if ((temp = rb_hash_aref(hash, s__status_cached)) != Qnil) o->_status_cached = RTEST(temp);
