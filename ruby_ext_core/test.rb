@@ -68,6 +68,10 @@ class Base
     samples
   end
 
+  def self.load_samples(num)
+    JSON.parse(File.read('data.json'))
+  end
+
   def initialize(samples)
     @samples = samples
   end
@@ -178,7 +182,8 @@ class Tester
     times = opt[:benchmark] || 1
 
     use_samples = name.to_s.start_with?('o_')
-    samples = Base.make_samples(use_samples ? times : 1)
+#     samples = Base.make_samples(use_samples ? times : 1)
+    samples = use_samples ? Base.load_samples(times): Base.make_samples(1)
     @x_ver = RubyNative.new(samples.map { |o| o.clone })
     @y_ver = RubyCExt.new(samples.map { |o| o.clone })
     @r_ver = RubyNative.new(samples.map { |o| o.clone })

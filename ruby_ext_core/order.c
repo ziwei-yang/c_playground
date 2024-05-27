@@ -20,6 +20,7 @@ static VALUE s_remained;
 static VALUE s_executed;
 static VALUE s_avg_price;
 static VALUE s_fee;
+static VALUE s_dv;
 static VALUE s_maker_size;
 static VALUE s_p_real;
 static VALUE s_v;
@@ -65,6 +66,8 @@ static void rb_init_order_extension() {
 	rb_global_variable(&s_avg_price);
 	s_fee = rb_str_new_cstr("fee");
 	rb_global_variable(&s_fee);
+	s_dv = rb_str_new_cstr("dv");
+	rb_global_variable(&s_dv);
 	s_maker_size = rb_str_new_cstr("maker_size");
 	rb_global_variable(&s_maker_size);
 	s_p_real= rb_str_new_cstr("p_real");
@@ -85,8 +88,6 @@ static void rb_init_order_extension() {
 	rb_global_variable(&s__alive);
 	s__cancelled = rb_str_new_cstr("_cancelled");
 	rb_global_variable(&s__cancelled);
-	s_fee = rb_str_new_cstr("fee");
-	rb_global_variable(&s_fee);
 	s_maker_buy = rb_str_new_cstr("maker/buy");
 	rb_global_variable(&s_maker_buy);
 	s_maker_sell = rb_str_new_cstr("maker/sell");
@@ -191,8 +192,12 @@ void order_from_hash(VALUE hash, Order* o) {
 	o->fee_maker_sell = -99999.0;
 	o->fee_taker_buy = -99999.0;
 	o->fee_taker_sell = -99999.0;
+	o->dv_maker_buy = -99999.0;
+	o->dv_maker_sell = -99999.0;
+	o->dv_taker_buy = -99999.0;
+	o->dv_taker_sell = -99999.0;
 
-	// Initialize fee fields from nested hash structure
+	// Initialize fee dv from nested hash structure
 	VALUE data = rb_hash_aref(hash, s__data);
 	if (data != Qnil) {
 		VALUE fee = rb_hash_aref(data, s_fee);
@@ -201,6 +206,13 @@ void order_from_hash(VALUE hash, Order* o) {
 			if ((temp = rb_hash_aref(fee, s_maker_sell)) != Qnil) o->fee_maker_sell = NUM2DBL(temp);
 			if ((temp = rb_hash_aref(fee, s_taker_buy)) != Qnil) o->fee_taker_buy = NUM2DBL(temp);
 			if ((temp = rb_hash_aref(fee, s_taker_sell)) != Qnil) o->fee_taker_sell = NUM2DBL(temp);
+		}
+		VALUE dv = rb_hash_aref(data, s_dv);
+		if (dv != Qnil) {
+			if ((temp = rb_hash_aref(dv, s_maker_buy)) != Qnil) o->dv_maker_buy = NUM2DBL(temp);
+			if ((temp = rb_hash_aref(dv, s_maker_sell)) != Qnil) o->dv_maker_sell = NUM2DBL(temp);
+			if ((temp = rb_hash_aref(dv, s_taker_buy)) != Qnil) o->dv_taker_buy = NUM2DBL(temp);
+			if ((temp = rb_hash_aref(dv, s_taker_sell)) != Qnil) o->dv_taker_sell = NUM2DBL(temp);
 		}
 	}
 
@@ -387,6 +399,20 @@ VALUE rb_order_hashset(VALUE self, VALUE v_key, VALUE v_val) {
 				VALUE fee_taker_sell = rb_hash_aref(fee, s_taker_sell);
 				if (fee_taker_sell != Qnil) o->fee_taker_sell = NUM2DBL(fee_taker_sell);
 			}
+			VALUE dv = rb_hash_aref(v_val, s_dv);
+                        if (dv != Qnil) {
+                                VALUE dv_maker_buy = rb_hash_aref(dv, s_maker_buy);
+                                if (dv_maker_buy != Qnil) o->dv_maker_buy = NUM2DBL(dv_maker_buy);
+
+                                VALUE dv_maker_sell = rb_hash_aref(dv, s_maker_sell);
+                                if (dv_maker_sell != Qnil) o->dv_maker_sell = NUM2DBL(dv_maker_sell);
+
+                                VALUE dv_taker_buy = rb_hash_aref(dv, s_taker_buy);
+                                if (dv_taker_buy != Qnil) o->dv_taker_buy = NUM2DBL(dv_taker_buy);
+
+                                VALUE dv_taker_sell = rb_hash_aref(dv, s_taker_sell);
+                                if (dv_taker_sell != Qnil) o->dv_taker_sell = NUM2DBL(dv_taker_sell);
+                        }
 		}
 	}
 	return v_val;
@@ -434,6 +460,12 @@ void order_to_hash(VALUE hash, Order* o) {
 		if (o->fee_maker_sell >= 0) rb_hash_aset(fee, s_maker_sell, rb_float_new(o->fee_maker_sell));
 		if (o->fee_taker_sell >= 0) rb_hash_aset(fee, s_taker_sell, rb_float_new(o->fee_taker_sell));
 		rb_hash_aset(data, s_fee, fee);
+		VALUE dv = rb_hash_new();
+		if (o->dv_maker_buy >= 0) rb_hash_aset(dv, s_maker_buy, rb_float_new(o->dv_maker_buy));
+		if (o->dv_taker_buy >= 0) rb_hash_aset(dv, s_taker_buy, rb_float_new(o->dv_taker_buy));
+		if (o->dv_maker_sell >= 0) rb_hash_aset(dv, s_maker_sell, rb_float_new(o->dv_maker_sell));
+		if (o->dv_taker_sell >= 0) rb_hash_aset(dv, s_taker_sell, rb_float_new(o->dv_taker_sell));
+		rb_hash_aset(data, s_dv, dv);
 		rb_hash_aset(hash, s__data, data);
 	}
 

@@ -30,11 +30,18 @@ typedef struct Order {
     double remained_v; // only valid for volume based order
     // 96 bytes
 
-    // Optional fields
-    double fee_maker_buy; // fee rate for maker at buy side
-    double fee_taker_buy; // fee rate for taker at buy side
-    double fee_maker_sell; // fee rate for maker at sell side
-    double fee_taker_sell; // fee rate for maker at sell side
+    // fee rates
+    double fee_maker_buy;
+    double fee_taker_buy;
+    double fee_maker_sell;
+    double fee_taker_sell;
+    // 32 bytes
+
+    // deviation ratio
+    double dv_maker_buy;
+    double dv_taker_buy;
+    double dv_maker_sell;
+    double dv_taker_sell;
     // 32 bytes
 
     bool _buy;  // true if T is set 'buy'
@@ -43,36 +50,54 @@ typedef struct Order {
     bool _status_cached;
     bool _alive;
     bool _cancelled;
-    char _padding_end[23];
-    // 28 bytes
-} Order; // 512 bytes
+    // 5 bytes
+
+    char padding[243];
+    char _desc[256]; // for format_trade(o)
+} Order; // 1024 bytes
+
+#define ORDER_DESC(o) \
+	snprintf(o->_desc, sizeof(o->_desc), \
+			"Order: i=%s, client_oid=%s, pair=%s, asset=%s, currency=%s, status=%s, T=%s, market=%s, " \
+			"p=%.6f, s=%.6f, remained=%.6f, executed=%.6f, avg_price=%.6f, fee=%.6f, maker_size=%.6f, " \
+			"t=%lu, _buy=%d, _status_cached=%d, _alive=%d, _cancelled=%d, " \
+			"p_real=%.6f, v=%.6f, executed_v=%.6f, remained_v=%.6f, " \
+			"fee_maker_buy=%.6f, fee_taker_buy=%.6f, fee_maker_sell=%.6f, fee_taker_sell=%.6f, " \
+			"dv_maker_buy=%.6f, dv_taker_buy=%.6f, dv_maker_sell=%.6f, dv_taker_sell=%.6f", \
+			o->i, o->client_oid, o->pair, o->asset, o->currency, o->status, o->T, o->market, \
+			o->p, o->s, o->remained, o->executed, o->avg_price, o->fee, o->maker_size, \
+			o->t, o->_buy, o->_status_cached, o->_alive, o->_cancelled, \
+			o->p_real, o->v, o->executed_v, o->remained_v, \
+			o->fee_maker_buy, o->fee_taker_buy, o->fee_maker_sell, o->fee_taker_sell, \
+			o->dv_maker_buy, o->dv_taker_buy, o->dv_maker_sell, o->dv_taker_sell); \
 
 #define ORDER_DEBUG(o) \
-    URN_DEBUGF("Order: i=%s, client_oid=%s, pair=%s, asset=%s, currency=%s, status=%s, T=%s, market=%s, p=%f, s=%f, v=%f, remained=%f, remained_v=%f, executed=%f, executed_v=%f, avg_price=%f, fee=%f, maker_size=%f, p_real=%f, t=%lu, _buy=%d, _status_cached=%d, _alive=%d, _cancelled=%d", \
-        (o)->i, (o)->client_oid, (o)->pair, (o)->asset, (o)->currency, (o)->status, (o)->T, (o)->market, \
-        (o)->p, (o)->s, (o)->v, (o)->remained, (o)->remained_v, (o)->executed, (o)->executed_v, (o)->avg_price, \
-	(o)->fee, (o)->maker_size, (o)->p_real, (o)->t, (o)->_buy, (o)->_status_cached, (o)->_alive, (o)->_cancelled)
+	ORDER_DESC(o); URN_DEBUG(o->_desc)
 
 #define ORDER_LOG(o) \
-    URN_LOGF("Order: i=%s, client_oid=%s, pair=%s, asset=%s, currency=%s, status=%s, T=%s, market=%s, p=%f, s=%f, v=%f, remained=%f, remained_v=%f, executed=%f, executed_v=%f, avg_price=%f, fee=%f, maker_size=%f, p_real=%f, t=%lu, _buy=%d, _status_cached=%d, _alive=%d, _cancelled=%d", \
-        (o)->i, (o)->client_oid, (o)->pair, (o)->asset, (o)->currency, (o)->status, (o)->T, (o)->market, \
-        (o)->p, (o)->s, (o)->v, (o)->remained, (o)->remained_v, (o)->executed, (o)->executed_v, (o)->avg_price, \
-	(o)->fee, (o)->maker_size, (o)->p_real, (o)->t, (o)->_buy, (o)->_status_cached, (o)->_alive, (o)->_cancelled)
-
+	ORDER_DESC(o); URN_LOG(o->_desc)
 
 #define INIT_ORDER(o) do { \
-    memset((o), 0, sizeof(Order)); \
-    (o)->p = -99999; \
-    (o)->s = -99999; \
-    (o)->remained = -99999; \
-    (o)->executed = -99999; \
-    (o)->avg_price = -99999; \
-    (o)->fee = -99999; \
-    (o)->maker_size = -99999; \
-    (o)->p_real = -99999; \
-    (o)->v = -99999; \
-    (o)->executed_v = -99999; \
-    (o)->remained_v = -99999; \
+	memset((o), 0, sizeof(Order)); \
+	(o)->p = -99999.0; \
+	(o)->s = -99999.0; \
+	(o)->remained = -99999.0; \
+	(o)->executed = -99999.0; \
+	(o)->avg_price = -99999.0; \
+	(o)->fee = -99999.0; \
+	(o)->maker_size = -99999.0; \
+	(o)->p_real = -99999.0; \
+	(o)->v = -99999.0; \
+	(o)->executed_v = -99999.0; \
+	(o)->remained_v = -99999.0; \
+	(o)->fee_maker_buy = -99999.0; \
+	(o)->fee_taker_buy = -99999.0; \
+	(o)->fee_maker_sell = -99999.0; \
+	(o)->fee_taker_sell = -99999.0; \
+	(o)->dv_maker_buy = -99999.0; \
+	(o)->dv_taker_buy = -99999.0; \
+	(o)->dv_maker_sell = -99999.0; \
+	(o)->dv_taker_sell = -99999.0; \
 } while (0)
 
 extern void order_from_hash(VALUE hash, Order* o);
