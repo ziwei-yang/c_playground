@@ -2,6 +2,8 @@ require "urn_core"
 require "json"
 require "date"
 require "colorize"
+
+require_relative "../../uranus/common/bootstrap" # source env.sh first
 require_relative "../../uranus/common/old"
 
 class Base
@@ -135,8 +137,8 @@ class RubyNative < Base
   include URN::OrderUtil_RB
 end
 class RubyCExt < Base
-  include URN_CORE::MathUtil
-  include URN_CORE::OrderUtil
+  include URN::MathUtil
+  include URN::OrderUtil
 end
 
 class Tester
@@ -217,18 +219,18 @@ end
 
 t = Tester.new
 
-t.test_and_benchmark(:o_same_mkt_pair, [], 100_000)
-t.test_and_benchmark(:o_real_vol, [], 100_000)
-t.test_and_benchmark(:o_stat, [], 10_000)
-t.test_and_benchmark(:o_should_update, [], 100_000)
-t.test_and_benchmark(:o_changed, [], 100_000)
-t.test_and_benchmark(:o_same, [], 100_000)
-t.test_and_benchmark(:o_status_evaluate, [], 100_000)
-t.test_and_benchmark(:o_age, [], 100_000)
-t.test_and_benchmark(:o_full_filled, [], 100_000)
-t.test_and_benchmark(:o_format, [], 100_000)
-t.test_and_benchmark(:o_set_dead, [], 100_000)
-t.test_and_benchmark(:o_alive?, [], 100_000)
+t.test_and_benchmark(:o_same_mkt_pair, [], 200_000)
+t.test_and_benchmark(:o_real_vol, [], 200_000)
+t.test_and_benchmark(:o_stat, [], 20_000)
+t.test_and_benchmark(:o_should_update, [], 200_000)
+t.test_and_benchmark(:o_changed, [], 200_000)
+t.test_and_benchmark(:o_same, [], 200_000)
+t.test_and_benchmark(:o_status_evaluate, [], 200_000)
+t.test_and_benchmark(:o_age, [], 200_000)
+t.test_and_benchmark(:o_full_filled, [], 200_000)
+t.test_and_benchmark(:o_format, [], 200_000)
+t.test_and_benchmark(:o_set_dead, [], 200_000)
+t.test_and_benchmark(:o_alive?, [], 200_000)
 
 t.test_and_benchmark(:parse_contract, ["USDT-BTC@20240812"], 1_000_000)
 t.test_and_benchmark(:parse_contract, ["USDT-BTC"], 1_000_000)

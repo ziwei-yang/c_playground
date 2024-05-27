@@ -118,7 +118,7 @@ static VALUE init_str_const(const char *s) {
 		VALUE v_s = rb_const_get(rb_cObject, id);
 		return v_s;
 	}
-	URN_LOGF("C define Ruby Object::%s = \"%s\"", str_const_name, s);
+	// URN_LOGF("C define Ruby Object::%s = \"%s\"", str_const_name, s);
 	VALUE v_s = rb_str_new2(s);
 	rb_const_set(rb_cObject, id, v_s);
 	return v_s;
