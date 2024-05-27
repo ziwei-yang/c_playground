@@ -777,8 +777,8 @@ void order_util_bind(VALUE urn_core_module) {
 	rb_define_method(cOrderUtil, "order_alive?", rb_order_alive, 1);
 	rb_define_method(cOrderUtil, "order_canceling", rb_order_canceling, 1);
 	rb_define_method(cOrderUtil, "order_pending", rb_order_pending, 1);
-	rb_define_method(cOrderUtil, "order_set_dead", rb_order_set_dead, 1);
-	rb_define_method(cOrderUtil, "order_status_evaluate", rb_order_status_evaluate, 1);
+//	rb_define_method(cOrderUtil, "order_set_dead", rb_order_set_dead, 1);
+//	rb_define_method(cOrderUtil, "order_status_evaluate", rb_order_status_evaluate, 1);
 	rb_define_method(cOrderUtil, "order_age", rb_order_age, 1);
 	rb_define_method(cOrderUtil, "order_full_filled?", rb_order_full_filled, -1);
 	rb_define_method(cOrderUtil, "order_same?", rb_order_same, 2);
