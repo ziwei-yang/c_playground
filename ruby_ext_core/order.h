@@ -7,13 +7,13 @@
 typedef struct Order {
     char i[128];
     char client_oid[128];
-    char account[64]; // reserved field
     char pair[32];
     char asset[16];
     char currency[16];
     char status[16];
     char T[8];
     char market[16];
+    // 360 bytes
 
     // Negative value means not initialised
     double p;
@@ -24,16 +24,28 @@ typedef struct Order {
     double fee;
     double maker_size;
     double p_real;
+    unsigned long t;
     double v; // only valid for volume based order
     double executed_v; // only valid for volume based order
     double remained_v; // only valid for volume based order
-    unsigned long t;
+    // 96 bytes
 
+    // Optional fields
+    double fee_maker_buy; // fee rate for maker at buy side
+    double fee_taker_buy; // fee rate for taker at buy side
+    double fee_maker_sell; // fee rate for maker at sell side
+    double fee_taker_sell; // fee rate for maker at sell side
+    // 32 bytes
+
+    bool _buy;  // true if T is set 'buy'
+    bool _sell; // true if T is set 'sell'
+    // Cache fields are valid only when _status_cached is true
     bool _status_cached;
-    bool _buy;
     bool _alive;
     bool _cancelled;
-} Order;
+    char _padding_end[23];
+    // 28 bytes
+} Order; // 512 bytes
 
 #define ORDER_DEBUG(o) \
     URN_DEBUGF("Order: i=%s, client_oid=%s, pair=%s, asset=%s, currency=%s, status=%s, T=%s, market=%s, p=%f, s=%f, v=%f, remained=%f, remained_v=%f, executed=%f, executed_v=%f, avg_price=%f, fee=%f, maker_size=%f, p_real=%f, t=%lu, _buy=%d, _status_cached=%d, _alive=%d, _cancelled=%d", \

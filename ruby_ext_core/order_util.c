@@ -20,9 +20,28 @@ static Order* _attach_or_parse_ruby_order(VALUE v_order, Order *o) {
 		rb_raise(rb_eTypeError, "Expected URN_CORE::Order or Hash");
 	return o;
 }
+
+// attach_or_parse_ruby_order, creates Order _temp_o in stack space.
 #define attach_or_parse_ruby_order(v_order, opvar) \
         Order _temp_o; INIT_ORDER(&_temp_o); \
         Order* opvar = _attach_or_parse_ruby_order(v_order, &_temp_o);
+// attach_or_parse_ruby_order, uses customized _temp_stackspace_o
+#define attach_or_parse_ruby_order2(v_order, opvar, _temp_stackspace_o) \
+        INIT_ORDER(&_temp_stackspace_o); \
+        Order* opvar = _attach_or_parse_ruby_order(v_order, &_temp_stackspace_o);
+
+// attach_or_parse_ruby_order, array version, creates Order _temp_orders[] in stack space.
+#define attach_or_parse_ruby_order_array(v_order_array, o_array_var) \
+	long _v_order_array_len = RARRAY_LEN(v_order_array); \
+	Order _temp_orders[_v_order_array_len]; \
+	memset(_temp_orders, 0, sizeof(Order) * _v_order_array_len); \
+	Order* o_array_var[_v_order_array_len + 1]; \
+	for (long i = 0; i < _v_order_array_len; i++) { \
+		VALUE v_order = rb_ary_entry(v_orders, i); \
+		INIT_ORDER(&(_temp_orders[i])); \
+		o_array_var[i] = _attach_or_parse_ruby_order(v_order, &(_temp_orders[i])); \
+	} \
+	o_array_var[_v_order_array_len] = NULL;
 
 // Copy order back to v_order @_cdata, if v_order is URN_CORE::Order
 // Copy order back to v_order fields, if v_order is Hash
@@ -457,7 +476,289 @@ VALUE rb_order_status_evaluate(VALUE self, VALUE v_order) {
 	return v_order;
 }
 
+/* Replacement of:
+ * bootstrap.rb/OrderUtil
+ *	def order_age(t)
+ */
+// order age in ms
+long order_age(Order* o) {
+    if (o == NULL)
+        return -1;
+
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    long current_time_ms = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    return current_time_ms - o->t;
+}
+VALUE rb_order_age(VALUE self, VALUE v_order) {
+	attach_or_parse_ruby_order(v_order, o);
+	long age = order_age(o);
+	return LONG2NUM(age);
+}
+
+/* Replacement of:
+ * bootstrap.rb/OrderUtil
+ *	def order_full_filled(t, opt)
+ */
+bool order_full_filled(Order* t, double omit_size) {
+    if (t == NULL) return false;
+    if (t->remained <= omit_size) return true;
+    if (t->s - t->executed <= omit_size) return true;
+    return false;
+}
+static VALUE sym_omit_size;
+VALUE rb_order_full_filled(int argc, VALUE* argv, VALUE self) {
+    VALUE v_order, v_opt;
+    rb_scan_args(argc, argv, "11", &v_order, &v_opt);  // 1 required and 1 optional argument
+    attach_or_parse_ruby_order(v_order, o);
+
+    double omit_size = 0;
+    if (!NIL_P(v_opt) && rb_hash_lookup(v_opt, sym_omit_size) != Qnil)
+        omit_size = NUM2DBL(rb_hash_lookup(v_opt, sym_omit_size));
+    bool is_filled = order_full_filled(o, omit_size);
+    return is_filled ? Qtrue : Qfalse;
+}
+
+/* Replacement of:
+ * bootstrap.rb/OrderUtil
+ *	def order_same?(o1, o2)
+ */
+bool order_same(Order* o1, Order* o2) {
+	if (o1 == NULL || o2 == NULL) return false;
+	if (o1 == o2) return true;
+	if (strcmp(o1->market, o2->market) != 0) return false;
+	if (strcmp(o1->market, "Gemini") == 0 && strcmp(o2->market, "Gemini") == 0 && (strlen(o1->pair) == 0 || strlen(o2->pair) == 0)) {
+		// Allow o1 / o2 without pair info, Gemini allow querying order without pair
+	} else {
+		if (strcmp(o1->pair, o2->pair) != 0) return false;
+	}
+
+	if (strlen(o1->T) != 0 && strlen(o2->T) != 0)
+		if (strcmp(o1->T, o2->T) != 0)
+			return false;
+
+	// Some exchanges do not assign order id for instant filled orders.
+	// We could identify them only by price-size-timestamp
+	if (strlen(o1->i) > 0 && strlen(o2->i) > 0) {
+		return strcmp(o1->i, o2->i) == 0;
+	} else if (strlen(o1->client_oid) != 0 && strlen(o2->client_oid) != 0) {
+		if (o1->s >= 0 && o2->s >= 0) {
+			return (o1->s == o2->s) && (o1->p == o2->p);
+		} else if (o1->v >= 0 && o2->v >= 0) {
+			return (o1->v == o2->v) && (o1->p == o2->p);
+		}
+	}
+
+	return (o1->s == o2->s) && (o1->p == o2->p) && (o1->t) == (o2->t);
+}
+VALUE rb_order_same(VALUE self, VALUE v_o1, VALUE v_o2) {
+	Order temp_o1, temp_o2;
+	attach_or_parse_ruby_order2(v_o1, o1, temp_o1);
+	attach_or_parse_ruby_order2(v_o2, o2, temp_o2);
+
+	return order_same(o1, o2) ? Qtrue : Qfalse;
+}
+
+/* Replacement of:
+ * bootstrap.rb/OrderUtil
+ *	def order_changed?(o1, o2)
+ */
+bool order_changed(Order* o1, Order* o2) {
+	if (!order_same(o1, o2)) {
+		URN_WARN("Order are not same one");
+		ORDER_LOG(o1);
+		ORDER_LOG(o2);
+		return false;
+	}
+	if (o1 == o2) return false; // Both pointers are the same, no change
+	if (strcmp(o1->status, o2->status) != 0) return true; // Status changed
+	if (o1->executed != o2->executed) return true; // Executed amount changed
+	if (o1->remained != o2->remained) return true; // Remained amount changed
+	return false;
+}
+VALUE rb_order_changed(VALUE self, VALUE v_o1, VALUE v_o2) {
+	Order temp_o1, temp_o2;
+	attach_or_parse_ruby_order2(v_o1, o1, temp_o1);
+	attach_or_parse_ruby_order2(v_o2, o2, temp_o2);
+	return order_changed(o1, o2) ? Qtrue : Qfalse;
+}
+
+/* Replacement of:
+ * bootstrap.rb/OrderUtil
+ *	def order_should_update?(o1, o2)
+ */
+bool order_should_update(Order* o1, Order* o2) {
+	if (!order_same(o1, o2)) {
+		URN_WARN("Order are not same one");
+		ORDER_LOG(o1);
+		ORDER_LOG(o2);
+		return false;
+	}
+
+	bool o1_alive = order_alive(o1);
+	bool o2_alive = order_alive(o2);
+
+	if (o1_alive && o2_alive) {
+		// Better replace if status: 'pending' -> 'new'
+		if (order_pending(o1) && o1->executed <= o2->executed)
+			return true;
+		return o1->executed < o2->executed;
+	} else if (o1_alive && !o2_alive) {
+		return true;
+	} else if (!o1_alive && o2_alive) {
+		return false;
+	} else if (!o1_alive && !o2_alive) {
+		return o1->executed < o2->executed;
+	}
+	URN_WARN("Should not come here");
+	return false;
+}
+VALUE rb_order_should_update(VALUE self, VALUE v_o1, VALUE v_o2) {
+	Order temp_o1, temp_o2;
+	attach_or_parse_ruby_order2(v_o1, o1, temp_o1);
+	attach_or_parse_ruby_order2(v_o2, o2, temp_o2);
+	return order_should_update(o1, o2) ? Qtrue : Qfalse;
+}
+
+/* Replacement of:
+ * bootstrap.rb/OrderUtil
+ *	def order_stat(orders, opt={})
+ */
+int order_stat(Order* orders, int precise, double* result) {
+	if (orders == NULL || result == NULL) {
+		result[0] = 0.0;
+		result[1] = 0.0;
+		result[2] = 0.0;
+		return 0;
+	}
+
+	double orders_size_sum = 0.0;
+	double orders_executed_sum = 0.0;
+	for (Order* o = orders; o != NULL && o->i[0] != '\0'; o++) {
+		if (o->s < 0 || o->executed < 0) {
+			URN_WARN("Error order, no size or executed\n");
+			ORDER_LOG(o);
+			return EINVAL;
+		}
+		if (order_alive(o))
+			orders_size_sum += o->s;
+		else
+			orders_size_sum += o->executed;
+		orders_executed_sum += o->executed;
+	}
+
+	double orders_remained_sum = orders_size_sum - orders_executed_sum;
+
+	// Round the results
+	double factor = pow(10, precise);
+	result[0] = round(orders_size_sum * factor) / factor;
+	result[1] = round(orders_executed_sum * factor) / factor;
+	result[2] = round(orders_remained_sum * factor) / factor;
+	return 0;
+}
+VALUE rb_order_stat(int argc, VALUE* argv, VALUE self) {
+	VALUE v_orders, v_opt;
+	rb_scan_args(argc, argv, "11", &v_orders, &v_opt); // 1 required and 1 optional argument
+
+	// Check if orders is an array
+	Check_Type(v_orders, T_ARRAY);
+
+	int precise = 1;
+	if (!NIL_P(v_opt)) {
+		VALUE v_precise = rb_hash_aref(v_opt, ID2SYM(rb_intern("precise")));
+		if (!NIL_P(v_precise)) {
+			precise = NUM2INT(v_precise);
+		}
+	}
+
+	attach_or_parse_ruby_order_array(v_orders, orders);
+
+	// Perform the calculation
+	double result[3];
+	order_stat(orders[0], precise, result);
+
+	// Return the result as an array
+	VALUE rb_result = rb_ary_new();
+	rb_ary_push(rb_result, rb_float_new(result[0]));
+	rb_ary_push(rb_result, rb_float_new(result[1]));
+	rb_ary_push(rb_result, rb_float_new(result[2]));
+	return rb_result;
+}
+
+/* Replacement of:
+ * bootstrap.rb/OrderUtil
+ *	def order_real_vol(o)
+ */
+double order_real_vol(Order* o) {
+	if (o->executed <= 0) return 0.0;
+
+	double maker_size = fmin(o->executed, o->maker_size >= 0.0 ? o->maker_size : 0.0);
+	double taker_size = o->executed - maker_size;
+	const char* type = o->T;
+
+	double maker_fee;
+	double taker_fee;
+
+	if (o->_buy) {
+		maker_fee = o->fee_maker_buy;
+		taker_fee = o->fee_taker_buy;
+	} else if (o->_sell) {
+		maker_fee = o->fee_maker_sell;
+		taker_fee = o->fee_taker_sell;
+	} else {
+		URN_WARNF("Unknown order type: %s", type);
+		ORDER_LOG(o);
+		return 0;
+	}
+
+	if (maker_fee < 0 || taker_fee < 0) {
+		URN_WARN("Missing fee data for order");
+		ORDER_LOG(o);
+		return 0;
+	}
+
+	double fee = o->p * maker_size * maker_fee + o->p * taker_size * taker_fee;
+	double vol = o->p * o->executed;
+
+	if (o->_buy) { return vol + fee; }
+	else if (o->_sell) { return vol - fee; }
+	else { return 0; }
+}
+VALUE rb_order_real_vol(VALUE self, VALUE v_order) {
+	attach_or_parse_ruby_order(v_order, o);
+	double real_vol = order_real_vol(o);
+	return rb_float_new(real_vol);
+}
+
+/* Replacement of:
+ * bootstrap.rb/OrderUtil
+ *	def order_same_mkt_pair?(orders)
+ */
+bool order_same_mkt_pair(Order* orders[]) {
+    if (orders == NULL) return true;
+    if (orders[0] == NULL) return true;
+    if (orders[1] == NULL) return true;
+    const char* market = orders[0]->market;
+    const char* pair = orders[0]->pair;
+    // Iterate over the orders to check if they all have the same market and pair
+    for (int i = 1; orders[i] != NULL; i++) {
+        if (strcmp(market, orders[i]->market) != 0 || strcmp(pair, orders[i]->pair) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+VALUE rb_order_same_mkt_pair(VALUE self, VALUE v_orders) {
+    Check_Type(v_orders, T_ARRAY);
+    attach_or_parse_ruby_order_array(v_orders, orders);
+    return order_same_mkt_pair(orders) ? Qtrue : Qfalse;
+}
+
+/////////////// RUBY interface below ///////////////
 void order_util_bind(VALUE urn_core_module) {
+	// Init static resources
+	sym_omit_size = ID2SYM(rb_intern("omit_size"));
+
 	VALUE cOrderUtil = rb_define_module_under(urn_core_module, "OrderUtil");
 	rb_define_method(cOrderUtil, "is_future?", rb_is_future, 1);
 	rb_define_method(cOrderUtil, "pair_assets", rb_pair_assets, 1);
@@ -471,5 +772,12 @@ void order_util_bind(VALUE urn_core_module) {
 	rb_define_method(cOrderUtil, "order_pending", rb_order_pending, 1);
 	rb_define_method(cOrderUtil, "order_set_dead", rb_order_set_dead, 1);
 	rb_define_method(cOrderUtil, "order_status_evaluate", rb_order_status_evaluate, 1);
-
+	rb_define_method(cOrderUtil, "order_age", rb_order_age, 1);
+	rb_define_method(cOrderUtil, "order_full_filled?", rb_order_full_filled, -1);
+	rb_define_method(cOrderUtil, "order_same?", rb_order_same, 2);
+	rb_define_method(cOrderUtil, "order_changed?", rb_order_changed, 2);
+	rb_define_method(cOrderUtil, "order_should_update?", rb_order_should_update, 2);
+	rb_define_method(cOrderUtil, "order_stat", rb_order_stat, -1);
+	rb_define_method(cOrderUtil, "order_real_vol", rb_order_real_vol, 1);
+	rb_define_method(cOrderUtil, "order_same_mkt_pair?", rb_order_same_mkt_pair, 1);
 }

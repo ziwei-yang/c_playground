@@ -9,7 +9,7 @@ class Base
     pairs = ["USD-BTC", "USD-ETH", "USD-LTC", "USD-XRP", "USD-BCH"]
     statuses = ["new", "canceled"]
     types = ["buy", "sell"]
-    markets = ["market_1", "market_2", "market_3", "market_4", "market_5"]
+    markets = ["Gemini", "Binance", "OKX", "HashkeyG", "Bybit"]
 
     samples = []
 
@@ -32,6 +32,7 @@ class Base
       end
       order['status'] = "filled" if order['remained'] == 0
       order["executed"] = (order['s'] - order['remained']).round(8)
+      order["maker_size"] = (rand * order["executed"]).round(8)
 
       # Add optional fields to 20% of the orders
       if rand < 0.2
@@ -50,6 +51,15 @@ class Base
       order["avg_price"] = (rand * 100000).round(2) if rand < 0.3
       order["fee"] = (rand * 100).round(2) if rand < 0.3
       order["maker_size"] = (rand * 1000).round(2) if rand < 0.3
+
+      order['_data'] = {
+        'fee' => {
+          'maker/buy' => 0,
+          'taker/buy' => 0.0001,
+          'maker/sell' => 0,
+          'taker/sell' => 0.0001
+        }
+      }
 
       samples << order
     end
@@ -91,6 +101,33 @@ class Base
   def o_set_dead
     @samples.map { |o| order_set_dead(o); o; }
   end
+  def o_age
+    @samples.map { |o| order_age(o) > 1609459200 } # Allow some time diff
+  end
+  def o_full_filled
+    @samples.map { |o| [order_full_filled?(o), order_full_filled?(o, omit_size: 0.001)] }
+  end
+  def o_status_evaluate
+    @samples.map { |o| order_status_evaluate(o); o }
+  end
+  def o_same
+    @samples.map { |o| order_same?(o, o.clone) }
+  end
+  def o_changed
+    @samples.map { |o| order_changed?(o, o.clone) }
+  end
+  def o_should_update
+    @samples.map { |o| o1 = o.clone; order_should_update?(o, o1) }
+  end
+  def o_stat
+    order_stat(@samples)
+  end
+  def o_real_vol
+    @samples.map { |o| order_real_vol(o) }
+  end
+  def o_same_mkt_pair
+    @samples.map { |o| order_same_mkt_pair?([o, o.clone, o.clone, o.clone]) }
+  end
 end
 
 class RubyNative < Base
@@ -109,6 +146,12 @@ class Tester
       x.size.times { |i|
         a = x[i]
         b = y[i]
+        next if a == b
+        if a.is_a?(Hash) && b.is_a?(Hash)
+          # Ignore key=nil cases
+          a.keys.each { |k| a.delete(k) if b[k].nil? && a[k].nil? }
+          b.keys.each { |k| b.delete(k) if b[k].nil? && a[k].nil? }
+        end
         next if a == b
         puts "\nSample [#{i}] #{samples[i].inspect}"
         puts "\nExpect     #{a.inspect}\nGot        #{b.inspect}\n"
@@ -138,7 +181,7 @@ class Tester
     @r_ver = RubyNative.new(JSON.parse(samples.to_json))
     @c_ver = RubyCExt.new(JSON.parse(samples.to_json))
 
-    print "\rTest #{name.inspect} #{args.inspect}"
+    print "\rTest #{name.inspect} #{args.inspect} C ver"
     t = Time.now.to_f
     if use_samples
       c_result = @c_ver.send(name, *args)
@@ -148,6 +191,7 @@ class Tester
     ct = t = Time.now.to_f - t
     # puts "#{name} C version #{times} times #{t.round(5)} sec, #{faster}X"
 
+    print "\rTest #{name.inspect} #{args.inspect} R ver"
     t = Time.now.to_f
     if use_samples
       r_result = @r_ver.send(name, *args)
@@ -158,7 +202,7 @@ class Tester
     # puts "#{name} R version #{times} times #{t.round(5)} sec"
 
     assert(r_result, c_result, samples: samples)
-    print " √ "
+    print "\rTest #{name.inspect} #{args.inspect} √ "
 
     faster = (rt/ct).round(1)
     if faster > 1.1
@@ -173,6 +217,15 @@ end
 
 t = Tester.new
 
+t.test_and_benchmark(:o_same_mkt_pair, [], 100_000)
+t.test_and_benchmark(:o_real_vol, [], 100_000)
+t.test_and_benchmark(:o_stat, [], 10_000)
+t.test_and_benchmark(:o_should_update, [], 100_000)
+t.test_and_benchmark(:o_changed, [], 100_000)
+t.test_and_benchmark(:o_same, [], 100_000)
+t.test_and_benchmark(:o_status_evaluate, [], 100_000)
+t.test_and_benchmark(:o_age, [], 100_000)
+t.test_and_benchmark(:o_full_filled, [], 100_000)
 t.test_and_benchmark(:o_format, [], 100_000)
 t.test_and_benchmark(:o_set_dead, [], 100_000)
 t.test_and_benchmark(:o_alive?, [], 100_000)

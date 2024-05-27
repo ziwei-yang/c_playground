@@ -17,8 +17,17 @@ extern void format_trade_time(unsigned long t, char* s);
 extern void format_trade(Order* o, char* str);
 extern void order_to_s(Order* o, char* str);
 extern void order_set_dead(Order* o);
+extern void order_status_evaluate(Order *o);
+extern long order_age(Order* o);
+extern bool order_full_filled(Order* t, double omit_size);
+extern bool order_same(Order* o1, Order* o2);
+extern bool order_changed(Order* o1, Order* o2);
+extern bool order_should_update(Order* o1, Order* o2);
+extern int order_stat(Order* orders, int precise, double* result);
+extern double order_real_vol(Order* o);
+extern bool order_same_mkt_pair(Order* orders[]);
 
-// Function to initialize the module and register methods
+/////////////// RUBY interface below ///////////////
 extern void order_util_bind(VALUE urn_core_module);
 
 #endif // ORDER_UTIL_H

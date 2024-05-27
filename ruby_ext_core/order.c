@@ -30,6 +30,13 @@ static VALUE s__buy;
 static VALUE s__status_cached;
 static VALUE s__alive;
 static VALUE s__cancelled;
+static VALUE s_fee;
+static VALUE s_maker_buy;
+static VALUE s_maker_sell;
+static VALUE s_taker_buy;
+static VALUE s_taker_sell;
+static VALUE s__data;
+
 static void rb_init_order_extension() {
 	s_i = rb_str_new_cstr("i");
 	rb_global_variable(&s_i);
@@ -79,6 +86,18 @@ static void rb_init_order_extension() {
 	rb_global_variable(&s__alive);
 	s__cancelled = rb_str_new_cstr("_cancelled");
 	rb_global_variable(&s__cancelled);
+	s_fee = rb_str_new_cstr("fee");
+	rb_global_variable(&s_fee);
+	s_maker_buy = rb_str_new_cstr("maker/buy");
+	rb_global_variable(&s_maker_buy);
+	s_maker_sell = rb_str_new_cstr("maker/sell");
+	rb_global_variable(&s_maker_sell);
+	s_taker_buy = rb_str_new_cstr("taker/buy");
+	rb_global_variable(&s_taker_buy);
+	s_taker_sell = rb_str_new_cstr("taker/sell");
+	rb_global_variable(&s_taker_sell);
+	s__data = rb_str_new_cstr("_data");
+	rb_global_variable(&s__data);
 }
 
 VALUE rb_order_new(VALUE self) {
@@ -110,8 +129,16 @@ void order_from_hash(VALUE hash, Order* o) {
 	if ((temp = rb_hash_aref(hash, s_asset)) != Qnil) strncpy(o->asset, RSTRING_PTR(temp), sizeof(o->asset) - 1);
 	if ((temp = rb_hash_aref(hash, s_currency)) != Qnil) strncpy(o->currency, RSTRING_PTR(temp), sizeof(o->currency) - 1);
 	if ((temp = rb_hash_aref(hash, s_status)) != Qnil) strncpy(o->status, RSTRING_PTR(temp), sizeof(o->status) - 1);
-	if ((temp = rb_hash_aref(hash, s_T)) != Qnil) strncpy(o->T, RSTRING_PTR(temp), sizeof(o->T) - 1);
 	if ((temp = rb_hash_aref(hash, s_market)) != Qnil) strncpy(o->market, RSTRING_PTR(temp), sizeof(o->market) - 1);
+	if ((temp = rb_hash_aref(hash, s_T)) != Qnil) {
+		strncpy(o->T, RSTRING_PTR(temp), sizeof(o->T) - 1);
+		if (strcasecmp(o->T, "BUY") == 0) {
+			o->_buy = true; o->_sell = false;
+		} else if (strcasecmp(o->T, "SELL") == 0) {
+			o->_buy = false; o->_sell = true;
+		} else
+			URN_WARNF("Unknown order T %s", o->T);
+	}
 
 	if ((temp = rb_hash_aref(hash, s_p)) != Qnil) {
 		o->p = NUM2DBL(temp);
@@ -176,6 +203,25 @@ void order_from_hash(VALUE hash, Order* o) {
 	if ((temp = rb_hash_aref(hash, s__buy)) != Qnil) o->_buy = RTEST(temp);
 	if ((temp = rb_hash_aref(hash, s__alive)) != Qnil) o->_alive = RTEST(temp);
 	if ((temp = rb_hash_aref(hash, s__cancelled)) != Qnil) o->_cancelled = RTEST(temp);
+
+	// Set default values for fee fields
+	o->fee_maker_buy = -99999.0;
+	o->fee_maker_sell = -99999.0;
+	o->fee_taker_buy = -99999.0;
+	o->fee_taker_sell = -99999.0;
+
+	// Initialize fee fields from nested hash structure
+	VALUE data = rb_hash_aref(hash, s__data);
+	if (data != Qnil) {
+		VALUE fee = rb_hash_aref(data, s_fee);
+		if (fee != Qnil) {
+			if ((temp = rb_hash_aref(fee, s_maker_buy)) != Qnil) o->fee_maker_buy = NUM2DBL(temp);
+			if ((temp = rb_hash_aref(fee, s_maker_sell)) != Qnil) o->fee_maker_sell = NUM2DBL(temp);
+			if ((temp = rb_hash_aref(fee, s_taker_buy)) != Qnil) o->fee_taker_buy = NUM2DBL(temp);
+			if ((temp = rb_hash_aref(fee, s_taker_sell)) != Qnil) o->fee_taker_sell = NUM2DBL(temp);
+		}
+	}
+
 	return;
 }
 VALUE rb_new_order_from_hash(VALUE klass, VALUE hash) {
@@ -291,8 +337,15 @@ VALUE rb_order_hashset(VALUE self, VALUE v_key, VALUE v_val) {
 	} else if (strcmp(s, "T") == 0) {
 		if (v_val == Qnil) {
 			memset(o->T, 0, sizeof(o->T));
+			o->_buy = false; o->_sell = false;
 		} else {
 			strncpy(o->T, RSTRING_PTR(v_val), sizeof(o->T) - 1);
+			if (strcasecmp(o->T, "BUY") == 0) {
+				o->_buy = true; o->_sell = false;
+			} else if (strcasecmp(o->T, "SELL") == 0) {
+				o->_buy = false; o->_sell = true;
+			} else
+				URN_WARNF("Unknown order T %s", o->T);
 		}
 	} else if (strcmp(s, "market") == 0) {
 		if (v_val == Qnil) {
@@ -336,8 +389,24 @@ VALUE rb_order_hashset(VALUE self, VALUE v_key, VALUE v_val) {
 		// If the field is not recognized, store it in @_data
 		VALUE _data = rb_iv_get(self, "@_data");
 		rb_hash_aset(_data, v_key, v_val);
-	}
+		// Check if the value contains fee data and update fee fields accordingly
+		if (TYPE(v_val) == T_HASH) {
+			VALUE fee = rb_hash_aref(v_val, s_fee);
+			if (fee != Qnil) {
+				VALUE fee_maker_buy = rb_hash_aref(fee, s_maker_buy);
+				if (fee_maker_buy != Qnil) o->fee_maker_buy = NUM2DBL(fee_maker_buy);
 
+				VALUE fee_maker_sell = rb_hash_aref(fee, s_maker_sell);
+				if (fee_maker_sell != Qnil) o->fee_maker_sell = NUM2DBL(fee_maker_sell);
+
+				VALUE fee_taker_buy = rb_hash_aref(fee, s_taker_buy);
+				if (fee_taker_buy != Qnil) o->fee_taker_buy = NUM2DBL(fee_taker_buy);
+
+				VALUE fee_taker_sell = rb_hash_aref(fee, s_taker_sell);
+				if (fee_taker_sell != Qnil) o->fee_taker_sell = NUM2DBL(fee_taker_sell);
+			}
+		}
+	}
 	return v_val;
 }
 
@@ -373,10 +442,22 @@ void order_to_hash(VALUE hash, Order* o) {
 		rb_hash_aset(hash, s__alive, o->_alive ? Qtrue : Qfalse);
 		rb_hash_aset(hash, s__cancelled, o->_cancelled ? Qtrue : Qfalse);
 	}
+
+	// Generate hash['_data']['fee'] with nested keys if fee values are present
+	if (o->fee_maker_buy >= 0 || o->fee_taker_buy >= 0 || o->fee_maker_sell >= 0 || o->fee_taker_sell >= 0) {
+		VALUE data = rb_hash_new();
+		VALUE fee = rb_hash_new();
+		if (o->fee_maker_buy >= 0) rb_hash_aset(fee, s_maker_buy, rb_float_new(o->fee_maker_buy));
+		if (o->fee_taker_buy >= 0) rb_hash_aset(fee, s_taker_buy, rb_float_new(o->fee_taker_buy));
+		if (o->fee_maker_sell >= 0) rb_hash_aset(fee, s_maker_sell, rb_float_new(o->fee_maker_sell));
+		if (o->fee_taker_sell >= 0) rb_hash_aset(fee, s_taker_sell, rb_float_new(o->fee_taker_sell));
+		rb_hash_aset(data, s_fee, fee);
+		rb_hash_aset(hash, s__data, data);
+	}
+
 	return;
 }
 VALUE rb_order_to_hash(VALUE self) {
-		URN_LOG("ENTER rb_order_to_hash");
 	VALUE _cdata = rb_ivar_get(self, rb_intern("@_cdata"));
 	Order *o = NULL;
 	Data_Get_Struct(_cdata, Order, o);
@@ -401,6 +482,22 @@ VALUE rb_order_to_json(int argc, VALUE *argv, VALUE self) {
 	return rb_funcall2(rb_order_to_hash(self), rb_intern("to_json"), argc, argv);
 }
 
+VALUE rb_order_keys(int argc, VALUE *argv, VALUE self) {
+    return rb_funcall2(rb_order_to_hash(self), rb_intern("keys"), argc, argv);
+}
+
+VALUE rb_order_values(int argc, VALUE *argv, VALUE self) {
+    return rb_funcall2(rb_order_to_hash(self), rb_intern("values"), argc, argv);
+}
+
+VALUE rb_order_each(int argc, VALUE *argv, VALUE self) {
+    return rb_funcall2(rb_order_to_hash(self), rb_intern("each"), argc, argv);
+}
+
+VALUE rb_order_to_s(int argc, VALUE *argv, VALUE self) {
+    return rb_funcall2(rb_order_to_hash(self), rb_intern("to_s"), argc, argv);
+}
+
 void order_bind(VALUE urn_core_module) {
 	rb_init_order_extension();
 	URN_CORE_Order = rb_define_class_under(urn_core_module, "Order", rb_cObject);
@@ -410,6 +507,10 @@ void order_bind(VALUE urn_core_module) {
 	rb_define_method(URN_CORE_Order, "to_h", rb_order_to_hash, 0);
 	rb_define_method(URN_CORE_Order, "to_hash", rb_order_to_hash, 0);
 	rb_define_method(URN_CORE_Order, "to_json", rb_order_to_json, -1);
+	rb_define_method(URN_CORE_Order, "keys", rb_order_keys, -1);
+	rb_define_method(URN_CORE_Order, "values", rb_order_values, -1);
+	rb_define_method(URN_CORE_Order, "each", rb_order_each, -1);
+	rb_define_method(URN_CORE_Order, "to_s", rb_order_to_s, -1);
 	// define method Order.from_hash()
 	rb_define_singleton_method(URN_CORE_Order, "from_hash", rb_new_order_from_hash, 1);
 }
