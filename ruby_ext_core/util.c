@@ -1,6 +1,8 @@
 #include "ruby.h"
 #include "math.h"
 
+#include "urn.h"
+
 double urn_round(double f, int precision);
 
 /* Replacement of:
@@ -110,6 +112,10 @@ VALUE rb_rough_num(VALUE self, VALUE v_f) {
  * bootstrap.rb/MathUtil
  * 	def format_num(f, float=8, decimal=8)
  */
+void format_numstr(char* numstr, int fraclen, int decilen, char* str) {
+	int total_len = fraclen + decilen + 1;
+	snprintf(str, total_len + 1, "%*s", total_len, numstr);
+}
 void format_num(double num, int fraclen, int decilen, char* str) {
 	if (num == 0) {
 		// Fill the string with spaces if the number is zero
@@ -117,7 +123,6 @@ void format_num(double num, int fraclen, int decilen, char* str) {
 		str[fraclen + decilen + 1] = '\0'; // Null-terminate the string
 		return;
 	}
-
 
 	// Use snprintf to format the number with specified width and precision
 	snprintf(str, fraclen + decilen + 3, "%*.*f", fraclen + decilen + 1, fraclen, num);
@@ -143,11 +148,16 @@ VALUE rb_format_num(int argc, VALUE *argv, VALUE klass) {
 	VALUE v_num, v_fraclen, v_decilen;
 	rb_scan_args(argc, argv, "12", &v_num, &v_fraclen, &v_decilen);
 
-	double num = NUM2DBL(v_num);
 	int fraclen = NIL_P(v_fraclen) ? 8 : NUM2INT(v_fraclen);
 	int decilen = NIL_P(v_decilen) ? 8 : NUM2INT(v_decilen);
 
 	char str[fraclen + decilen + 3]; // 1 for sign, 1 for decimal point, 1 for null terminator
-	format_num(num, fraclen, decilen, str);
+	if (RB_TYPE_P(v_num, T_STRING)) {
+		char* numstr = RSTRING_PTR(v_num);
+		format_numstr(numstr, fraclen, decilen, str);
+	} else {
+		double num = NUM2DBL(v_num);
+		format_num(num, fraclen, decilen, str);
+	}
 	return rb_str_new_cstr(str);
 }

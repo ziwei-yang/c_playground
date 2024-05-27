@@ -379,7 +379,11 @@ static int order_calculate_status(Order* o) {
 	else
 		o->_cancelled = false;
 
-	if (strcasecmp(o->status, "filled") == 0)
+	if (o->remained == 0)
+		o->_alive = false;
+	else if (o->status[0] == '\0')
+		o->_alive = false;
+	else if (strcasecmp(o->status, "filled") == 0)
 		o->_alive = false;
 	else if (strcasecmp(o->status, "canceled") == 0)
 		o->_alive = false;

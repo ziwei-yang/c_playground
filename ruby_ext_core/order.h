@@ -52,20 +52,19 @@ typedef struct Order {
     bool _cancelled;
     // 5 bytes
 
-    char padding[243];
-    char _desc[256]; // for format_trade(o)
+    char _desc[499]; // for format_trade(o)
 } Order; // 1024 bytes
 
 #define ORDER_DESC(o) \
 	snprintf(o->_desc, sizeof(o->_desc), \
-			"Order: i=%s, client_oid=%s, pair=%s, asset=%s, currency=%s, status=%s, T=%s, market=%s, " \
-			"p=%.6f, s=%.6f, remained=%.6f, executed=%.6f, avg_price=%.6f, fee=%.6f, maker_size=%.6f, " \
+			"Order: %s, %s, %s, %s-%s, %s, T=%s, market=%s, " \
+			"p=%f, s= %f / %f, remained=%f, avg_price=%f, fee=%f, maker_size=%f, " \
 			"t=%lu, _buy=%d, _status_cached=%d, _alive=%d, _cancelled=%d, " \
-			"p_real=%.6f, v=%.6f, executed_v=%.6f, remained_v=%.6f, " \
-			"fee_maker_buy=%.6f, fee_taker_buy=%.6f, fee_maker_sell=%.6f, fee_taker_sell=%.6f, " \
-			"dv_maker_buy=%.6f, dv_taker_buy=%.6f, dv_maker_sell=%.6f, dv_taker_sell=%.6f", \
+			"p_real=%f, v=%f, executed_v=%f, remained_v=%f, " \
+			"fee mb=%f, tb=%f, ms=%f, ts=%f, " \
+			"dv mb=%f, tb=%f, ms=%f, ts=%f", \
 			o->i, o->client_oid, o->pair, o->asset, o->currency, o->status, o->T, o->market, \
-			o->p, o->s, o->remained, o->executed, o->avg_price, o->fee, o->maker_size, \
+			o->p, o->executed, o->s, o->remained, o->avg_price, o->fee, o->maker_size, \
 			o->t, o->_buy, o->_status_cached, o->_alive, o->_cancelled, \
 			o->p_real, o->v, o->executed_v, o->remained_v, \
 			o->fee_maker_buy, o->fee_taker_buy, o->fee_maker_sell, o->fee_taker_sell, \

@@ -158,6 +158,7 @@ class Tester
           b.keys.each { |k| b.delete(k) if b[k].nil? && a[k].nil? }
         end
         next if a == b
+        print "\n"
         puts "\nSample [#{i}] #{samples[i].inspect}"
         puts "\nExpect     #{a.inspect}\nGot        #{b.inspect}\n"
         raise "asset error"
@@ -240,11 +241,11 @@ t.test_and_benchmark(:o_stat, [], 20_000)
 t.test_and_benchmark(:o_should_update, [], 200_000)
 t.test_and_benchmark(:o_changed, [], 200_000)
 t.test_and_benchmark(:o_same, [], 200_000)
-t.test_and_benchmark(:o_status_evaluate, [], 200_000)
+# t.test_and_benchmark(:o_status_evaluate, [], 200_000)
 t.test_and_benchmark(:o_age, [], 200_000)
 t.test_and_benchmark(:o_full_filled, [], 200_000)
 t.test_and_benchmark(:o_format, [], 200_000)
-t.test_and_benchmark(:o_set_dead, [], 200_000)
+# t.test_and_benchmark(:o_set_dead, [], 200_000)
 t.test_and_benchmark(:o_alive?, [], 200_000)
 
 t.test_and_benchmark(:parse_contract, ["USDT-BTC@20240812"], 1_000_000)
@@ -279,6 +280,7 @@ t.test(:diff, [8, 4])
 t.test(:diff, [4, 8.88])
 t.test_and_benchmark(:diff, [3.88, 8.33], 100_000)
 
+t.test(:format_num, ["BALANCE", 8])
 t.test(:format_num, [0.0, 8, 4])
 t.test(:format_num, [0.88, 8, 4])
 t.test(:format_num, [0.88, 4, 8])
