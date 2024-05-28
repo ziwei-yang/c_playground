@@ -126,7 +126,7 @@ Order* order_cdata(VALUE order) {
             field = NUM2DBL(rb_funcall(temp, rb_intern("to_f"), 0)); \
         } else { \
             field = NUM2DBL(rb_funcall(temp, rb_intern("to_f"), 0)); \
-            URN_WARNF("value of key [%s] type [%s] and value [%s], parsed as double %lf", \
+            URN_WARNF("value of key [%s] has type [%s] and value [%s], parsed as double %lf", \
                       RSTRING_PTR(key), \
 		      rb_obj_classname(temp), \
 		      RSTRING_PTR(rb_funcall(temp, rb_intern("inspect"), 0)), \
@@ -171,15 +171,18 @@ void order_from_hash(VALUE hash, Order* o) {
 	PARSE_DOUBLE_FROM_VALUE(hash, s_executed_v, o->executed_v);
 	PARSE_DOUBLE_FROM_VALUE(hash, s_remained_v, o->remained_v);
 
+	o->t = 0;
 	if ((temp = rb_hash_aref(hash, s_t)) != Qnil) {
 		if (RB_TYPE_P(temp, T_FIXNUM) || RB_TYPE_P(temp, T_BIGNUM)) {
 			o->t = NUM2ULONG(temp);
+		} else if (RB_TYPE_P(temp, T_STRING)) { \
+			o->t = NUM2ULONG(rb_funcall(temp, rb_intern("to_i"), 0));
 		} else {
-			URN_WARNF("value of key %s should be an integer", RSTRING_PTR(s_t));
+			URN_WARNF("value of key [%s] has type [%s] and value [%s], parsed as ulong",
+					RSTRING_PTR(s_t), rb_obj_classname(temp),
+					RSTRING_PTR(rb_funcall(temp, rb_intern("inspect"), 0)));
 			o->t = NUM2ULONG(rb_funcall(temp, rb_intern("to_i"), 0));
 		}
-	} else {
-		o->t = 0;
 	}
 
 	if ((temp = rb_hash_aref(hash, s__status_cached)) != Qnil) o->_status_cached = RTEST(temp);
