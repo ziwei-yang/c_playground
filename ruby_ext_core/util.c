@@ -152,7 +152,9 @@ VALUE rb_format_num(int argc, VALUE *argv, VALUE klass) {
 	int decilen = NIL_P(v_decilen) ? 8 : NUM2INT(v_decilen);
 
 	char str[fraclen + decilen + 3]; // 1 for sign, 1 for decimal point, 1 for null terminator
-	if (RB_TYPE_P(v_num, T_STRING)) {
+	if (NIL_P(v_num)) {
+		format_numstr("", fraclen, decilen, str);
+	} else if (RB_TYPE_P(v_num, T_STRING)) {
 		char* numstr = RSTRING_PTR(v_num);
 		format_numstr(numstr, fraclen, decilen, str);
 	} else {
