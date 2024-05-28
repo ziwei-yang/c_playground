@@ -175,13 +175,16 @@ void order_from_hash(VALUE hash, Order* o) {
 	if ((temp = rb_hash_aref(hash, s_t)) != Qnil) {
 		if (RB_TYPE_P(temp, T_FIXNUM) || RB_TYPE_P(temp, T_BIGNUM)) {
 			o->t = NUM2ULONG(temp);
-		} else if (RB_TYPE_P(temp, T_STRING)) { \
+			o->t_ns = o->t * 1000;
+		} else if (RB_TYPE_P(temp, T_STRING) || RB_TYPE_P(temp, T_FLOAT)) { \
 			o->t = NUM2ULONG(rb_funcall(temp, rb_intern("to_i"), 0));
+			o->t_ns = (unsigned long)(NUM2DBL(rb_funcall(temp, rb_intern("to_f"), 0)) * 1000);
 		} else {
 			URN_WARNF("value of key [%s] has type [%s] and value [%s], parsed as ulong",
 					RSTRING_PTR(s_t), rb_obj_classname(temp),
 					RSTRING_PTR(rb_funcall(temp, rb_intern("inspect"), 0)));
 			o->t = NUM2ULONG(rb_funcall(temp, rb_intern("to_i"), 0));
+			o->t_ns = (unsigned long)(NUM2DBL(rb_funcall(temp, rb_intern("to_f"), 0)) * 1000);
 		}
 	}
 

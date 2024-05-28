@@ -24,11 +24,12 @@ typedef struct Order {
     double fee;
     double maker_size;
     double p_real;
-    unsigned long t;
+    unsigned long t;    // in milliseconds
+    unsigned long t_ns; // in micro seconds
     double v; // only valid for volume based order
     double executed_v; // only valid for volume based order
     double remained_v; // only valid for volume based order
-    // 96 bytes
+    // 104 bytes
 
     // fee rates
     double fee_maker_buy;
@@ -52,7 +53,7 @@ typedef struct Order {
     bool _cancelled;
     // 5 bytes
 
-    char _desc[499]; // for format_trade(o)
+    char _desc[491]; // for format_trade(o)
 } Order; // 1024 bytes
 
 #define ORDER_DESC(o) \
