@@ -17,7 +17,7 @@ class Base
     num.times do |i|
       s = (rand * 10).round(8)
       order = {
-        "i" => "id_#{sprintf('%05d', i+1)}",
+        "i" => (rand*1000000).to_s,
         "pair" => pairs.sample,
         "status" => statuses.sample,
         "T" => types.sample,
@@ -183,8 +183,8 @@ class Tester
     times = opt[:benchmark] || 1
 
     use_samples = name.to_s.start_with?('o_')
-#     samples = Base.make_samples(use_samples ? times : 1)
-    samples = use_samples ? Base.load_samples(times): Base.make_samples(1)
+    samples = Base.make_samples(use_samples ? times : 1)
+#     samples = use_samples ? Base.load_samples(times): Base.make_samples(1)
     @x_ver = RubyNative.new(samples.map { |o| o.clone })
     @y_ver = RubyCExt.new(samples.map { |o| o.clone })
     @r_ver = RubyNative.new(samples.map { |o| o.clone })

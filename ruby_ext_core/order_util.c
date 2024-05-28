@@ -268,26 +268,27 @@ void format_trade(Order* o, char* str) {
 	}
 
 	char market_account[16] = {0};
-	snprintf(market_account, sizeof(market_account), "%-8.8s", o->market);
+	snprintf(market_account, sizeof(market_account), "%-8s", o->market);
 
 	char t_type[16] = {0};
-	snprintf(t_type, sizeof(t_type), "%-4.4s", o->T);
+	snprintf(t_type, sizeof(t_type), "%-4s", o->T);
 	t_type[0] = toupper(t_type[0]);
 
 	char p_str[32] = {0};
-	format_num(o->p, 10, 5, p_str);
+	format_num(o->p >= 0 ? o->p : 0, 10, 5, p_str);
 
 	char executed_str[32] = {0};
-	format_num(o->executed, 5, 5, executed_str);
+	format_num(o->executed >= 0 ? o->executed : 0, 5, 5, executed_str);
 
 	char s_str[32] = {0};
-	format_num(o->s, 5, 5, s_str);
+	format_num(o->s >= 0 ? o->s : 0, 5, 5, s_str);
 
 	char status[16] = {0};
 	short_order_status(o->status, status);
 
 	char id_str[64] = {0};
-	snprintf(id_str, sizeof(id_str), "%.6s", o->i + strlen(o->i) - 6);
+	snprintf(id_str, sizeof(id_str), "%-6s", strlen(o->i) >= 6 ? o->i + strlen(o->i) - 6 : o->i);
+
 	char id_ljust[64] = {0};
 	snprintf(id_ljust, sizeof(id_ljust), "%-6s", id_str);
 
@@ -307,13 +308,13 @@ void format_trade(Order* o, char* str) {
 
 	if (o->v >= 0) {
 		char executed_v_str[32] = {0};
-		format_num(o->executed_v, 1, 7, executed_v_str);
+		format_num(o->executed_v >= 0 ? o->executed_v : 0, 1, 7, executed_v_str);
 
 		char v_str[32] = {0};
-		format_num(o->v, 1, 7, v_str);
+		format_num(o->v >= 0 ? o->v : 0, 1, 7, v_str);
 
 		char vol_info[64] = {0};
-		format_num(o->executed, 4, 2, executed_str);
+		format_num(o->executed >= 0 ? o->executed : 0, 4, 2, executed_str);
 		snprintf(vol_info, sizeof(executed_str), "S:%s", executed_str);
 
 		char expiry_info[16] = {0};
