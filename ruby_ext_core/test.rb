@@ -235,6 +235,7 @@ end
 
 t = Tester.new
 
+t.test(:format_trade, [nil])
 t.test_and_benchmark(:o_same_mkt_pair, [], 200_000)
 t.test_and_benchmark(:o_real_vol, [], 200_000)
 t.test_and_benchmark(:o_stat, [], 20_000)

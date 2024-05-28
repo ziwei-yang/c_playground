@@ -349,6 +349,7 @@ VALUE rb_format_trade(int argc, VALUE* argv, VALUE self) {
 	VALUE v_order;
 	VALUE v_opt;
 	rb_scan_args(argc, argv, "11", &v_order, &v_opt);  // 1 required and 1 optional argument
+	if (NIL_P(v_order)) return rb_str_new_cstr("Null trade");
 
 	attach_or_parse_ruby_order(v_order, o);
 
@@ -561,6 +562,8 @@ bool order_same(Order* o1, Order* o2) {
 	return (o1->s == o2->s) && (o1->p == o2->p) && (o1->t) == (o2->t);
 }
 VALUE rb_order_same(VALUE self, VALUE v_o1, VALUE v_o2) {
+	if (NIL_P(v_o1) || NIL_P(v_o2)) return Qfalse;
+
 	Order temp_o1, temp_o2;
 	attach_or_parse_ruby_order2(v_o1, o1, temp_o1);
 	attach_or_parse_ruby_order2(v_o2, o2, temp_o2);
