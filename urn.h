@@ -191,7 +191,7 @@ extern void urn_s_trim(const char* str, char* new_s);
 #define URN_INUM_FRACEXP 1000000000000
 /* 64 bits fixed size of num, fixed size for share memory  */
 typedef struct urn_inum {
-	unsigned long intg;
+	long   intg;
 	unsigned long frac_ext; // frac_ext = frac * 1e-URN_INUM_PRECISE
 	bool   pstv; // when intg is zero, use this for sign.
 	// description size padding to 64
@@ -208,6 +208,7 @@ extern double urn_inum_to_db(urn_inum *i);
 extern int urn_inum_from_db(urn_inum *i, double d);
 extern int urn_inum_alloc(urn_inum **i, const char *s);
 extern int urn_inum_add(urn_inum *i1, urn_inum *i2);
+extern void urn_inum_mul(urn_inum *i, double m);
 
 //////////////////////////////////////////
 // orderbook data read/write in share memory

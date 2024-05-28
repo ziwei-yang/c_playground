@@ -16,10 +16,20 @@ int   on_odbk(int pairid, uint64_t ts_e3, yyjson_val *jdata);
 char *preprocess_pair(char *pair) { return pair; }
 
 int exchange_sym_alloc(urn_pair *pair, char **str) {
-	*str = malloc(strlen(pair->name));
+	*str = malloc(strlen(pair->name) + 16);
 	if ((*str) == NULL) return ENOMEM;
 	// USDT-BTC   -> BTCUSDT
-	sprintf(*str, "%s%s", pair->asset, pair->currency);
+	// USDT-BTC@P -> BTCUSDT-PERPETUAL
+	if (pair->expiry == NULL)
+		sprintf(*str, "%s%s", pair->asset, pair->currency);
+	else {
+		if (strcmp(pair->expiry, "P") == 0) {
+			sprintf(*str, "%s%s-PERPETUAL", pair->asset, pair->currency);
+		} else {
+			urn_pair_print(*pair);
+			return URN_FATAL("Not expected pair", EINVAL);
+		}
+	}
 	urn_s_upcase(*str, strlen(*str));
 	return 0;
 }
@@ -27,7 +37,9 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 int hsk_wss_mode = -1; // 0: hashkey hong kong, 1: hashkey global
 void mkt_data_set_exchange(char *s) {
 	char *exch = getenv("uranus_spider_exchange");
-	if (strcasecmp(exch, "hashkey") == 0) {
+	if (exch == NULL) {
+		URN_FATAL("check uranus_spider_exchange ENV VAL", EINVAL);
+	} else if (strcasecmp(exch, "hashkey") == 0) {
 		hsk_wss_mode = 0;
 		sprintf(s, "Hashkey");
 	} else if (strcasecmp(exch, "hashkeyg") == 0) {
@@ -63,10 +75,11 @@ int wss_req_append_cmd_ping() {
 	return wss_req_append(ping_cmd);
 }
 
+double multiplier[MAX_PAIRS] = {0};
 int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_snpsht_chns, const char**tick_chns) {
 	/*
 	 * {
-	 *   "symbol": "BTCUSDT",
+	 *   "symbol": "BTCUSDT", // or ETHUSDT-PERPETUAL
 	 *   "topic": "depth", // or trade
 	 *   "event": "sub",
 	 *   "params": {
@@ -88,6 +101,10 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 		if (cmd == NULL) return ENOMEM;
 		sprintf(cmd, "%s%s%s%d%s", pre, odbk_chns[i], mid, i*2, end);
 		URN_RET_ON_RV(wss_req_append(cmd), "Failed in appending cmd");
+		if (strstr(odbk_chns[i], "PERPETUAL") == NULL)
+			multiplier[i] = 0;
+		else
+			multiplier[i] = 0.001; // perp multiplier 0.001
 
 		char *cmd2 = malloc(strlen(pre) + 12 + strlen(mid_tick) + 3 + strlen(end));
 		if (cmd2 == NULL) return ENOMEM;
@@ -221,6 +238,8 @@ int parse_n_mod_odbk_porder(int pairid, const char *type, yyjson_val *v, int op_
 			urn_inum_alloc(&p, yyjson_get_str(v_el));
 		} else if (el_ct == 1) { // size
 			urn_inum_alloc(&s, yyjson_get_str(v_el));
+			if (multiplier[pairid] > 0)
+				urn_inum_mul(s, multiplier[pairid]);
 		} else
 			return URN_FATAL("Unexpected attr ct in order, should be 2", EINVAL);
 		el_ct ++;

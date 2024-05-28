@@ -282,6 +282,19 @@ int urn_inum_add(urn_inum *i1, urn_inum *i2) {
 	return 0;
 }
 
+/* multiply m into i */
+void urn_inum_mul(urn_inum *i, double m) {
+	if (m == 0) {
+		i->intg = 0;
+		i->frac_ext = 0;
+		i->pstv = false;
+		return;
+	}
+
+	double total_i = urn_inum_to_db(i);
+	urn_inum_from_db(i, total_i * m);
+}
+
 urn_ticks *urn_tick_alloc() {
 	return calloc(1, sizeof(urn_ticks));
 }

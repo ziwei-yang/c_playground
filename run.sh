@@ -8,9 +8,9 @@ shift
 
 cd $DIR
 mkdir -p $DIR/tmp
-echo $DIR/build.sh $c_file -o $DIR/tmp/$c_file
+echo $DIR/build.sh urn.c $c_file -o $DIR/tmp/$c_file
 
 [ -f $DIR/env.sh ] && source $DIR/env.sh
-$DIR/build.sh $c_file -o $DIR/tmp/$c_file && echo $DIR/tmp/$c_file $@ && $DIR/tmp/$c_file $@
+$DIR/build.sh urn.c $c_file -o $DIR/tmp/$c_file && echo $DIR/tmp/$c_file $@ && $DIR/tmp/$c_file $@
 
 rm $DIR/tmp/$c_file
