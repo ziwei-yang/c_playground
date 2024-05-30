@@ -26,8 +26,10 @@
 #define CLR_STRIKETHROUGH "\033[09m"
 
 #define CLR_BLACK   "\033[30m"
-#define CLR_RED     "\033[31m"
-#define CLR_GREEN   "\033[32m"
+//#define CLR_RED     "\033[31m"
+#define CLR_RED     "\033[0;31;49m"
+//#define CLR_GREEN   "\033[32m"
+#define CLR_GREEN   "\033[0;32;49m"
 #define CLR_YELLOW  "\033[33m"
 #define CLR_BLUE    "\033[34m"
 #define CLR_MAGENTA "\033[35m"

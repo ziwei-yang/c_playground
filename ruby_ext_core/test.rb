@@ -69,7 +69,12 @@ class Base
   end
 
   def self.load_samples(num)
-    JSON.parse(File.read('data.json'))
+    if File.file?('data.json')
+      return JSON.parse(File.read('data.json'))[0..num]
+    else
+      print " no data.json "
+      return []
+    end
   end
 
   def initialize(samples)
@@ -96,6 +101,9 @@ class Base
   end
   def o_to_h
     @samples.map { |o| o.to_h }
+  end
+  def o_format_color
+    @samples.map { |o| [format_trade(o), format_trade(o).bold].join("\n") }
   end
   def o_format
     @samples.map { |o| [format_order(o), format_trade(o)].join("\n").uncolorize }
@@ -183,8 +191,7 @@ class Tester
     times = opt[:benchmark] || 1
 
     use_samples = name.to_s.start_with?('o_')
-    samples = Base.make_samples(use_samples ? times : 1)
-#     samples = use_samples ? Base.load_samples(times): Base.make_samples(1)
+    samples = (use_samples ? Base.load_samples(times): Base.make_samples(1)) + Base.make_samples(use_samples ? times : 1)
     @x_ver = RubyNative.new(samples.map { |o| o.clone })
     @y_ver = RubyCExt.new(samples.map { |o| o.clone })
     @r_ver = RubyNative.new(samples.map { |o| o.clone })
@@ -235,16 +242,17 @@ end
 
 t = Tester.new
 
+t.test_and_benchmark(:o_format_color, [], 1)
+t.test_and_benchmark(:o_format, [], 200_000)
 t.test_and_benchmark(:o_same_mkt_pair, [], 200_000)
 t.test_and_benchmark(:o_real_vol, [], 200_000)
-t.test_and_benchmark(:o_stat, [], 20_000)
+t.test_and_benchmark(:o_stat, [], 1_000)
 t.test_and_benchmark(:o_should_update, [], 200_000)
 t.test_and_benchmark(:o_changed, [], 200_000)
 t.test_and_benchmark(:o_same, [], 200_000)
 # t.test_and_benchmark(:o_status_evaluate, [], 200_000)
 t.test_and_benchmark(:o_age, [], 200_000)
 t.test_and_benchmark(:o_full_filled, [], 200_000)
-t.test_and_benchmark(:o_format, [], 200_000)
 # t.test_and_benchmark(:o_set_dead, [], 200_000)
 t.test_and_benchmark(:o_alive?, [], 200_000)
 
