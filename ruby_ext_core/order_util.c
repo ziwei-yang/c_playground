@@ -493,13 +493,12 @@ VALUE rb_order_status_evaluate(VALUE self, VALUE v_order) {
  */
 // order age in ms
 long order_age(Order* o) {
-    if (o == NULL)
-        return -1;
+	if (o == NULL) return -1;
 
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    long current_time_ms = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-    return current_time_ms - o->t;
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	long current_time_ms = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+	return current_time_ms - o->t;
 }
 VALUE rb_order_age(VALUE self, VALUE v_order) {
 	attach_or_parse_ruby_order(v_order, o);
@@ -512,22 +511,22 @@ VALUE rb_order_age(VALUE self, VALUE v_order) {
  *	def order_full_filled(t, opt)
  */
 bool order_full_filled(Order* t, double omit_size) {
-    if (t == NULL) return false;
-    if (t->remained <= omit_size) return true;
-    if (t->s - t->executed <= omit_size) return true;
-    return false;
+	if (t == NULL) return false;
+	if (t->remained <= omit_size) return true;
+	if (t->s - t->executed <= omit_size) return true;
+	return false;
 }
 static VALUE sym_omit_size;
 VALUE rb_order_full_filled(int argc, VALUE* argv, VALUE self) {
-    VALUE v_order, v_opt;
-    rb_scan_args(argc, argv, "11", &v_order, &v_opt);  // 1 required and 1 optional argument
-    attach_or_parse_ruby_order(v_order, o);
+	VALUE v_order, v_opt;
+	rb_scan_args(argc, argv, "11", &v_order, &v_opt);  // 1 required and 1 optional argument
+	attach_or_parse_ruby_order(v_order, o);
 
-    double omit_size = 0;
-    if (!NIL_P(v_opt) && rb_hash_lookup(v_opt, sym_omit_size) != Qnil)
-        omit_size = NUM2DBL(rb_hash_lookup(v_opt, sym_omit_size));
-    bool is_filled = order_full_filled(o, omit_size);
-    return is_filled ? Qtrue : Qfalse;
+	double omit_size = 0;
+	if (!NIL_P(v_opt) && rb_hash_lookup(v_opt, sym_omit_size) != Qnil)
+		omit_size = NUM2DBL(rb_hash_lookup(v_opt, sym_omit_size));
+	bool is_filled = order_full_filled(o, omit_size);
+	return is_filled ? Qtrue : Qfalse;
 }
 
 /* Replacement of:
@@ -748,23 +747,23 @@ VALUE rb_order_real_vol(VALUE self, VALUE v_order) {
  *	def order_same_mkt_pair?(orders)
  */
 bool order_same_mkt_pair(Order* orders[]) {
-    if (orders == NULL) return true;
-    if (orders[0] == NULL) return true;
-    if (orders[1] == NULL) return true;
-    const char* market = orders[0]->market;
-    const char* pair = orders[0]->pair;
-    // Iterate over the orders to check if they all have the same market and pair
-    for (int i = 1; orders[i] != NULL; i++) {
-        if (strcmp(market, orders[i]->market) != 0 || strcmp(pair, orders[i]->pair) != 0) {
-            return false;
-        }
-    }
-    return true;
+	if (orders == NULL) return true;
+	if (orders[0] == NULL) return true;
+	if (orders[1] == NULL) return true;
+	const char* market = orders[0]->market;
+	const char* pair = orders[0]->pair;
+	// Iterate over the orders to check if they all have the same market and pair
+	for (int i = 1; orders[i] != NULL; i++) {
+		if (strcmp(market, orders[i]->market) != 0 || strcmp(pair, orders[i]->pair) != 0) {
+			return false;
+		}
+	}
+	return true;
 }
 VALUE rb_order_same_mkt_pair(VALUE self, VALUE v_orders) {
-    Check_Type(v_orders, T_ARRAY);
-    attach_or_parse_ruby_order_array(v_orders, orders);
-    return order_same_mkt_pair(orders) ? Qtrue : Qfalse;
+	Check_Type(v_orders, T_ARRAY);
+	attach_or_parse_ruby_order_array(v_orders, orders);
+	return order_same_mkt_pair(orders) ? Qtrue : Qfalse;
 }
 
 /////////////// RUBY interface below ///////////////
