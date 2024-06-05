@@ -782,7 +782,7 @@ void order_util_bind(VALUE urn_core_module) {
 	rb_define_method(cOrderUtil, "format_trade", rb_format_trade, -1);
 	rb_define_method(cOrderUtil, "order_cancelled?", rb_order_cancelled, 1);
 	rb_define_method(cOrderUtil, "order_alive?", rb_order_alive, 1);
-	rb_define_method(cOrderUtil, "order_canceling", rb_order_canceling, 1);
+	rb_define_method(cOrderUtil, "order_canceling?", rb_order_canceling, 1);
 	rb_define_method(cOrderUtil, "order_pending", rb_order_pending, 1);
 //	rb_define_method(cOrderUtil, "order_set_dead", rb_order_set_dead, 1);
 //	rb_define_method(cOrderUtil, "order_status_evaluate", rb_order_status_evaluate, 1);
