@@ -105,7 +105,10 @@ double rough_num(double f) {
 VALUE rb_rough_num(VALUE self, VALUE v_f) {
 	double f = NIL_P(v_f) ? 0.0 : NUM2DBL(v_f);
 	double result = rough_num(f);
-	return rb_float_new(result);
+	if (((int)result) == result)
+		return rb_int_new((int)(result)); // keep same behaviour of to_s()
+	else
+		return rb_float_new(result);
 }
 
 /* Replacement of:

@@ -141,6 +141,12 @@ class Base
   def o_same_mkt_pair
     @samples.map { |o| order_same_mkt_pair?([o, o.clone, o.clone, o.clone]) }
   end
+  def rough_num_s(num)
+    [
+      rough_num(num),
+      rough_num(num).to_s
+    ]
+  end
 end
 
 class RubyNative < Base
@@ -273,12 +279,13 @@ t.test_and_benchmark(:o_hashmap_get, ['i'], 100_000)
 t.test_and_benchmark(:o_hashmap_set, ['i', '998877'], 100_000)
 t.test_and_benchmark(:o_to_json, [], 100_000)
 
-t.test(:rough_num, [1234.789])
-t.test(:rough_num, [12.7896789])
-t.test(:rough_num, [0.78967986])
-t.test(:rough_num, [0.007896789])
-t.test(:rough_num, [0.000007896789])
-t.test_and_benchmark(:rough_num, [0.000007896789], 1_000_000)
+t.test(:rough_num_s, [67496.03])
+t.test(:rough_num_s, [1234.789])
+t.test(:rough_num_s, [12.7896789])
+t.test(:rough_num_s, [0.78967986])
+t.test(:rough_num_s, [0.007896789])
+t.test(:rough_num_s, [0.000007896789])
+t.test_and_benchmark(:rough_num_s, [0.000007896789], 1_000_000)
 
 t.test(:stat_array, [[1]])
 t.test(:stat_array, [[]])
