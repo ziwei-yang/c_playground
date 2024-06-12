@@ -1481,18 +1481,17 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				0.62, 1.0,
 				0, 0, 0, 0, 0, 0
 			};
-			double spike_buy_prices_bittrex[MAX_SPIKES][2] = {
-				0.965, 0.5,
-				0.955, 2.0,
-				0.91, 2.0,
-				0.82, 2.0,
-				0.72, 2.0,
-				0.62, 1.0,
-				0.52, 1.0
-			}; // 0.965 might work for those rats in ETH-ADA
-			bool m1_bittrex = (strcmp(c_mkts[m1_idx], "Bittrex") == 0) ? true : false;
-			if (m1_bittrex)
-				memcpy(spike_buy_prices, spike_buy_prices_bittrex, sizeof(spike_buy_prices));
+			double spike_buy_prices_hashkey[MAX_SPIKES][2] = {
+				0.985, 10,
+				0.97,  10,
+				0.95,  10,
+				0.9,   10,
+				0, 0, 0, 0, 0, 0
+			}; // For USD-BTC in Hashkey only.
+			bool m1_bittrex = false; // Bittrex is gone.
+			bool m1_hashkey = (strcmp(c_mkts[m1_idx], "Hashkey") == 0) ? true : false;
+			if (m1_hashkey)
+				memcpy(spike_buy_prices, spike_buy_prices_hashkey, sizeof(spike_buy_prices));
 			double p_threshold = (TYPE(const_urn_mkt_bear) == T_TRUE) ? 0.93 : 1;
 			// If market price higher than lowest_bid_p a lot, dont place
 			if (bid_p >= 1.01 * lowest_bid_p)
@@ -1584,6 +1583,13 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 				1.48, 1.0,
 				0, 0, 0, 0
 			};
+			double spike_sell_prices_hashkey[MAX_SPIKES][2] = {
+				1.015, 20,
+				1.03,  20,
+				1.05,  10,
+				1.1,   10,
+				0, 0, 0, 0, 0, 0
+			}; // For USD-BTC in Hashkey only.
 			p_threshold = 1;
 			// If market price higher than highest_ask_p a lot 10%, dont place ask
 			if (highest_ask_p >= 1.01 * ask_p)
@@ -1602,7 +1608,12 @@ VALUE method_detect_arbitrage_pattern(VALUE self, VALUE v_opt) {
 			if (devi_map_mk_sel[m1_idx] >= 0.03) rej_code=3,spike_ask = false;
 			if (devi_map_tk_sel[m1_idx] >= 0.03) rej_code=4,spike_ask = false;
 			// Skip BTC+ETH pairs, not BTC ETH based pairs
-			if (strcmp(c_my_pair_asset, "BTC") == 0) rej_code=5,spike_ask = false;
+			if (strcmp(c_my_pair_asset, "BTC") == 0) {
+				if (m1_hashkey)
+					memcpy(spike_sell_prices, spike_sell_prices_hashkey, sizeof(spike_sell_prices));
+				else
+					rej_code=5,spike_ask = false;
+			}
 			if (strcmp(c_my_pair_asset, "ETH") == 0) rej_code=6,spike_ask = false;
 			if (!spike_ask) _ab3_dbg("S spike_ask turned off, code %d", rej_code);
 			for (int i=0; spike_ask && (i < MAX_SPIKES); i++) {
