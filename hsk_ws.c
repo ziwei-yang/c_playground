@@ -317,6 +317,8 @@ int on_tick(int pairid, yyjson_val *jdata) {
 		urn_inum p, s;
 		urn_inum_parse(&p, p_str);
 		urn_inum_parse(&s, s_str);
+		if (multiplier[pairid] > 0)
+			urn_inum_mul(&s, multiplier[pairid]);
 
 		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "m"), "No data/m", EINVAL);
 		buy = !(yyjson_get_bool(jval));
