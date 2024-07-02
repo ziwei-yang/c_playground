@@ -118,6 +118,17 @@ Order* order_cdata(VALUE order) {
 	return o;
 }
 
+#define PARSE_STRING_FROM_VALUE(hash, key, field) \
+    if ((temp = rb_hash_aref(hash, key)) != Qnil) { \
+        if (RB_TYPE_P(temp, T_STRING)) { \
+            strncpy(field, RSTRING_PTR(temp), sizeof(field) - 1); \
+	} else { \
+            strncpy(field, RSTRING_PTR(rb_funcall(temp, rb_intern("to_s"), 0)), sizeof(field) - 1); \
+	} \
+    } else { \
+        field[0] = '\0'; \
+    }
+
 #define PARSE_DOUBLE_FROM_VALUE(hash, key, field) \
     if ((temp = rb_hash_aref(hash, key)) != Qnil) { \
         if (RB_TYPE_P(temp, T_FLOAT) || RB_TYPE_P(temp, T_FIXNUM) || RB_TYPE_P(temp, T_BIGNUM)) { \
@@ -142,13 +153,14 @@ void order_from_hash(VALUE hash, Order* o) {
 	INIT_ORDER(o);
 	VALUE temp;
 	// Set fields from hash if present
-	if ((temp = rb_hash_aref(hash, s_i)) != Qnil) strncpy(o->i, RSTRING_PTR(temp), sizeof(o->i) - 1);
-	if ((temp = rb_hash_aref(hash, s_client_oid)) != Qnil) strncpy(o->client_oid, RSTRING_PTR(temp), sizeof(o->client_oid) - 1);
-	if ((temp = rb_hash_aref(hash, s_pair)) != Qnil) strncpy(o->pair, RSTRING_PTR(temp), sizeof(o->pair) - 1);
-	if ((temp = rb_hash_aref(hash, s_asset)) != Qnil) strncpy(o->asset, RSTRING_PTR(temp), sizeof(o->asset) - 1);
-	if ((temp = rb_hash_aref(hash, s_currency)) != Qnil) strncpy(o->currency, RSTRING_PTR(temp), sizeof(o->currency) - 1);
-	if ((temp = rb_hash_aref(hash, s_status)) != Qnil) strncpy(o->status, RSTRING_PTR(temp), sizeof(o->status) - 1);
-	if ((temp = rb_hash_aref(hash, s_market)) != Qnil) strncpy(o->market, RSTRING_PTR(temp), sizeof(o->market) - 1);
+	PARSE_STRING_FROM_VALUE(hash, s_i, o->i);
+	PARSE_STRING_FROM_VALUE(hash, s_client_oid, o->client_oid);
+	PARSE_STRING_FROM_VALUE(hash, s_pair, o->pair);
+	PARSE_STRING_FROM_VALUE(hash, s_asset, o->asset);
+	PARSE_STRING_FROM_VALUE(hash, s_currency, o->currency);
+	PARSE_STRING_FROM_VALUE(hash, s_status, o->status);
+	PARSE_STRING_FROM_VALUE(hash, s_market, o->market);
+
 	if ((temp = rb_hash_aref(hash, s_T)) != Qnil) {
 		strncpy(o->T, RSTRING_PTR(temp), sizeof(o->T) - 1);
 		if (strcasecmp(o->T, "BUY") == 0) {
