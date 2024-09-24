@@ -75,7 +75,7 @@ int wss_req_append_cmd_ping() {
 	return wss_req_append(ping_cmd);
 }
 
-double multiplier[MAX_PAIRS] = {0};
+double multiplier[MAX_PAIRS] = {0}; // index starts from 1, pairid = chn_id + 1
 int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_snpsht_chns, const char**tick_chns) {
 	/*
 	 * {
@@ -102,9 +102,10 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 		sprintf(cmd, "%s%s%s%d%s", pre, odbk_chns[i], mid, i*2, end);
 		URN_RET_ON_RV(wss_req_append(cmd), "Failed in appending cmd");
 		if (strstr(odbk_chns[i], "PERPETUAL") == NULL)
-			multiplier[i] = 0;
+			multiplier[i+1] = 0;
 		else
-			multiplier[i] = 0.001; // perp multiplier 0.001
+			multiplier[i+1] = 0.001; // perp multiplier 0.001
+		URN_INFOF("multiplier %d for %s is %lf", i+1, odbk_chns[i], multiplier[i+1]);
 
 		char *cmd2 = malloc(strlen(pre) + 12 + strlen(mid_tick) + 3 + strlen(end));
 		if (cmd2 == NULL) return ENOMEM;
