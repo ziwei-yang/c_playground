@@ -108,6 +108,7 @@ int wss_stat_per_e = 3; // wss_stat() freq control.
 long wss_mkt_ts = 0;
 long mkt_latency_ms = 0;
 long wss_stat_max_msg_t = 120; // if odbk_t_arr[] > this then KILL, -1: disabled
+long wss_stat_warn_msg_t = 120; // if odbk_t_arr[] > this then WARN, -1: disabled
 const int max_msg_interval = 60; // any msg interval > 60 then kill
 
 struct timespec _tmp_clock;
@@ -720,9 +721,10 @@ static void wss_stat() {
 	if (passed_s > 20 && wss_stat_per_e > 2)
 		wss_stat_per_e -= 2; // half stat interval
 	if (wss_stat_max_msg_t > 0 && max_msg_age_e6 >= wss_stat_max_msg_t*1000000l) {
-		URN_WARNF("%s Max msg age us %ld, KILL",
-			pair_arr[max_msg_pairid], max_msg_age_e6);
+		URN_WARNF("%s Max msg age us %ld, KILL", pair_arr[max_msg_pairid], max_msg_age_e6);
 		kill(getpid(), SIGKILL);
+	} else if (wss_stat_warn_msg_t > 0 && max_msg_age_e6 >= wss_stat_warn_msg_t*1000000l){
+		URN_WARNF("%s Max msg age us %ld", pair_arr[max_msg_pairid], max_msg_age_e6);
 	}
 	// Reset stat
 	wss_stat_ct = 0;
