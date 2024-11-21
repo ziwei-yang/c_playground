@@ -36,6 +36,9 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 
 int hsk_wss_mode = -1; // 0: hashkey hong kong, 1: hashkey global
 void mkt_data_set_exchange(char *s) {
+	// not a active exchange, wait longer.
+	wss_stat_max_msg_t = -1;
+	wss_stat_warn_msg_t = 600;
 	char *exch = getenv("uranus_spider_exchange");
 	if (exch == NULL) {
 		URN_FATAL("check uranus_spider_exchange ENV VAL", EINVAL);

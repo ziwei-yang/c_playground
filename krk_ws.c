@@ -46,7 +46,7 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 }
 
 void mkt_data_set_exchange(char *s) {
-	// not so active, wait longer.
+	// not a active exchange, wait longer.
 	wss_stat_max_msg_t = -1;
 	wss_stat_warn_msg_t = 600;
 	sprintf(s, "Kraken");
