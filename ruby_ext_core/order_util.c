@@ -723,7 +723,7 @@ double order_real_vol(Order* o) {
 		return 0;
 	}
 
-	if (maker_fee < 0 || taker_fee < 0) {
+	if (maker_fee <= -99999.0 || taker_fee <= -99999.0) {
 		URN_WARN("Missing fee data for order");
 		ORDER_LOG(o);
 		return 0;
