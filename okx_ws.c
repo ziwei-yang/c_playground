@@ -15,9 +15,79 @@ int   on_tick(int pairid, double lot, yyjson_val *jdata);
 int   on_odbk(int pairid, double lot, yyjson_val *jdata, char type);
 int   on_instruments(yyjson_val *jdata);
 
-double lot_arr[MAX_PAIRS] = {0}; // OKX uses different lots for contracts/pairs
-
 char *preprocess_pair(char *pair) { return pair; }
+
+// symbol -> contract value
+hashmap* symbol_to_ctval;
+// Load instrument LOT for SWAP
+int load_okx_contract_val() {
+	int rv = 0;
+
+	char *url= "https://www.okx.com/api/v5/public/instruments?instType=SWAP";
+	uint16_t http_code = 0;
+	char *http_res = NULL;
+	size_t res_len = 0;
+	nng_https_get(url, &http_code, &http_res, &res_len);
+	if (http_code != 200) {
+		URN_WARNF("Error in fetching SWAP lot at %s\nHTTP RES: %s\nHTTP CODE %hu", 
+			url, http_res, http_code);
+		URN_FATAL("Abort OKX set wss url", EINVAL);
+	}
+	URN_INFOF("OKX SWAP instrument: %.999s", http_res);
+
+	/* HTTP response:
+	 * {data: [{
+	 *       "ctVal": "0.01",
+	 *       "ctType": "linear",
+	 *       "instId": "BTC-USDT-SWAP",
+	 *       "instType": "SWAP",
+	 *       "expTime": "",
+	 *       ...
+	 * }]}
+	 */
+	yyjson_doc *jdoc = yyjson_read(http_res, res_len, 0);
+	yyjson_val *jroot = yyjson_doc_get_root(jdoc);
+	yyjson_val *jdata = yyjson_obj_get(jroot, "data");
+	if (jdata == NULL)
+		URN_FATAL(http_res, EINVAL);
+	int len = (int)yyjson_get_len(jdata);
+
+	// build symbol_to_ctval from jdata
+	symbol_to_ctval = urn_hmap_init(len*5);
+	size_t idx, max;
+	yyjson_val *v;
+	yyjson_arr_foreach(jdata, idx, max, v) {
+		yyjson_val *jval = NULL;
+		const char* exp = NULL;
+		const char* ct_type = NULL;
+		const char* inst = NULL;
+		const char* inst_type = NULL;
+		const char* ct_val = NULL;
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "expTime"), "No expTime", EINVAL);
+		URN_RET_ON_NULL((exp = yyjson_get_str(jval)), "No expTime str val", EINVAL);
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "ctType"), "No ctType", EINVAL);
+		URN_RET_ON_NULL((ct_type = yyjson_get_str(jval)), "No ctType str val", EINVAL);
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "instId"), "No instId", EINVAL);
+		URN_RET_ON_NULL((inst = yyjson_get_str(jval)), "No instId str val", EINVAL);
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "instType"), "No instType", EINVAL);
+		URN_RET_ON_NULL((inst_type = yyjson_get_str(jval)), "No instType str val", EINVAL);
+		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "ctVal"), "No ctVal", EINVAL);
+		URN_RET_ON_NULL((ct_val = yyjson_get_str(jval)), "No ctVal str val", EINVAL);
+		URN_INFOF("exp [%s] ct_type %s %s %s %s\n", exp, ct_type, inst_type, inst, ct_val);
+		if (strlen(exp) > 0) continue;
+		if (strcmp(ct_type, "linear") != 0) continue;
+		if (strcmp(inst_type, "SWAP") != 0) continue;
+		if (strlen(ct_val) == 0) continue;
+		double *ct_value = malloc(sizeof(double));
+		char *eptr;
+		*ct_value = strtod(ct_val, &eptr);
+		char* symbol = malloc(strlen(inst)+1);
+		strcpy(symbol, inst);
+		URN_INFOF("\t -> %s %lf %p\n", symbol, *ct_value, ct_value);
+		urn_hmap_set(symbol_to_ctval, symbol, ct_value);
+	}
+	return 0;
+}
 
 int exchange_sym_alloc(urn_pair *pair, char **str) {
 	int slen = strlen(pair->name);
@@ -49,7 +119,12 @@ void mkt_data_odbk_snpsht_channel(char *sym, char *chn) { sprintf(chn, "%s", sym
 
 void mkt_data_tick_channel(char *sym, char *chn) { sprintf(chn, "%s", sym); }
 
+double multiplier[MAX_PAIRS] = {0}; // index starts from 1, pairid = chn_id + 1
 int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_snpsht_chns, const char**tick_chns) {
+	int rv = load_okx_contract_val();
+	if (rv != 0)
+		URN_FATAL("Failed in loading contract value", EINVAL);
+
 	// Command includes header, instrument(4), [odbk(2), trade(1)] x chn_ct
 	char *cmd = malloc(64*(4+3*chn_ct));
 	int ct = 0;
@@ -58,6 +133,18 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 	ct += sprintf(cmd+ct, "  {\"channel\":\"instruments\",\"instType\":\"FUTURES\"},\n");
 	ct += sprintf(cmd+ct, "  {\"channel\":\"instruments\",\"instType\":\"SPOT\"},\n");
 	for(int i=0; i<chn_ct; i++) {
+		// symbol is odbk_chns[i], build multiplier from symbol_to_ctval
+		uintptr_t ctval_ptr = 0;
+		urn_hmap_getptr(symbol_to_ctval, odbk_chns[i], &ctval_ptr);
+		if (ctval_ptr == 0) {
+			URN_INFOF("ctval %s not found\n", odbk_chns[i]);
+			multiplier[i+1] = 0;
+		} else {
+			double *ctval;
+			ctval = (double *)ctval_ptr;
+			URN_INFOF("ctval for %s is %lf ptr %p\n", odbk_chns[i], *ctval, (void*)ctval_ptr);
+			multiplier[i+1] = *ctval;
+		}
 		ct += sprintf(cmd+ct, "  {\"channel\":\"trades\",\"instId\":\"%s\"},\n", tick_chns[i]);
 		ct += sprintf(cmd+ct, "  {\"channel\":\"books5\",\"instId\":\"%s\"},\n", odbk_snpsht_chns[i]);
 		ct += sprintf(cmd+ct, "  {\"channel\":\"bbo-tbt\",\"instId\":\"%s\"},\n", odbk_chns[i]);
@@ -118,7 +205,7 @@ int on_wss_msg(char *msg, size_t len) {
 			URN_WARNF("Could not find %s pairid in record", inst_id);
 			goto final;
 		}
-		lot = lot_arr[pairid];
+		lot = multiplier[pairid];
 		if (pairid == 0) {
 			URN_WARNF("Could not find %s ctVal in record", inst_id);
 			goto final;
@@ -288,7 +375,7 @@ int on_instruments(yyjson_val *jdata) {
 		URN_RET_ON_NULL(jval = yyjson_obj_get(v, "instType"), "No instType", EINVAL);
 		const char* inst_type = yyjson_get_str(jval);
 		if (strcmp(inst_type, "SPOT") == 0) {
-			lot_arr[pairid] = 1;
+			multiplier[pairid] = 1;
 			continue;
 		}
 		if (strcmp(lot, "") == 0) {
@@ -296,8 +383,8 @@ int on_instruments(yyjson_val *jdata) {
 			continue;
 		}
 		urn_inum_parse(&i, lot);
-		lot_arr[pairid] = urn_inum_to_db(&i);
-		URN_INFOF("ctVal non-SPOT pair %s %s %s -> %lf", inst_type, inst_id, lot, lot_arr[pairid]);
+		multiplier[pairid] = urn_inum_to_db(&i);
+		URN_INFOF("ctVal non-SPOT pair %s %s %s -> %lf", inst_type, inst_id, lot, multiplier[pairid]);
 	}
 	return 0;
 }
