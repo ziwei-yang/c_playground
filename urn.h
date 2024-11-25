@@ -298,7 +298,7 @@ typedef urn_odbk_clients urn_tick_clients;
 #define urn_shm_exch_num 14 // Always match len(urn_shm_exch_list)
 #define urn_shm_exch_list \
 	"Binance","BNCM","BNUM","Bybit", \
-	"BybitL","Coinbase","FTX","Kraken", \
+	"BybitL","Coinbase","Gate","Kraken", \
 	"HashkeyG","Gemini","Bitstamp","BybitI", \
 	"OKX","Hashkey","\0" // preset index for exchanges, SHMEM_KEY relies on this, rename and append only.
 
