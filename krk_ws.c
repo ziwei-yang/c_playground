@@ -15,8 +15,8 @@ int   on_tick(int pairid, yyjson_val *jdata);
 int   on_odbk(int pairid, const char *type, yyjson_val *asks, yyjson_val *bids);
 int   on_odbk_update(int pairid, const char *type, yyjson_val *asks, yyjson_val *bids);
 
-// Usually kraken channel ID < 9999, seen 119930880 from 20240322
-#define krk_max_chnid 160000000
+// Usually kraken channel ID < 9999, seen 211288064 from 20250322
+#define krk_max_chnid 230000000 // use hmap
 // store given channel ID -> pair
 int krk_odbk_pairs[krk_max_chnid];
 int krk_tick_pairs[krk_max_chnid]; // store given channel ID -> pairid
@@ -222,6 +222,7 @@ int on_wss_msg(char *msg, size_t len) {
 			URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "channelID"), "subscriptionStatus no channelID", EINVAL);
 			int chn_id = yyjson_get_int(jval);
 			if (chn_id <= 0 || chn_id >= krk_max_chnid) { // out of predefined range
+				URN_WARNF("Out of predefined range %d %d", chn_id, krk_max_chnid);
 				URN_GO_FINAL_ON_RV(ERANGE, msg);
 			}
 			URN_RET_ON_NULL(jval = yyjson_obj_get(jroot, "channelName"), "subscriptionStatus no channelName", EINVAL);
@@ -256,6 +257,7 @@ int on_wss_msg(char *msg, size_t len) {
 		yyjson_val *chn_id_val = yyjson_arr_get(jroot, 0);
 		int chn_id = yyjson_get_int(chn_id_val);
 		if (chn_id < 0 || chn_id > krk_max_chnid) { // out of predefined range
+			URN_WARNF("Out of predefined range %d %d", chn_id, krk_max_chnid);
 			URN_GO_FINAL_ON_RV(ERANGE, msg);
 		}
 		// get channel name (type)
