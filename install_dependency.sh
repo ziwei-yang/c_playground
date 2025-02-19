@@ -19,21 +19,6 @@ cd $DIR
 source $DIR/install_mbedtls.sh
 source $DIR/install_nng_wolftls.sh # TLS for NNG
 
-# JSMN: get jsmn.h
-# cd $DIR
-# if [ ! -f $DIR/jsmn.h ]; then
-# 	rm -rf $DIR/jsmn
-# 	git clone https://github.com/zserge/jsmn.git
-# 	cp -v $DIR/jsmn/jsmn.h $DIR/
-# 	rm -rf $DIR/jsmn
-# fi
-# if [ ! -f $DIR/jsmn.h ]; then
-# 	echo "jsmn clone failed"
-# 	exit 1
-# else
-# 	echo "jsmn.h checked"
-# fi
-
 # YYJSON: get yyjson.h yyjson.c
 cd $DIR
 if [ ! -f $DIR/yyjson.h ]; then
@@ -86,34 +71,4 @@ elif [[ $os == Darwin ]] && [[ ! -f $HOMEBREW/hiredis/1.0.2/include/hiredis/hire
 	exit 1
 else
 	echo "hiredis.h checked"
-fi
-
-# clone c-hashmap -> git patch -> 3rd/map
-cd $DIR
-if [[ ! -f $DIR/3rd/map.h || ! -f $DIR/3rd/map.c ]]; then
-	cd $HOME/Proj
-	rm -rf $HOME/Proj/hashmap_c
-	mkdir $HOME/Proj/hashmap_c
-	cd $HOME/Proj/hashmap_c
-	wget -O map.h 'https://github.com/Mashpoe/c-hashmap/raw/main/map.h'
-	wget -O map.c 'https://github.com/Mashpoe/c-hashmap/raw/main/map.c'
-	if [[ ! -f ./map.c || ! -f ./map.h ]]; then
-		echo "Downloading map.c map.h failed"
-		exit 1
-	fi
-	git init && git add map.* && \
-		git apply $DIR/patch/hashmap.diff
-	if [[ $? != 0 ]]; then
-		echo "Apply patch/hashmap.diff to Proj/hashmap_c failed"
-		exit 1
-	fi
-	mkdir -p $DIR/3rd
-	cp -v ./map.* $DIR/3rd
-	rm -rf $HOME/Proj/hashmap_c
-fi
-if [[ ! -f $DIR/3rd/map.h || ! -f $DIR/3rd/map.c ]]; then
-	echo "3rd/map.c 3rd/map.h not found"
-	exit 1
-else
-	echo "3rd/map.c 3rd/map.h checked"
 fi
