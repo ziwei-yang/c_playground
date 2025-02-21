@@ -67,4 +67,5 @@ gcc -D_GNU_SOURCE=1 $@ \
 	$nng_wolfssl_o \
 	-lnng -lpthread -lwolfssl \
 	-lmbedtls -lmbedx509 -lmbedcrypto \
+	-lm \
 	-lglib-2.0 -lhiredis -lz $ld_nng_wolfssl
