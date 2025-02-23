@@ -179,7 +179,7 @@ extern long urn_msdiff(struct timeval t1, struct timeval t2);
 extern long parse_timestr_w_e6(struct tm *tmp, const char *s, const char* format);
 extern void urn_s_upcase(char *s, int slen);
 extern void urn_s_downcase(char *s, int slen);
-extern void urn_s_trim(const char* str, char* new_s);
+extern char *urn_s_trim(const char* str, char* new_s);
 
 
 //////////////////////////////////////////
@@ -309,6 +309,7 @@ extern int urn_odbk_shm_init(bool writer, char *exchange, urn_odbk_mem **shmptr)
 extern int urn_odbk_shm_write_index(urn_odbk_mem *shmp, char **pair_arr, int len);
 extern int urn_odbk_shm_pair_index(urn_odbk_mem *shmp, char *pair);
 extern void urn_odbk_shm_print_index(urn_odbk_mem *shmp);
+extern int urn_odbk_shm_print_inline(urn_odbk_mem *shmp, int pairid, char *line);
 extern int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid);
 extern int urn_odbk_clients_init(char *exchange, urn_odbk_clients **shmptr);
 extern int urn_odbk_clients_clear(urn_odbk_clients *shmp);

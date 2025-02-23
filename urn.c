@@ -90,7 +90,7 @@ void urn_s_downcase(char *s, int slen) {
 			s[i] = s[i] + 32;
 }
 // Function to trim leading and trailing spaces from a string
-void urn_s_trim(const char* str, char* new_s) {
+char *urn_s_trim(const char* str, char* new_s) {
 	const char* end;
 
 	// Trim leading space
@@ -98,7 +98,7 @@ void urn_s_trim(const char* str, char* new_s) {
 
 	if(*str == 0) { // All spaces?
 		*new_s = 0;
-		return;
+		return new_s;
 	}
 
 	// Trim trailing space
@@ -111,6 +111,7 @@ void urn_s_trim(const char* str, char* new_s) {
 
 	strncpy(new_s, str, len);
 	new_s[len] = '\0';
+	return new_s;
 }
 
 // print inum into s (or internal description pointer)
@@ -526,6 +527,42 @@ void urn_odbk_shm_print_index(urn_odbk_mem *shmp) {
 			break;
 		URN_LOGF("urn_odbk_mem %p pair %d %s", shmp, i, shmp->pairs[i]);
 	}
+}
+
+int urn_odbk_shm_print_inline(urn_odbk_mem *shmp, int pairid, char *line) {
+	URN_RET_IF((pairid >= URN_ODBK_MAX_PAIR), "pairid too big", ERANGE);
+	urn_odbk *odbk = NULL;
+	if (shmp->odbks[pairid][0].complete) {
+		odbk = &(shmp->odbks[pairid][0]);
+	} else if (shmp->odbks[pairid][1].complete) {
+		odbk = &(shmp->odbks[pairid][1]);
+	}
+	if (odbk == NULL)
+		return EEXIST;
+	line += sprintf(line, "%lu,%lu,", odbk->w_ts_e6, odbk->mkt_ts_e6);
+	char buffer[256];
+	for (int i = 0; i < 5; i++)
+		line += sprintf(line, "%s,", urn_s_trim(urn_inum_str(&(odbk->bidp[i])), buffer));
+	for (int i = 0; i < 5; i++)
+		line += sprintf(line, "%s,", urn_s_trim(urn_inum_str(&(odbk->askp[i])), buffer));
+	for (int i = 0; i < 5; i++)
+		line += sprintf(line, "%s,", urn_s_trim(urn_inum_str(&(odbk->bids[i])), buffer));
+	for (int i = 0; i < 5; i++)
+		line += sprintf(line, "%s,", urn_s_trim(urn_inum_str(&(odbk->asks[i])), buffer));
+	urn_ticks *ticks = &(shmp->ticks[pairid]);
+	bool buy = false;
+	urn_inum p, s;
+	unsigned long ts_e6 = 0;
+	if (urn_tick_get(ticks, 0, &buy, &p, &s, &ts_e6) == 0) {
+		line += sprintf(line, "%s,%s,",
+				(buy ? "B" : "S"),
+				urn_s_trim(urn_inum_str(&p), buffer));
+		line += sprintf(line, "%s\n",
+				urn_s_trim(urn_inum_str(&s), buffer));
+	} else {
+		line += sprintf(line, ",,\n");
+	}
+	return 0;
 }
 
 int urn_odbk_shm_print(urn_odbk_mem *shmp, int pairid) {
