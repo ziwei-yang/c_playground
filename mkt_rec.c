@@ -153,7 +153,7 @@ int main(int argc, char **argv) {
 		// timeout waiting signal : EAGAIN
 		if (sig == EAGAIN || sig == SIGUSR1) {
 #endif
-			printf("SIG %d, send to self again.\n", sig);
+			// printf("SIG %d, send to self again.\n", sig);
 			kill(pid, sig);
 			continue;
 		}
