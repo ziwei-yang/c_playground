@@ -2,38 +2,26 @@
 #include <unistd.h>
 
 #include "urn.h"
-#include "order.h"
-#include "wss.h"
-#include "hmap.h"
-#include "redis.h"
 
-int pairid = -1;
+char exchange[32];
 char target_pair[32];
+int  pairid = -1;
 urn_odbk_mem *shmptr = NULL;
 urn_odbk_clients *odbk_clients_shmptr = NULL;
 
 /* verify pair info, then print data */
+int init() { return 0; }
 void work() {
-	if (strcmp(shmptr->pairs[pairid], target_pair) != 0) {
-		URN_WARNF("Pair changed to %s, locate %s again",
-			shmptr->pairs[pairid], target_pair);
-		urn_odbk_clients_dereg(odbk_clients_shmptr, pairid);
-		urn_odbk_shm_print_index(shmptr);
-		pairid = urn_odbk_shm_pair_index(shmptr, target_pair);
-		if (pairid <= 0)
-			URN_FATAL("Pair not found", ERANGE);
-		urn_odbk_clients_reg(odbk_clients_shmptr, pairid);
-	}
 	urn_odbk_shm_print(shmptr, pairid);
 	urn_odbk_clients_print(odbk_clients_shmptr, pairid);
 }
-
-void noop() {};
+void noop() {}
+void grace_exit() { exit(0); }
 
 int main(int argc, char **argv) {
 	if (argc < 3)
-		URN_FATAL("Usage: exchange pair1 pair2 ...", EINVAL);
-	char *exchange = argv[1];
+		URN_FATAL("Usage: exchange pair", EINVAL);
+	strcpy(exchange, argv[1]);
 	int rv = 0;
 
 	rv = urn_odbk_shm_init(false, exchange, &shmptr);
@@ -50,6 +38,12 @@ int main(int argc, char **argv) {
 	if (pairid <= 0)
 		URN_FATAL("Pair not found", ERANGE);
 	urn_odbk_clients_reg(odbk_clients_shmptr, pairid);
+
+	rv = init();
+	if (rv != 0)
+		return URN_FATAL("Error in init()", rv);
+	signal(SIGINT, grace_exit);
+	signal(SIGQUIT, grace_exit);
 
 	/* create signal set contains SIGUSR1, KILL and INT */
 	sigset_t sigusr1_set;
@@ -74,28 +68,33 @@ int main(int argc, char **argv) {
 	// setup a alarm to send self a SIGUSR1
 	unsigned secs = (unsigned)(timeout.tv_sec);
 	if (secs <= 0) secs = 1;
-
+#endif
 	while (true) {
+#if __APPLE__
 		alarm(secs); // reset timer
 		sigwait(&sigusr1_set, &sig);
 		// timeout waiting signal : SIGALRM
-		if (sig == SIGALRM || sig == SIGUSR1) {
-			work();
-			continue;
-		}
-		printf("SIG %d, send to self again.\n", sig);
-		kill(pid, sig);
-	}
+		if (sig != SIGALRM && sig != SIGUSR1) {
 #else
-	while (true) {
 		sig = sigtimedwait(&sigusr1_set, NULL, &timeout);
 		// timeout waiting signal : EAGAIN
 		if (sig == EAGAIN || sig == SIGUSR1) {
-			work();
+#endif
+			printf("SIG %d, send to self again.\n", sig);
+			kill(pid, sig);
 			continue;
 		}
-		printf("SIG %d, send to self again.\n", sig);
-		kill(pid, sig);
+		// Assure pairid is target_pair
+		if (strcmp(shmptr->pairs[pairid], target_pair) != 0) {
+			URN_WARNF("Pair changed to %s, locate %s again",
+					shmptr->pairs[pairid], target_pair);
+			urn_odbk_clients_dereg(odbk_clients_shmptr, pairid);
+			urn_odbk_shm_print_index(shmptr);
+			pairid = urn_odbk_shm_pair_index(shmptr, target_pair);
+			if (pairid <= 0)
+				URN_FATAL("Pair not found", ERANGE);
+			urn_odbk_clients_reg(odbk_clients_shmptr, pairid);
+		}
+		work();
 	}
-#endif
 }
