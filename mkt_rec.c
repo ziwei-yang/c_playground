@@ -72,6 +72,7 @@ void work() {
 	// Write to file
 	int rv = urn_odbk_shm_print_inline(shmptr, pairid, line);
 	if (rv == 0) {
+		URN_DEBUG(line);
 		write(fd, line, strlen(line));
 	} else {
 		URN_WARN("Error in preparing line");
@@ -151,9 +152,9 @@ int main(int argc, char **argv) {
 #else
 		sig = sigtimedwait(&sigusr1_set, NULL, &timeout);
 		// timeout waiting signal : EAGAIN
-		if (sig == EAGAIN || sig == SIGUSR1) {
+		if (sig != EAGAIN && sig != SIGUSR1) {
 #endif
-			// printf("SIG %d, send to self again.\n", sig);
+			URN_WARNF("SIG %d, send to self again.\n", sig);
 			kill(pid, sig);
 			continue;
 		}
