@@ -13,7 +13,7 @@ urn_odbk_clients *odbk_clients_shmptr = NULL;
 
 /* Write data into ./data/$exchange.$symbol/$unixtimestamp.txt */
 char dpath[1024];
-char fpath[1024];
+char fpath[2048];
 long filename_ts;
 int  fd = -1;
 char line[1024];
@@ -50,7 +50,7 @@ int init() {
 		URN_LOGF("Close file %s", fpath);
 		close(fd);
 	}
-	sprintf(dpath, "./data/%s.%s", exchange, target_pair);
+	sprintf(dpath, "data/%s.%s", exchange, target_pair);
 	clock_gettime(CLOCK_REALTIME, &ts);
 	filename_ts = (long long)ts.tv_sec/86400*86400;
 	sprintf(fpath, "./%s/%ld.txt", dpath, filename_ts);

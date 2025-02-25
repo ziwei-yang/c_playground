@@ -554,13 +554,11 @@ int urn_odbk_shm_print_inline(urn_odbk_mem *shmp, int pairid, char *line) {
 	urn_inum p, s;
 	unsigned long ts_e6 = 0;
 	if (urn_tick_get(ticks, 0, &buy, &p, &s, &ts_e6) == 0) {
-		line += sprintf(line, "%s,%s,",
-				(buy ? "B" : "S"),
-				urn_s_trim(urn_inum_str(&p), buffer));
-		line += sprintf(line, "%s\n",
-				urn_s_trim(urn_inum_str(&s), buffer));
+		line += sprintf(line, "%s,%s,", (buy ? "B" : "S"), urn_s_trim(urn_inum_str(&p), buffer));
+		line += sprintf(line, "%s,", urn_s_trim(urn_inum_str(&s), buffer));
+		line += sprintf(line, "%lu\n", ts_e6);
 	} else {
-		line += sprintf(line, ",,\n");
+		line += sprintf(line, ",,,\n");
 	}
 	return 0;
 }
