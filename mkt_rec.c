@@ -75,7 +75,7 @@ void work() {
 		URN_DEBUG(line);
 		write(fd, line, strlen(line));
 	} else {
-		URN_WARN("Error in preparing line");
+		URN_WARNF("Error in preparing line, code %d", rv);
 	}
 }
 void grace_exit() {
@@ -153,6 +153,7 @@ int main(int argc, char **argv) {
 		sig = sigtimedwait(&sigusr1_set, NULL, &timeout);
 		// timeout waiting signal : EAGAIN
 		if (sig != EAGAIN && sig != SIGUSR1) {
+			if (sig == -1) continue; // timeout
 #endif
 			URN_WARNF("SIG %d, send to self again.\n", sig);
 			kill(pid, sig);

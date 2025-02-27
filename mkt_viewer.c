@@ -78,9 +78,10 @@ int main(int argc, char **argv) {
 #else
 		sig = sigtimedwait(&sigusr1_set, NULL, &timeout);
 		// timeout waiting signal : EAGAIN
-		if (sig == EAGAIN || sig == SIGUSR1) {
+		if (sig != EAGAIN && sig != SIGUSR1) {
+			if (sig == -1) continue; // timeout
 #endif
-			printf("SIG %d, send to self again.\n", sig);
+			URN_WARNF("SIG %d, send to self again.\n", sig);
 			kill(pid, sig);
 			continue;
 		}
