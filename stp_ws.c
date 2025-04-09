@@ -90,8 +90,9 @@ int mkt_wss_prepare_reqs(int chn_ct, const char **odbk_chns, const char **odbk_s
 
 
 	URN_INFOF("Parsing ARGV end, %d req str prepared.", cmd_ct);
-	wss_req_interval_e = 1;
-	wss_req_interval_ms = 50;
+	// Unsubscribe as fast as possible
+	wss_req_interval_e = 0;
+	wss_req_interval_ms = 0;
 	return 0;
 }
 
