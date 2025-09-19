@@ -1057,7 +1057,7 @@ void mkt_wss_odbk_update_top(int pairid, urn_inum *p, urn_inum *s, bool buy) {
 			node = node->next;
 			continue;
 		}
-		URN_DEBUG("outbound is true, remove from here to the end.");
+		URN_DEBUG("on/out of the price, remove from here to the end.");
 		last_valid_n = node->prev;
 		if (last_valid_n != NULL)
 			last_valid_n->next = NULL;
