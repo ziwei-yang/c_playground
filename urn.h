@@ -295,12 +295,14 @@ typedef struct urn_odbk_clients {
 	pid_t pids[URN_ODBK_MAX_PAIR][urn_odbk_pid_cap];
 } urn_odbk_clients;
 typedef urn_odbk_clients urn_tick_clients;
-#define urn_shm_exch_num 14 // Always match len(urn_shm_exch_list)
+#define urn_shm_exch_num 17 // Always match len(urn_shm_exch_list)
 #define urn_shm_exch_list \
 	"Binance","BNCM","BNUM","Bybit", \
 	"BybitL","Coinbase","Bitget","Kraken", \
 	"HashkeyG","Gemini","Bitstamp","BybitI", \
-	"OKX","Hashkey","\0" // preset index for exchanges, SHMEM_KEY relies on this, rename and append only.
+	"OKX","Hashkey","Gate","unused", \
+	"unused",\
+	"\0" // preset index for exchanges, SHMEM_KEY relies on this, rename and append only.
 
 extern const char *urn_shm_exchanges[];
 
