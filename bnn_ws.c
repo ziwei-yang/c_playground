@@ -44,10 +44,10 @@ int exchange_sym_alloc(urn_pair *pair, char **str) {
 		if (pair->expiry != NULL)
 			return URN_FATAL("Pair with expiry in spot mode", EINVAL);
 		// USDT-BTC   -> btcusdt
-		// USD-BTC   ->  btcbusd
+		// USD-BTC   ->  btcusdc
 		if (strcmp(pair->currency, "USD") == 0) {
 			// see preprocess_pair()
-			sprintf(*str, "%sFDUSD", pair->asset);
+			sprintf(*str, "%sUSDC", pair->asset);
 		} else
 			sprintf(*str, "%s%s", pair->asset, pair->currency);
 		urn_s_downcase(*str, slen);
