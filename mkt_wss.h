@@ -112,6 +112,7 @@ long wss_stat_warn_msg_t = 120; // if odbk_t_arr[] > this then WARN, -1: disable
 const int max_msg_interval = 60; // any msg interval > 60 then kill
 
 struct timespec _tmp_clock;
+unsigned int wss_msg_id;
 
 ///////////// broadcast ctrl //////////////
 struct timespec brdcst_t; // last time to call broadcast()
@@ -353,6 +354,7 @@ int wss_connect() {
 		return URN_FATAL_NNG(rv);
 	URN_INFO("Recv aio and iov ready");
 
+	wss_msg_id = 0;
 	wss_stat_sz = 0;
 	wss_stat_ct = 0;
 	wss_req_wait_ct = 0;
@@ -371,6 +373,7 @@ int wss_connect() {
 			URN_WARN("Error in nngaio_recv_wait_res()");
 			return URN_FATAL_NNG(rv);
 		}
+		wss_msg_id++;
 		wss_stat_ct++;
 		wss_stat_sz += recv_bytes;
 		URN_DEBUGF("pre on_wss_msg %lu/%d %.*s", recv_bytes, recv_buflen,
