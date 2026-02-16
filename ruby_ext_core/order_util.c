@@ -6,7 +6,7 @@
 #include "order_util.h"
 
 void format_num(double num, int fraclen, int decilen, char* str); // in util.c
-void urn_s_trim(const char* str, char* new_s); // in urn.h
+char *urn_s_trim(const char* str, char* new_s); // urn.h
 
 // in order.c
 void order_from_hash(VALUE hash, Order* o);
