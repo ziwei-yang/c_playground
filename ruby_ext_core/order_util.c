@@ -6,7 +6,7 @@
 #include "order_util.h"
 
 void format_num(double num, int fraclen, int decilen, char* str); // in util.c
-char *urn_s_trim(const char* str, char* new_s); // urn.h
+void urn_s_trim(const char* str, char* new_s); // in urn.h
 
 // in order.c
 void order_from_hash(VALUE hash, Order* o);
@@ -31,34 +31,17 @@ static Order* _attach_or_parse_ruby_order(VALUE v_order, Order *o) {
         Order* opvar = _attach_or_parse_ruby_order(v_order, &_temp_stackspace_o);
 
 // attach_or_parse_ruby_order, array version, creates Order _temp_orders[] in stack space.
-// - For len <= 1024: uses stack (VLA)
-// - For len > 1024: uses heap (Ruby ALLOC_N / xfree)
-#define attach_or_parse_ruby_order_array(v_order_array, o_array_var)            \
-	long _v_order_array_len = RARRAY_LEN((v_order_array));                  \
-	Order _temp_orders_in_stack[1024];                                  	\
-	Order* _temp_orders = _temp_orders_in_stack;				\
-	Order* (o_array_var)[_v_order_array_len + 1];                           \
-	int _attach_ruby_order_array_in_heap = 0;				\
-	if (_v_order_array_len > 1024) {                                        \
-		_attach_ruby_order_array_in_heap = 1;       	   		\
-		_temp_orders = ALLOC_N(Order, (size_t)_v_order_array_len);      \
-	}                                                                       \
-	memset(_temp_orders, 0, sizeof(Order) * (size_t)_v_order_array_len);    \
-	for (long i = 0; i < _v_order_array_len; i++) {                         \
-		VALUE v_order = rb_ary_entry((v_order_array), i);               \
-		INIT_ORDER(&(_temp_orders[i]));                                 \
-		(o_array_var)[i] = _attach_or_parse_ruby_order(v_order,         \
-				&(_temp_orders[i]));   				\
-	}                                                                       \
-	(o_array_var)[_v_order_array_len] = NULL;
-
-#define detach_ruby_order_array							\
-do {										\
-	if (_attach_ruby_order_array_in_heap == 1 && _temp_orders != NULL) {	\
-		xfree(_temp_orders);						\
-		_temp_orders = NULL;						\
-	}									\
-} while(0)
+#define attach_or_parse_ruby_order_array(v_order_array, o_array_var) \
+	long _v_order_array_len = RARRAY_LEN(v_order_array); \
+	Order _temp_orders[_v_order_array_len]; \
+	memset(_temp_orders, 0, sizeof(Order) * _v_order_array_len); \
+	Order* o_array_var[_v_order_array_len + 1]; \
+	for (long i = 0; i < _v_order_array_len; i++) { \
+		VALUE v_order = rb_ary_entry(v_orders, i); \
+		INIT_ORDER(&(_temp_orders[i])); \
+		o_array_var[i] = _attach_or_parse_ruby_order(v_order, &(_temp_orders[i])); \
+	} \
+	o_array_var[_v_order_array_len] = NULL;
 
 // Copy order back to v_order @_cdata, if v_order is URN_CORE::Order
 // Copy order back to v_order fields, if v_order is Hash
@@ -691,7 +674,6 @@ VALUE rb_order_stat(int argc, VALUE* argv, VALUE self) {
 
 	// Check if orders is an array
 	Check_Type(v_orders, T_ARRAY);
-	long v_order_array_len = RARRAY_LEN(v_orders);
 
 	int precise = 1;
 	if (!NIL_P(v_opt)) {
@@ -706,8 +688,6 @@ VALUE rb_order_stat(int argc, VALUE* argv, VALUE self) {
 	// Perform the calculation
 	double result[3];
 	order_stat(orders[0], precise, result);
-
-	detach_ruby_order_array;
 
 	// Return the result as an array
 	VALUE rb_result = rb_ary_new();
@@ -783,9 +763,7 @@ bool order_same_mkt_pair(Order* orders[]) {
 VALUE rb_order_same_mkt_pair(VALUE self, VALUE v_orders) {
 	Check_Type(v_orders, T_ARRAY);
 	attach_or_parse_ruby_order_array(v_orders, orders);
-	bool ret = order_same_mkt_pair(orders);
-	detach_ruby_order_array;
-	return ret ? Qtrue : Qfalse;
+	return order_same_mkt_pair(orders) ? Qtrue : Qfalse;
 }
 
 /////////////// RUBY interface below ///////////////
