@@ -105,8 +105,8 @@ int on_wss_msg(char *msg, size_t len) {
 		long ts_e3 = (long)(odbk_mkt_t.tv_sec) * 1000l + (long)(odbk_mkt_t.tv_usec/1000);
 		long latency_e3 = ts_e3 - server_ts_e3;
 		// wss_mkt_ts = ts_e3 * 1000; // Dont set as market latest msg ts
-		URN_LOGF("heartbeat latency %ldms #%u", latency_e3, wss_stat_ct);
-		if (latency_e3 > 1500 && wss_msg_id > 1024) // after warmup
+		URN_LOGF("heartbeat latency %ldms wss_stat_ct #%u", latency_e3, wss_stat_ct);
+		if (latency_e3 > 3500 && wss_msg_id > 4096) // after warmup
 			goto error; // Gemini latency goes crazy sometimes.
 		goto final;
 	}
